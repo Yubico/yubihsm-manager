@@ -1,0 +1,3 @@
+== YubiHSM Manager
+
+Command line tool that makes communication with the YubiHSM easier.
