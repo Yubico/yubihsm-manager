@@ -1,3 +1,25 @@
 == YubiHSM Manager
 
 Command line tool that makes communication with the YubiHSM easier.
+
+=== Build
+
+Set the environment variable `YUBIHSM_LIB_DIR` to point to the directory containing the libyubihsm library then run:
+
+```
+$ cargo build
+```
+
+=== Run
+
+Set the environment variable `LD_LIBRARY_PATH` to point to the directory containing the libyubihsm library then run:
+
+```
+$ cargo run
+```
+
+Or
+
+```
+$ ./target/debug/yubihsm-manager
+```
