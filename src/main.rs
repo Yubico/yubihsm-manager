@@ -145,6 +145,41 @@ fn get_string(prompt: &str) -> String {
     read_line_or_die()
 }
 
+fn get_integer<T>(prompt: &str, accept_zero: bool, default:T) -> T
+    where
+        T: std::str::FromStr,
+        T: std::convert::From<u16>, // NOTE(adma): a FromStrRadix trait would be better
+{
+    loop {
+        print!("{} ", prompt);
+        std::io::stdout().flush().expect("Unable to flush stdout");
+        let line = read_line_or_die();
+
+        if line=="" {
+            return default
+        } else {
+            let parsed = if line.starts_with("0x") {
+                u16::from_str_radix(&line[2..], 16)
+            } else {
+                line.parse()
+            };
+
+            match parsed {
+                Ok(a) => {
+                    if a == 0 && !accept_zero {
+                        continue;
+                    }
+
+                    break a.into();
+                }
+                _ => {
+                    continue;
+                }
+            }
+        }
+    }
+}
+
 fn manage_auth(session: &yubihsmrs::Session, auth_id: u16) {
     println!("Subcommand to manage authentication keys")
 }
@@ -158,7 +193,13 @@ fn manage_wrap(session: &yubihsmrs::Session, auth_id: u16) {
 }
 
 fn get_random(session: &yubihsmrs::Session, auth_id: u16) {
-    let rand = session.get_random(256).unwrap_or_else(|err| {
+    let mut count;
+    count = get_integer("Enter number of pseudo-random bytes to extract [default 256]: ", true, 256);
+    if count == 0
+    {
+        count = 256;
+    }
+    let rand = session.get_random(count).unwrap_or_else(|err| {
         println!("Unable to generate random data: {}", err);
         std::process::exit(1);
     });
