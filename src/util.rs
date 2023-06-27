@@ -1,22 +1,14 @@
 extern crate yubihsmrs;
 
 use std::fmt::Display;
-use std::{fs, io, process, thread};
+use std::{fs, process};
 use std::convert::TryFrom;
-use std::io::{BufRead, Cursor, stdin, stdout, Write};
-use std::panic::resume_unwind;
-use std::ptr::write;
-use std::thread::sleep;
-use std::time::Duration;
-use clap::ErrorKind;
-use yubihsmrs::object::{ObjectCapability, ObjectDescriptor, ObjectHandle};
-use crossterm::{ExecutableCommand, execute, cursor::{DisableBlinking, EnableBlinking, MoveTo, RestorePosition, SavePosition}, event, cursor};
-use crossterm::cursor::{MoveRight, MoveUp};
-use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, read};
-use crossterm::style::Stylize;
+use std::io::{stdin, stdout, Write};
+use yubihsmrs::object::{ObjectDescriptor, ObjectHandle};
+use crossterm::{execute, cursor::{MoveTo}, cursor};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crossterm_input::{input, InputEvent};
-use yubihsmrs::{exit, Session};
+use yubihsmrs::{Session};
 /*
 struct multi_select_item<T:Display> {
     item: T,
@@ -54,7 +46,7 @@ fn read_line_or_die() -> String {
     match stdin().read_line(&mut line) {
         Ok(_) => line.trim().to_owned(),
         Err(err) => {
-            writeln!(stdout(), "Unable to read from stdin: {}", err);
+            println!("Unable to read from stdin: {}", err);
             std::process::exit(1)
         }
     }
@@ -72,17 +64,17 @@ fn read_line_or_die() -> String {
         line
     } else {
         stdout.write_all(b"Error\n").unwrap();
-        //writeln!(stdout, "Unable to read from stdin: {}", err);
+        //println!(stdout, "Unable to read from stdin: {}", err);
         std::process::exit(1)
     }
     */
 }
 
 pub fn get_string(prompt: &str, default_value: &str) -> String {
-    write!(stdout(), "  {}", prompt);
+    print!("  {}", prompt);
     stdout().flush().unwrap();
     let line = read_line_or_die();
-    //writeln!(stdout, "");
+    //println!(stdout, "");
     //stdout.flush().unwrap();
     if line == String::from("") {
         String::from(default_value)
@@ -98,7 +90,7 @@ pub fn get_integer<T>(prompt: &str, has_default_value: bool, default_value:T) ->
         T: std::convert::From<u16>, // NOTE(adma): a FromStrRadix trait would be better
 {
     loop {
-        write!(stdout(), "  {}", prompt);
+        print!("  {}", prompt);
         stdout().flush().unwrap();
         let line = read_line_or_die();
         if line == "" && has_default_value {
@@ -141,7 +133,7 @@ pub fn parse_id(value: &str) -> Result<u16, String> {
 
 pub fn get_boolean_answer(prompt: &str) -> BooleanAnswer {
     loop {
-        write!(stdout(), "{} (y/n) ", prompt);
+        print!("{} (y/n) ", prompt);
         stdout().flush().expect("Unable to flush stdout");
         match BooleanAnswer::from_str(&read_line_or_die()) {
             Ok(a) => {
@@ -156,12 +148,12 @@ pub fn get_boolean_answer(prompt: &str) -> BooleanAnswer {
 
 pub fn get_domains(prompt: &str) -> Vec<yubihsmrs::object::ObjectDomain> {
     loop {
-        write!(stdout(), "  {} ", prompt);
+        print!("  {} ", prompt);
         stdout().flush().expect("Unable to flush stdout");
         match yubihsmrs::object::ObjectDomain::vec_from_str(&read_line_or_die()) {
             Ok(a) => {
                 if a.is_empty() {
-                    writeln!(stdout(), "You must select at least one domain");
+                    println!("You must select at least one domain");
                     continue;
                 }
 
@@ -171,12 +163,12 @@ pub fn get_domains(prompt: &str) -> Vec<yubihsmrs::object::ObjectDomain> {
                 )) {
                     continue;
                 }
-                //writeln!("Using domains:");
-                //a.iter().for_each(|domain| writeln!("\t {}", domain).unwrap());
+                //println!("Using domains:");
+                //a.iter().for_each(|domain| println!("\t {}", domain).unwrap());
                 break a;
             }
             _ => {
-                writeln!(stdout(), "Domains format is \"all\" or 1:2:3:...");
+                println!("Domains format is \"all\" or 1:2:3:...");
                 continue;
             }
         }
@@ -185,7 +177,7 @@ pub fn get_domains(prompt: &str) -> Vec<yubihsmrs::object::ObjectDomain> {
 
 pub fn get_menu_option<T:Copy>(items: &[(String, T)]) -> T {
     for i in 0..items.len() {
-        writeln!(stdout(), "  ({}) {}", i+1, items[i].0);
+        println!("  ({}) {}", i+1, items[i].0);
     }
     let mut choice: u16 = 0;
     while choice < 1 || choice > u16::try_from(items.len()).unwrap() {
@@ -199,9 +191,9 @@ pub fn get_multiselect_options<T:Display>(items: &mut Vec<(T, bool)>){
     let items_len = u16::try_from(items.len()).unwrap();
 
     // Print out the options
-    writeln!(stdout(), "\n  Click space to select and unselect. Click 'Enter' when done.");
+    println!("\n  Click space to select and unselect. Click 'Enter' when done.");
     for item in &mut *items {
-        writeln!(stdout(), "  ( ) {}", item.0);
+        println!("  ( ) {}", item.0);
     }
 
     // Use these coordinates to restore position afterwards instead of the restore function because
@@ -229,10 +221,10 @@ pub fn get_multiselect_options<T:Display>(items: &mut Vec<(T, bool)>){
                         ' ' => {
                             let index = usize::try_from(y - y_offset).unwrap();
                             if items[index].1 {
-                                write!(stdout(), " ").expect("Unable to print message!");
+                                print!(" ");
                                 //items[index].1 = false;
                             } else {
-                                write!(stdout(), "*").expect("Unable to print message!");
+                                print!("*");
                                 //items[index].1 = true;
                             }
                             items[index].1 = !items[index].1;
@@ -280,27 +272,32 @@ pub fn get_selected_items<T:Copy>(items: &Vec<(T, bool)>) -> Vec<T>{
     selected_items
 }
 
-pub fn delete_objects(session:&Session, object_handles:Vec<ObjectHandle>) {
-    if object_handles.len() == 1 {
-        match session.delete_object(object_handles[0].object_id, object_handles[0].object_type) {
-            Ok(..) => writeln!(stdout(), "Deleted {} with ID 0x{:x}", object_handles[0].object_type, object_handles[0].object_id),
-            Err(_) => writeln!(stdout(), "Operation failed!"),
-        };
-    } else {
-        let mut objects_options:Vec<(ObjectDescriptor, bool)> = Vec::new();
-        for h in object_handles {
-            objects_options.push((session.get_object_info(h.object_id, h.object_type).unwrap(), false));
-        }
-        get_multiselect_options(&mut objects_options);
-        for object in objects_options {
-            if object.1 {
-                match session.delete_object(object.0.id, object.0.object_type) {
-                    Ok(..) => writeln!(stdout(), "Deleted {} with id 0x{:x}", object.0.object_type,  object.0.id),
-                    Err(_) => continue,
-                };
+pub fn delete_objects(session: Option<&Session>, object_handles:Vec<ObjectHandle>) -> Result<(), yubihsmrs::error::Error> {
+    match session {
+        None => {
+            println!("  > yubihsm-shell -a delete-object -i <OBJECT_ID> -t <OBJECT_TYPE>");
+        },
+        Some(session) => {
+            if object_handles.len() == 1 {
+                session.delete_object(object_handles[0].object_id, object_handles[0].object_type)?;
+                println!("Deleted {} with ID 0x{:x}", object_handles[0].object_type, object_handles[0].object_id);
+            } else {
+                let mut objects_options:Vec<(ObjectDescriptor, bool)> = Vec::new();
+                for h in object_handles {
+                    objects_options.push((session.get_object_info(h.object_id, h.object_type).unwrap(), false));
+                }
+                get_multiselect_options(&mut objects_options);
+                for object in objects_options {
+                    if object.1 {
+                        session.delete_object(object.0.id, object.0.object_type)?;
+                        println!("Deleted {} with id 0x{:x}", object.0.object_type,  object.0.id);
+                    }
+                }
             }
         }
     }
+    
+    Ok(())
 }
 
 pub fn read_file() -> String {
@@ -312,7 +309,7 @@ pub fn read_file() -> String {
     match contents {
         Ok(..) => contents.unwrap(),
         Err(_) => {
-            writeln!(stdout(), "Failed to read file.");
+            println!("Failed to read file.");
             read_file()
         }
     }

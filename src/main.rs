@@ -69,7 +69,7 @@ fn get_session_option(open_session:bool, authkey:u16, password:String) -> Option
     session
 }
 
-fn main() {
+fn main() -> Result<(), yubihsmrs::error::Error> {
 
     let matches = App::new(env!("CARGO_PKG_NAME"))
         .version(crate_version!())
@@ -166,15 +166,15 @@ fn main() {
         };
 
 
-    //asym_commands::exec_asym_command(&mut stdin, &mut stdout);
     match matches.subcommand_name() {
-        Some("auth") => asym_commands::exec_asym_command(session),
-        Some("asym") => asym_commands::exec_asym_command(session),
-        Some("wrap") => asym_commands::exec_asym_command(session),
-        Some("random") => asym_commands::exec_asym_command(session),
+        Some("auth") => asym_commands::exec_asym_command(session)?,
+        Some("asym") => asym_commands::exec_asym_command(session)?,
+        Some("wrap") => asym_commands::exec_asym_command(session)?,
+        Some("random") => asym_commands::exec_asym_command(session)?,
         _ => unreachable!(),
     }
 
-    println!("All done")
+    println!("All done");
+    Ok(())
 
 }
