@@ -17,18 +17,25 @@
 [package]
 name = "yubihsm-manager"
 version = "0.1.0"
-authors = ["Aveen Ismail <aveen.ismail@yubico.com>", "Per Nilsson <per.nilsson@yubico.com>"]
 description = "CMD manager tool for YubiHSM 2"
-license = "Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+crossterm = "0.26.1"
+crossterm_input = "0.5.0"
+crossterm_screen = "0.3.2"
+crossterm_utils = "0.4.0"
+crossterm_terminal = "0.3.2"
+strum = "0.24"
+strum_macros = "0.24"
+tui = { version = "0.14", default-features = false, features = ['crossterm'] }
 clap = "2.34.0"
-lazy_static = "1.4.0"
-regex = "1.5.4"
-rusty_secrets = "0.0.2"
-hex = "0.4.3"
+serde = "1.0.164"
+pem = "2.0.1"
+rustls-pemfile = "1.0.2"
+openssl = "0.10.54"
+
 
 [dependencies.yubihsmrs]
 path = "../yubihsmrs/"
