@@ -4,7 +4,7 @@ use std::fmt::Display;
 use std::{fs, process};
 use std::convert::TryFrom;
 use std::io::{stdin, stdout, Write};
-use yubihsmrs::object::{ObjectDescriptor, ObjectHandle};
+use yubihsmrs::object::{ObjectDescriptor, ObjectDomain, ObjectHandle};
 use crossterm::{execute, cursor::{MoveTo}, cursor};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crossterm_input::{input, InputEvent};
@@ -173,6 +173,13 @@ pub fn get_domains(prompt: &str) -> Vec<yubihsmrs::object::ObjectDomain> {
             }
         }
     }
+}
+
+pub fn get_common_properties() -> (u16, String, Vec<ObjectDomain>) {
+    let mut key_id: u16 = get_integer("Enter key ID [Default 0]: ", true, 0);
+    let label = get_string("Enter key label [Default empty]: ", "");
+    let domains = get_domains("Enter domain(s), multiple domains are separated by ',' [1-16]: ");
+    (key_id, label, domains)
 }
 
 pub fn get_menu_option<T:Copy>(items: &[(String, T)]) -> T {

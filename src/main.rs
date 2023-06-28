@@ -5,6 +5,7 @@ extern crate clap;
 
 extern crate yubihsmrs;
 extern crate crossterm_input;
+extern crate openssl;
 
 use std::io::{Write, stdin, stdout};
 use clap::{App, AppSettings, Arg, SubCommand};

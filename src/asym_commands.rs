@@ -1,6 +1,9 @@
+use openssl::nid::Nid;
+use openssl::pkey::PKey;
 use crate::util::{get_integer, get_string, get_domains, get_menu_option, get_multiselect_options, get_boolean_answer, get_selected_items, delete_objects, read_file}; // 0.17.1
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
+use util::get_common_properties;
 
 
 #[derive(Debug, Clone, Copy)]
@@ -39,7 +42,7 @@ pub fn exec_asym_command(session: Option<&Session>) -> Result<(), yubihsmrs::err
         AsymCommands::ListKeys => asym_list_keys(session),
         AsymCommands::GenerateKey => asym_gen_key(session),
         AsymCommands::DeleteKey => asym_delete_key(session),
-        //AsymCommands::ImportKey => asym_import_key(session),
+        AsymCommands::ImportKey => asym_import_key(session),
         _ => unreachable!()
     }
 }
@@ -121,9 +124,7 @@ fn get_ed_capabilities() -> Vec<ObjectCapability> {
 
 fn asym_gen_key(session: Option<&Session>) -> Result<(), yubihsmrs::error::Error> {
     println!();
-    let label = get_string("Enter key label [Default empty]: ", "");
-    let mut key_id: u16 = get_integer("Enter key ID [Default 0]: ", true, 0);
-    let domains = get_domains("Enter domain(s), multiple domains are separated by ',' [1-16]: ");
+    let (mut key_id, label, domains) = get_common_properties();
 
     let mut key_algorithm:ObjectAlgorithm = ObjectAlgorithm::RsaPkcs1Sha1;
     let mut capabilities:Vec<ObjectCapability> = Vec::new();
@@ -172,7 +173,6 @@ fn asym_gen_key(session: Option<&Session>) -> Result<(), yubihsmrs::error::Error
             print!(" -c ");
             capabilities.iter().for_each(|cap| print!("{:?},", cap));
             println!();
-
         },
         Some(session) => {
             if bool::from(get_boolean_answer("Execute? ")) {
@@ -256,21 +256,35 @@ fn asym_delete_key(session: Option<&Session>) -> Result<(), yubihsmrs::error::Er
     let mut keys = get_filtered_objects(session)?;
     delete_objects(session, keys)
 }
-/*
-fn asym_import_key(session:Option<&Session>) {
+
+fn print_import_key_cmd(key_id:u16, label:String, domains:Vec<ObjectDomain>, capabilities:Vec<ObjectCapability>) {
+    print!("  > yubihsm-shell -a put_asymmetric-key");
+    print!(" -i {}", key_id);
+    print!(" -l \"{}\"", label);
+    print!(" -d ");
+    domains.iter().for_each(|domain| print!("{},", domain));
+    print!(" -c ");
+    capabilities.iter().for_each(|cap| print!("{:?},", cap));
+    print!(" --in <PATH_TO_FILE>");
     println!();
-    let label = get_string("Enter key label [Default empty]: ", "");
-    let mut key_id: u16 = get_integer("Enter key ID [Default 0]: ", true, 0);
-    let domains = get_domains("Enter domain(s), multiple domains are separated by ',' [1-16]: ");
+}
+
+fn asym_import_key(session:Option<&Session>) -> Result<(), yubihsmrs::error::Error>{
+    println!();
+    let (mut key_id, label, domains) = get_common_properties();
+
     let key_str = read_file();
-    let pem = pem::parse(key_str).unwrap();
+    let pem = pem::parse(key_str).unwrap_or_else(|err| {
+        println!("Unable to parse PEM content: {}", err);
+        std::process::exit(1);
+    });
     let key_bytes = pem.contents();
 
     match openssl::pkey::PKey::private_key_from_der(&key_bytes) {
         Ok(key) => {
             match key.id() {
                 openssl::pkey::Id::RSA => {
-                    println!(, "RSA key");
+                    println!("RSA key");
                     let private_rsa = key.rsa().unwrap();
                     let p = private_rsa.p().unwrap();
                     let q = private_rsa.q().unwrap();
@@ -280,25 +294,100 @@ fn asym_import_key(session:Option<&Session>) {
                         384 => ObjectAlgorithm::Rsa3072,
                         512 => ObjectAlgorithm::Rsa4096,
                         _ => {
-                            println!(, "Unrecognized algo");
-                            return;
+                            println!("Unrecognized algo");
+                            return Err(yubihsmrs::error::Error::InvalidParameter(String::from("KeyAlgorithm")));
                         },
                     };
 
-                    let s = session.unwrap();
-                    key_id = s
-                        .import_rsa_key(key_id, &label, &*domains, &capabilities, key_algorithm, &p.to_vec(), &q.to_vec())
-                        .unwrap_or_else(|err| {
-                            println!(, "Unable to import keypair: {}", err);
-                            std::process::exit(1);
-                        });
-                    println!(, "  Imported asymmetric keypair with ID 0x{:04x} on the device", key_id)
+                    let capabilities = get_rsakey_capabilities();
+
+                    match session {
+                        None => print_import_key_cmd(key_id, label, domains, capabilities),
+                        Some(session) => {
+                            key_id = session
+                                .import_rsa_key(key_id, &label, &*domains, &capabilities, key_algorithm, &p.to_vec(), &q.to_vec())?
+                        }
+                    }
                 },
-                openssl::pkey::Id::EC => println!(, "EC key"),
-                _ => println!(, "Unknown key type"),
+                openssl::pkey::Id::EC => {
+                    let private_ec = key.ec_key().unwrap();
+                    let s = private_ec.private_key();
+                    let group = private_ec.group();
+                    let nid = group.curve_name().unwrap();
+                    let key_algorithm: ObjectAlgorithm = match nid {
+                        Nid::X9_62_PRIME256V1 => ObjectAlgorithm::EcP256,
+                        Nid::SECP256K1 => ObjectAlgorithm::EcK256,
+                        Nid::SECP384R1 => ObjectAlgorithm::EcP384,
+                        Nid::SECP521R1 => ObjectAlgorithm::EcP521,
+                        Nid::SECP224R1 => ObjectAlgorithm::EcP224,
+                        Nid::BRAINPOOL_P256R1 => ObjectAlgorithm::EcBp256,
+                        Nid::BRAINPOOL_P384R1 => ObjectAlgorithm::EcBp384,
+                        Nid::BRAINPOOL_P512R1 => ObjectAlgorithm::EcBp512,
+                        _ => {
+                            println!("Unrecognized algo");
+                            return Err(yubihsmrs::error::Error::InvalidParameter(String::from("KeyAlgorithm")));
+                        },
+                    };
+                    let capabilities = get_ec_capabilities();
+
+                    match session {
+                        None => print_import_key_cmd(key_id, label, domains, capabilities),
+                        Some(session) => {
+                            key_id = session
+                                .import_ec_key(key_id, &label, &*domains, &capabilities, key_algorithm, &s.to_vec())?
+                        }
+                    }
+                },
+                openssl::pkey::Id::ED25519 => {
+                    let private_ed= PKey::private_key_from_raw_bytes(key_bytes, openssl::pkey::Id::ED25519).unwrap();
+                    let k = private_ed.raw_private_key().unwrap();
+                    let capabilities = get_ed_capabilities();
+                    match session {
+                        None => print_import_key_cmd(key_id, label, domains, capabilities),
+                        Some(session) => {
+                            key_id = session
+                                .import_ed_key(key_id, &label, &*domains, &capabilities, &k.to_vec())?
+                        }
+                    }
+                },
+                _ => println!("Unknown key type"),
             }
+            println!("\n  Imported asymmetric keypair with ID 0x{:04x} on the device", key_id);
         }
-        Err(err) => println!(, "error: {}", err),
+        Err(err) => {
+            let key_err = err;
+            println!("Not a key");
+            match openssl::x509::X509::from_der(&key_bytes) {
+                Ok(cert) => {
+                    println!("Found cert");
+                    println!("subjectname: {:?}", cert.subject_name());
+                    match session {
+                        None => {
+                            print!("  > yubihsm-shell -a put_opaque");
+                            print!(" -i {}", key_id);
+                            print!(" -l \"{}\"", label);
+                            print!(" -d ");
+                            domains.iter().for_each(|domain| print!("{},", domain));
+                            print!(" -c none");
+                            print!(" -A opaque-x509-certificate");
+                            print!(" --in <PATH_TO_FILE>");
+                            println!();
+                        },
+                        Some(session) => {
+                            key_id = session
+                                .import_cert(key_id, &label, &*domains, &cert.to_pem().unwrap())?;
+                            println!("\n  Imported X509Certificate with ID 0x{:04x} on the device", key_id)
+                        }
+                    }
+                },
+                Err(cert_err) => {
+                    println!("Error! Failed to find either private key or X509Certificate");
+                    println!("  {}", key_err);
+                    println!("  {}", cert_err);
+                }
+            }
+        },
     };
+    Ok(())
 }
-*/
+
