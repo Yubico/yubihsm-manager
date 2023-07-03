@@ -1,14 +1,17 @@
 extern crate yubihsmrs;
 
 use std::fmt::Display;
-use std::{fs, process};
+use std::{fmt, fs, process};
 use std::convert::TryFrom;
+use std::fs::File;
 use std::io::{stdin, stdout, Write};
 use std::num::IntErrorKind;
+use std::ops::Deref;
 use yubihsmrs::object::{ObjectDescriptor, ObjectDomain, ObjectHandle};
 use crossterm::{execute, cursor::{MoveTo}, cursor};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crossterm_input::{input, InputEvent};
+use crossterm_screen::RawScreen;
 use crossterm_utils::ErrorKind::ParseIntError;
 use yubihsmrs::{Session};
 use error::MgmError;
@@ -17,6 +20,19 @@ pub struct MultiSelectItem<T:Display> {
     pub item: T,
     pub selected:bool,
 }
+
+#[derive(Debug, Clone)]
+pub struct BasicDiscriptor {
+    pub object_id: u16,
+    pub object_label:String,
+}
+
+impl Display for BasicDiscriptor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "0x{:04x} : {}", self.object_id, self.object_label)
+    }
+}
+
 
 #[derive(Debug)]
 pub enum BooleanAnswer {
@@ -30,7 +46,7 @@ impl BooleanAnswer {
         match lowercase.as_ref() {
             "y" | "yes" => Ok(BooleanAnswer::Yes),
             "n" | "no" => Ok(BooleanAnswer::No),
-            _ => Err(MgmError::InvalidInput(String::from(value)))
+            _ => Err(MgmError::InvalidInput(value.to_string()))
         }
     }
 }
@@ -60,8 +76,8 @@ pub fn get_string(prompt: &str) -> String {
 
 pub fn get_string_or_default(prompt: &str, default_value: &str) -> String {
     let line = get_string(prompt);
-    if line == String::from("") {
-        String::from(default_value)
+    if line == *"" {
+        default_value.to_string()
     } else {
         line
     }
@@ -156,7 +172,7 @@ pub fn get_common_properties() -> (u16, String, Vec<ObjectDomain>) {
     (key_id, label, domains)
 }
 
-pub fn get_menu_option<T:Copy>(items: &[(String, T)]) -> T {
+pub fn get_menu_option<T:Clone>(items: &Vec<(String, T)>) -> T {
     for i in 0..items.len() {
         println!("  ({}) {}", i+1, items[i].0);
     }
@@ -164,7 +180,7 @@ pub fn get_menu_option<T:Copy>(items: &[(String, T)]) -> T {
     while choice < 1 || choice > u16::try_from(items.len()).unwrap() {
         choice = get_integer("Your choice: ");
     }
-    items[usize::try_from(choice-1).unwrap()].1
+    items[usize::try_from(choice-1).unwrap()].1.clone()
 }
 
 pub fn get_multiselect_options<T:Display>(items: &mut Vec<MultiSelectItem<T>>){
@@ -187,7 +203,8 @@ pub fn get_multiselect_options<T:Display>(items: &mut Vec<MultiSelectItem<T>>){
 
     stdout().flush().expect("Unable to flush stdout");
 
-    enable_raw_mode().expect("Unable to run in raw mode");
+    //enable_raw_mode().expect("Unable to run in raw mode");
+    let raw = RawScreen::into_raw_mode();
 
     //let input = input();
     let mut reader = input().read_sync();
@@ -240,7 +257,8 @@ pub fn get_multiselect_options<T:Display>(items: &mut Vec<MultiSelectItem<T>>){
 
     //execute!(stdout(), RestorePosition).unwrap();
     execute!(stdout(), MoveTo(current_x, current_y)).expect("Unable to restore cursor");
-    disable_raw_mode().unwrap();
+    //disable_raw_mode().unwrap();
+    drop(raw);
     stdout().flush().expect("Unable to flush stdout()");
 }
 
@@ -286,7 +304,7 @@ pub fn delete_objects(session: Option<&Session>, object_handles:Vec<ObjectHandle
 }
 
 pub fn read_file(prompt:&str) -> String {
-    let mut file_path = String::from("");
+    let mut file_path = "".to_string();
     while file_path == "" {
         file_path = get_string(prompt);
     }
@@ -297,4 +315,10 @@ pub fn read_file(prompt:&str) -> String {
             read_file(prompt)
         }
     }
+}
+
+pub fn write_file(content: Vec<u8>, filename:String) -> Result<(), MgmError> {
+    let mut file = File::create(filename)?;
+    file.write_all(content.deref())?;
+    Ok(())
 }

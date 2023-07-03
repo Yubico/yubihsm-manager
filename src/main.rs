@@ -8,6 +8,8 @@ extern crate crossterm_input;
 extern crate openssl;
 extern crate pem;
 extern crate crossterm_utils;
+extern crate crossterm_screen;
+extern crate serde;
 
 use std::fmt::format;
 use std::io::{Write, stdin, stdout};
@@ -125,7 +127,7 @@ fn main() -> Result<(), MgmError> {
     let open_session = !matches.is_present("no-auth");
 
     let mut authkey:u16 = 1;
-    let mut password:String = String::from("password");
+    let mut password:String = "password".to_string();
     if open_session {
         //let authkey = parse_id(matches.value_of("authkey").unwrap()).unwrap();
         authkey = match matches.value_of("authkey") {
@@ -177,7 +179,7 @@ fn main() -> Result<(), MgmError> {
         Some("asym") => asym_commands::exec_asym_command(session)?,
         Some("wrap") => asym_commands::exec_asym_command(session)?,
         Some("random") => asym_commands::exec_asym_command(session)?,
-        _ => return Err(MgmError::Error(String::from("Unrecognized subcommand"))),
+        _ => return Err(MgmError::Error("Unrecognized subcommand".to_string())),
     }
 
     println!("All done");

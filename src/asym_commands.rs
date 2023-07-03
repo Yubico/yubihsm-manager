@@ -1,11 +1,14 @@
+use std::io::{stdout, Write};
+use std::ptr::hash;
+use openssl::hash::{DigestBytes, MessageDigest};
 use openssl::nid::Nid;
 use openssl::pkey::PKey;
-use pem::Pem;
+use pem::{encode, parse, Pem};
 use crate::util::{get_string, get_domains, get_menu_option, get_multiselect_options, get_boolean_answer, get_selected_items, delete_objects, read_file}; // 0.17.1
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{get_common_properties, get_integer_or_default, get_string_or_default, MultiSelectItem};
+use util::{BasicDiscriptor, get_common_properties, get_integer_or_default, get_string_or_default, MultiSelectItem, write_file};
 
 
 #[derive(Debug, Clone, Copy)]
@@ -19,8 +22,8 @@ pub enum AsymCommands {
     PerformSignature,
     PerformRsaDecryption,
     DeriveEcdh,
-    GenerateJavaKey,
-    DeleteJavaKey,
+    ManageJavaKeys,
+    Exit,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -31,20 +34,45 @@ pub enum AsymKeyTypes {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub enum SignAlgorithm {
+    PKCS1,
+    PSS,
+    ECDSA,
+    EDDSA,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum HashAlgorithm {
+    SHA1,
+    SHA256,
+    SHA384,
+    SHA512,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum IdLabelOption {
     ALL,
     ByID,
     ByLabel,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum InputFormat {
+    STDIN,
+    BINARY,
+}
+
 
 pub fn exec_asym_command(session: Option<&Session>) -> Result<(), MgmError> {
+    stdout().flush().unwrap();
     let cmd = get_asym_command();
     match cmd {
         AsymCommands::ListKeys => asym_list_keys(session),
         AsymCommands::GenerateKey => asym_gen_key(session),
         AsymCommands::DeleteKey => asym_delete_key(session),
         AsymCommands::ImportKey => asym_import_key(session),
+        AsymCommands::PerformSignature => asym_sign(session),
+        AsymCommands::Exit => std::process::exit(0),
         _ => unreachable!()
     }
 }
@@ -52,39 +80,67 @@ pub fn exec_asym_command(session: Option<&Session>) -> Result<(), MgmError> {
 pub fn get_asym_command() -> AsymCommands {
     println!();
     let commands: [(String, AsymCommands);9] = [
-        (String::from("List keys"), AsymCommands::ListKeys),
-        (String::from("Generate key"), AsymCommands::GenerateKey),
-        (String::from("Import key"), AsymCommands::ImportKey),
-        (String::from("Delete key"), AsymCommands::DeleteKey),
-        (String::from("Perform signature"), AsymCommands::PerformSignature),
-        (String::from("Perform RSA decryption"), AsymCommands::PerformRsaDecryption),
-        (String::from("Derive ECDH"), AsymCommands::DeriveEcdh),
-        (String::from("Generate JAVA key (Usable with SunPKCS11 provider)"), AsymCommands::GenerateJavaKey),
-        (String::from("Delete JAVA key (Deletes an asymmetric key and the X509Certificate with the same ID)"), AsymCommands::DeleteJavaKey)];
-    get_menu_option(&commands)
+        ("List keys".to_string(), AsymCommands::ListKeys),
+        ("Generate key".to_string(), AsymCommands::GenerateKey),
+        ("Import key".to_string(), AsymCommands::ImportKey),
+        ("Delete key".to_string(), AsymCommands::DeleteKey),
+        ("Perform signature".to_string(), AsymCommands::PerformSignature),
+        ("Perform RSA decryption".to_string(), AsymCommands::PerformRsaDecryption),
+        ("Derive ECDH".to_string(), AsymCommands::DeriveEcdh),
+        ("Manage JAVA keys (Usable with SunPKCS11 provider)".to_string(), AsymCommands::ManageJavaKeys),
+        ("Exit".to_string(), AsymCommands::Exit)];
+    get_menu_option(&commands.to_vec())
 }
 
 pub fn get_asym_keytype() -> AsymKeyTypes {
     println!("\n  Choose key type:");
     let types: [(String, AsymKeyTypes);3] = [
-        (String::from("RSA"), AsymKeyTypes::RSA),
-        (String::from("EC"), AsymKeyTypes::EC),
-        (String::from("ED"), AsymKeyTypes::ED)];
-    get_menu_option(&types)
+        ("RSA".to_string(), AsymKeyTypes::RSA),
+        ("EC".to_string(), AsymKeyTypes::EC),
+        ("ED".to_string(), AsymKeyTypes::ED)];
+    get_menu_option(&types.to_vec())
+}
+
+fn get_sign_algo() -> SignAlgorithm {
+    println!("\n  Sign with:");
+    let algos: [(String, SignAlgorithm);4] = [
+        ("RSA-PKCS#1v1.5".to_string(), SignAlgorithm::PKCS1),
+        ("RSA-PSS".to_string(), SignAlgorithm::PSS),
+        ("ECDSA".to_string(), SignAlgorithm::ECDSA),
+        ("EDDSA".to_string(), SignAlgorithm::EDDSA),];
+    get_menu_option(&algos.to_vec())
+}
+
+fn get_hash_algorithm() -> HashAlgorithm {
+    println!("\n  Choose hash algorithm:");
+    let types: [(String, HashAlgorithm);4] = [
+        ("SHA1".to_string(), HashAlgorithm::SHA1),
+        ("SHA256".to_string(), HashAlgorithm::SHA256),
+        ("SHA384".to_string(), HashAlgorithm::SHA384),
+        ("SHA512".to_string(), HashAlgorithm::SHA512)];
+    get_menu_option(&types.to_vec())
+}
+
+fn get_input_format() -> InputFormat {
+    println!("\n  Choose input_format:");
+    let format: [(String, InputFormat);2] = [
+        ("Stdin".to_string(), InputFormat::STDIN),
+        ("Binary file".to_string(), InputFormat::BINARY)];
+    get_menu_option(&format.to_vec())
 }
 
 pub fn get_ec_algo() -> ObjectAlgorithm {
     println!("\n  Choose EC Curve:");
     let curves: [(String, ObjectAlgorithm);8] = [
-        (String::from("secp224r1"), ObjectAlgorithm::EcP224),
-        (String::from("secp256r1"), ObjectAlgorithm::EcP256),
-        (String::from("secp384r1"), ObjectAlgorithm::EcP384),
-        (String::from("secp521r1"), ObjectAlgorithm::EcP521),
-        (String::from("secp256k1"), ObjectAlgorithm::EcK256),
-        (String::from("brainpool256r1"), ObjectAlgorithm::EcBp256),
-        (String::from("brainpool384r1"), ObjectAlgorithm::EcBp384),
-        (String::from("brainpool512r1"), ObjectAlgorithm::EcBp512)];
-    get_menu_option(&curves)
+        ("secp224r1".to_string(), ObjectAlgorithm::EcP224),
+        ("secp256r1".to_string(), ObjectAlgorithm::EcP256),
+        ("secp384r1".to_string(), ObjectAlgorithm::EcP384),
+        ("secp521r1".to_string(), ObjectAlgorithm::EcP521),
+        ("secp256k1".to_string(), ObjectAlgorithm::EcK256),
+        ("brainpool256r1".to_string(), ObjectAlgorithm::EcBp256),
+        ("brainpool384r1".to_string(), ObjectAlgorithm::EcBp384),
+        ("brainpool512r1".to_string(), ObjectAlgorithm::EcBp512)];
+    get_menu_option(&curves.to_vec())
 }
 
 fn get_rsa_keylen() -> u32 {
@@ -97,29 +153,29 @@ fn get_rsa_keylen() -> u32 {
 }
 
 fn get_rsakey_capabilities() -> Vec<ObjectCapability> {
-    let mut capability_options: Vec<MultiSelectItem<ObjectCapability>> = Vec::new();
-    capability_options.push(MultiSelectItem{item: ObjectCapability::SignPkcs, selected: false});
-    capability_options.push(MultiSelectItem{item: ObjectCapability::SignPss, selected: false});
-    capability_options.push(MultiSelectItem{item: ObjectCapability::DecryptPkcs, selected: false});
-    capability_options.push(MultiSelectItem{item: ObjectCapability::DecryptOaep, selected: false});
-    capability_options.push(MultiSelectItem{item: ObjectCapability::ExportableUnderWrap, selected: false});
+    let mut capability_options: Vec<MultiSelectItem<ObjectCapability>> = vec![
+        MultiSelectItem{item: ObjectCapability::SignPkcs, selected: false},
+        MultiSelectItem{item: ObjectCapability::SignPss, selected: false},
+        MultiSelectItem{item: ObjectCapability::DecryptPkcs, selected: false},
+        MultiSelectItem{item: ObjectCapability::DecryptOaep, selected: false},
+        MultiSelectItem{item: ObjectCapability::ExportableUnderWrap, selected: false}];
     get_multiselect_options(&mut capability_options);
     get_selected_items(&capability_options)
 }
 
 fn get_ec_capabilities() -> Vec<ObjectCapability> {
-    let mut capability_options: Vec<MultiSelectItem<ObjectCapability>> = Vec::new();
-    capability_options.push(MultiSelectItem{item: ObjectCapability::SignEcdsa, selected: false});
-    capability_options.push(MultiSelectItem{item: ObjectCapability::DeriveEcdh, selected: false});
-    capability_options.push(MultiSelectItem{item: ObjectCapability::ExportableUnderWrap, selected: false});
+    let mut capability_options: Vec<MultiSelectItem<ObjectCapability>> = vec![
+        MultiSelectItem{item: ObjectCapability::SignEcdsa, selected: false},
+        MultiSelectItem{item: ObjectCapability::DeriveEcdh, selected: false},
+        MultiSelectItem{item: ObjectCapability::ExportableUnderWrap, selected: false}];
     get_multiselect_options(&mut capability_options);
     get_selected_items(&capability_options)
 }
 
 fn get_ed_capabilities() -> Vec<ObjectCapability> {
-    let mut capability_options: Vec<MultiSelectItem<ObjectCapability>> = Vec::new();
-    capability_options.push(MultiSelectItem{item: ObjectCapability::SignEddsa, selected: false});
-    capability_options.push(MultiSelectItem{item: ObjectCapability::ExportableUnderWrap, selected: false});
+    let mut capability_options: Vec<MultiSelectItem<ObjectCapability>> = vec![
+        MultiSelectItem{item: ObjectCapability::SignEddsa, selected: false},
+        MultiSelectItem{item: ObjectCapability::ExportableUnderWrap, selected: false}];
     get_multiselect_options(&mut capability_options);
     get_selected_items(&capability_options)
 }
@@ -187,8 +243,8 @@ fn asym_gen_key(session: Option<&Session>) -> Result<(), MgmError> {
 }
 
 fn get_objects_list(session:&Session, id:u16, label:String) -> Result<Vec<ObjectHandle>, MgmError> {
-    let mut found_objects = session.list_objects_with_filter(id, ObjectType::AsymmetricKey, &label, ObjectAlgorithm::ANY)?;
-    found_objects.extend(session.list_objects_with_filter(id, ObjectType::Opaque, &label, ObjectAlgorithm::OpaqueX509Certificate)?);
+    let mut found_objects = session.list_objects_with_filter(id, ObjectType::AsymmetricKey, &label, ObjectAlgorithm::ANY, &Vec::new())?;
+    found_objects.extend(session.list_objects_with_filter(id, ObjectType::Opaque, &label, ObjectAlgorithm::OpaqueX509Certificate, &Vec::new())?);
     Ok(found_objects)
 }
 
@@ -198,11 +254,11 @@ fn get_filtered_objects(session: Option<&Session>) -> Result<Vec<ObjectHandle>, 
         None => {},
         Some(session) => {
             println!("\n  List key by:");
-            let mut criterias: [(String, IdLabelOption);3] = [
+            let criterias: [(String, IdLabelOption);3] = [
                 (String::from("All"), IdLabelOption::ALL),
                 (String::from("Filter by object ID"), IdLabelOption::ByID),
                 (String::from("Filter by object Label"), IdLabelOption::ByLabel)];
-            let criteria = get_menu_option(&criterias);
+            let criteria = get_menu_option(&criterias.to_vec());
             println!();
 
             match criteria {
@@ -225,7 +281,7 @@ fn asym_list_keys(session: Option<&Session>) -> Result<(), MgmError> {
     match session {
         None => println!("\n  > yubihsm-shell -a list-objects -t asymmetric-key"),
         Some(s) => {
-            let mut key_handles:Vec<ObjectHandle> = get_filtered_objects(session)?;
+            let key_handles:Vec<ObjectHandle> = get_filtered_objects(session)?;
             println!("Found {} objects", key_handles.len());
             for object in key_handles {
                 println!("  {}", s.get_object_info(object.object_id, object.object_type)?);
@@ -373,3 +429,90 @@ fn asym_import_key(session:Option<&Session>) -> Result<(), MgmError>{
     Ok(())
 }
 
+fn get_hashed_bytes(hash_algo:HashAlgorithm, input:&[u8]) -> Result<Vec<u8>, MgmError> {
+    let digest:DigestBytes;
+    match hash_algo {
+        HashAlgorithm::SHA1 => digest = openssl::hash::hash(MessageDigest::sha1(), input)?,
+        HashAlgorithm::SHA256 => digest = openssl::hash::hash(MessageDigest::sha256(), input)?,
+        HashAlgorithm::SHA384 => digest = openssl::hash::hash(MessageDigest::sha384(), input)?,
+        HashAlgorithm::SHA512 => digest = openssl::hash::hash(MessageDigest::sha512(), input)?,
+    }
+    Ok(digest.to_vec())
+}
+
+fn get_mgf1_algorithm(hash_algo:HashAlgorithm) -> ObjectAlgorithm {
+    match hash_algo {
+        HashAlgorithm::SHA1 => ObjectAlgorithm::Mgf1Sha1,
+        HashAlgorithm::SHA256 => ObjectAlgorithm::Mgf1Sha256,
+        HashAlgorithm::SHA384 => ObjectAlgorithm::Mgf1Sha384,
+        HashAlgorithm::SHA512 => ObjectAlgorithm::Mgf1Sha512,
+    }
+}
+
+
+fn get_signdec_key(session:&Session, capability:ObjectCapability) -> Result<BasicDiscriptor, MgmError> {
+    println!("\n  Choose signing or decryption key: ");
+    let sign_capabilities: [ObjectCapability;1] = [capability];
+    let key_handles = session.list_objects_with_filter(0, ObjectType::AsymmetricKey, "", ObjectAlgorithm::ANY, &sign_capabilities.to_vec())?;
+    let mut key_options:Vec<(String, BasicDiscriptor)> = Vec::new();
+    for handle in key_handles {
+        let key = session.get_object_info(handle.object_id, handle.object_type)?;
+        let option = BasicDiscriptor { object_id: key.id, object_label: key.label };
+        key_options.push((option.to_string(), option));
+    }
+    let chosen = get_menu_option(&key_options);
+    Ok(chosen)
+}
+
+
+
+fn asym_sign(session: Option<&Session>) -> Result<(), MgmError> {
+
+    match session {
+        None => println!("No session available"),
+        Some(s) => {
+            let mut input_str = "".to_string();
+
+            match get_input_format() {
+                InputFormat::STDIN => {
+                    input_str = get_string("\nData to sign: ");
+                },
+                InputFormat::BINARY => {
+                    input_str = read_file("\nAbsolute path to file containing data to sign: ");
+                }
+            }
+
+            let signed_data:Vec<u8>;
+            match get_sign_algo() {
+                SignAlgorithm::PKCS1 => {
+                    let hash_algo = get_hash_algorithm();
+                    let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
+                    let signing_key = get_signdec_key(s, ObjectCapability::SignPkcs)?;
+                    signed_data = s.sign_pkcs1v1_5(signing_key.object_id, true, hashed_bytes.as_slice())?;
+                },
+                SignAlgorithm::PSS => {
+                    let hash_algo = get_hash_algorithm();
+                    let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
+                    let mgf1_algo = get_mgf1_algorithm(hash_algo);
+                    let signing_key = get_signdec_key(s, ObjectCapability::SignPss)?;
+                    signed_data = s.sign_pss(signing_key.object_id, hashed_bytes.len(), mgf1_algo, hashed_bytes.as_slice())?;
+                },
+                SignAlgorithm::ECDSA => {
+                    let hash_algo = get_hash_algorithm();
+                    let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
+                    let signing_key = get_signdec_key(s, ObjectCapability::SignEcdsa)?;
+                    signed_data = s.sign_ecdsa(signing_key.object_id, hashed_bytes.as_slice())?;
+                },
+                SignAlgorithm::EDDSA => {
+                    let hash_algo = get_hash_algorithm();
+                    let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
+                    let signing_key = get_signdec_key(s, ObjectCapability::SignEddsa)?;
+                    signed_data = s.sign_eddsa(signing_key.object_id, hashed_bytes.as_slice())?;
+                },
+            }
+
+            write_file(signed_data, "data.sig".to_string())?;
+        }
+    }
+    Ok(())
+}
