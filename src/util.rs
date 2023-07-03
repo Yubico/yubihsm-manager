@@ -7,12 +7,11 @@ use std::fs::File;
 use std::io::{stdin, stdout, Write};
 use std::num::IntErrorKind;
 use std::ops::Deref;
-use yubihsmrs::object::{ObjectDescriptor, ObjectDomain, ObjectHandle};
+use yubihsmrs::object::{ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use crossterm::{execute, cursor::{MoveTo}, cursor};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size};
 use crossterm_input::{input, InputEvent};
 use crossterm_screen::RawScreen;
-use crossterm_utils::ErrorKind::ParseIntError;
 use yubihsmrs::{Session};
 use error::MgmError;
 
@@ -136,7 +135,7 @@ pub fn parse_id(value: &str) -> Result<u16, String> {
 
 pub fn get_boolean_answer(prompt: &str) -> BooleanAnswer {
     loop {
-        print!("{} (y/n) ", prompt);
+        print!("  {} (y/n) ", prompt);
         stdout().flush().expect("Unable to flush stdout");
         match BooleanAnswer::from_str(&read_line_or_die()) {
             Ok(a) => break a,
@@ -183,14 +182,18 @@ pub fn get_menu_option<T:Clone>(items: &Vec<(String, T)>) -> T {
     items[usize::try_from(choice-1).unwrap()].1.clone()
 }
 
-pub fn get_multiselect_options<T:Display>(items: &mut Vec<MultiSelectItem<T>>){
+pub fn get_selected_items<T:Display+Clone>(items: &mut Vec<MultiSelectItem<T>>) -> Vec<T>{
     // Get the number of capabilities
     let items_len = u16::try_from(items.len()).unwrap();
-
+    let item_str_length = usize::try_from(size().expect("Unable to read terminal size").0).unwrap()-40;
     // Print out the options
     println!("\n  Click space to select and unselect. Click 'Enter' when done.");
     for item in &mut *items {
-        println!("  [ ] {}", item.item);
+        if item.item.to_string().len() > item_str_length {
+            println!("  [ ] {}...", item.item.to_string().split_at(item_str_length).0);
+        } else {
+            println!("  [ ] {}", item.item);
+        }
     }
 
     // Use these coordinates to restore position afterwards instead of the restore function because
@@ -203,8 +206,8 @@ pub fn get_multiselect_options<T:Display>(items: &mut Vec<MultiSelectItem<T>>){
 
     stdout().flush().expect("Unable to flush stdout");
 
-    //enable_raw_mode().expect("Unable to run in raw mode");
-    let raw = RawScreen::into_raw_mode();
+    enable_raw_mode().expect("Unable to run in raw mode");
+    //let raw = RawScreen::into_raw_mode();
 
     //let input = input();
     let mut reader = input().read_sync();
@@ -257,16 +260,14 @@ pub fn get_multiselect_options<T:Display>(items: &mut Vec<MultiSelectItem<T>>){
 
     //execute!(stdout(), RestorePosition).unwrap();
     execute!(stdout(), MoveTo(current_x, current_y)).expect("Unable to restore cursor");
-    //disable_raw_mode().unwrap();
-    drop(raw);
+    disable_raw_mode().unwrap();
+    //drop(raw);
     stdout().flush().expect("Unable to flush stdout()");
-}
 
-pub fn get_selected_items<T:Copy+Display>(items: &Vec<MultiSelectItem<T>>) -> Vec<T>{
     let mut selected_items: Vec<T> = Vec::new();
     for c in items {
         if c.selected {
-            selected_items.push(c.item);
+            selected_items.push(c.item.clone());
         }
     }
     selected_items
@@ -290,12 +291,11 @@ pub fn delete_objects(session: Option<&Session>, object_handles:Vec<ObjectHandle
                 for h in object_handles {
                     objects_options.push(MultiSelectItem{item: session.get_object_info(h.object_id, h.object_type)?, selected: false});
                 }
-                get_multiselect_options(&mut objects_options);
-                for object in objects_options {
-                    if object.selected {
-                        session.delete_object(object.item.id, object.item.object_type)?;
-                        println!("Deleted {} with id 0x{:x}", object.item.object_type,  object.item.id);
-                    }
+
+                let delete_objects = get_selected_items(&mut objects_options);
+                for object in delete_objects {
+                    session.delete_object(object.id, object.object_type)?;
+                    println!("Deleted {} with id 0x{:04x}", object.object_type,  object.id);
                 }
             }
         }
@@ -321,4 +321,13 @@ pub fn write_file(content: Vec<u8>, filename:String) -> Result<(), MgmError> {
     let mut file = File::create(filename)?;
     file.write_all(content.deref())?;
     Ok(())
+}
+
+pub fn print_object_properties(session: &Session, object_type:ObjectType) {
+    let key_id: u16 = get_integer("Enter key ID: ");
+    let object = session.get_object_info(key_id, object_type);
+    match object {
+        Ok(obj) => println!("{}", obj.to_string().replacen("\t", "\n", 10)),
+        Err(err) => println!("{}", err),
+    }
 }

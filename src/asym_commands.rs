@@ -1,24 +1,21 @@
 use std::io::{stdout, Write};
-use std::ptr::hash;
 use openssl::hash::{DigestBytes, MessageDigest};
 use openssl::nid::Nid;
 use openssl::pkey::PKey;
-use pem::{encode, parse, Pem};
-use crate::util::{get_string, get_domains, get_menu_option, get_multiselect_options, get_boolean_answer, get_selected_items, delete_objects, read_file}; // 0.17.1
+use crate::util::{get_string, get_menu_option, get_boolean_answer, get_selected_items, delete_objects, read_file}; // 0.17.1
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{BasicDiscriptor, get_common_properties, get_integer_or_default, get_string_or_default, MultiSelectItem, write_file};
+use util::{BasicDiscriptor, get_common_properties, get_integer_or_default, get_string_or_default, MultiSelectItem, print_object_properties, write_file};
 
 
 #[derive(Debug, Clone, Copy)]
-pub enum AsymCommands {
+enum AsymCommands {
     ListKeys,
     GetKeyProperties,
     GenerateKey,
-    DeleteKey,
-    DeleteCert,
     ImportKey,
+    DeleteKey,
     PerformSignature,
     PerformRsaDecryption,
     DeriveEcdh,
@@ -27,14 +24,14 @@ pub enum AsymCommands {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum AsymKeyTypes {
+enum AsymKeyTypes {
     RSA,
     EC,
     ED,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum SignAlgorithm {
+enum SignAlgorithm {
     PKCS1,
     PSS,
     ECDSA,
@@ -50,7 +47,7 @@ enum HashAlgorithm {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum IdLabelOption {
+enum IdLabelOption {
     ALL,
     ByID,
     ByLabel,
@@ -68,19 +65,21 @@ pub fn exec_asym_command(session: Option<&Session>) -> Result<(), MgmError> {
     let cmd = get_asym_command();
     match cmd {
         AsymCommands::ListKeys => asym_list_keys(session),
+        AsymCommands::GetKeyProperties => asym_get_key_properties(session),
         AsymCommands::GenerateKey => asym_gen_key(session),
-        AsymCommands::DeleteKey => asym_delete_key(session),
         AsymCommands::ImportKey => asym_import_key(session),
+        AsymCommands::DeleteKey => asym_delete_key(session),
         AsymCommands::PerformSignature => asym_sign(session),
         AsymCommands::Exit => std::process::exit(0),
         _ => unreachable!()
     }
 }
 
-pub fn get_asym_command() -> AsymCommands {
+fn get_asym_command() -> AsymCommands {
     println!();
-    let commands: [(String, AsymCommands);9] = [
+    let commands: [(String, AsymCommands);10] = [
         ("List keys".to_string(), AsymCommands::ListKeys),
+        ("Get key properties".to_string(), AsymCommands::GetKeyProperties),
         ("Generate key".to_string(), AsymCommands::GenerateKey),
         ("Import key".to_string(), AsymCommands::ImportKey),
         ("Delete key".to_string(), AsymCommands::DeleteKey),
@@ -92,7 +91,7 @@ pub fn get_asym_command() -> AsymCommands {
     get_menu_option(&commands.to_vec())
 }
 
-pub fn get_asym_keytype() -> AsymKeyTypes {
+fn get_asym_keytype() -> AsymKeyTypes {
     println!("\n  Choose key type:");
     let types: [(String, AsymKeyTypes);3] = [
         ("RSA".to_string(), AsymKeyTypes::RSA),
@@ -129,7 +128,7 @@ fn get_input_format() -> InputFormat {
     get_menu_option(&format.to_vec())
 }
 
-pub fn get_ec_algo() -> ObjectAlgorithm {
+fn get_ec_algo() -> ObjectAlgorithm {
     println!("\n  Choose EC Curve:");
     let curves: [(String, ObjectAlgorithm);8] = [
         ("secp224r1".to_string(), ObjectAlgorithm::EcP224),
@@ -159,8 +158,7 @@ fn get_rsakey_capabilities() -> Vec<ObjectCapability> {
         MultiSelectItem{item: ObjectCapability::DecryptPkcs, selected: false},
         MultiSelectItem{item: ObjectCapability::DecryptOaep, selected: false},
         MultiSelectItem{item: ObjectCapability::ExportableUnderWrap, selected: false}];
-    get_multiselect_options(&mut capability_options);
-    get_selected_items(&capability_options)
+    get_selected_items(&mut capability_options)
 }
 
 fn get_ec_capabilities() -> Vec<ObjectCapability> {
@@ -168,16 +166,14 @@ fn get_ec_capabilities() -> Vec<ObjectCapability> {
         MultiSelectItem{item: ObjectCapability::SignEcdsa, selected: false},
         MultiSelectItem{item: ObjectCapability::DeriveEcdh, selected: false},
         MultiSelectItem{item: ObjectCapability::ExportableUnderWrap, selected: false}];
-    get_multiselect_options(&mut capability_options);
-    get_selected_items(&capability_options)
+    get_selected_items(&mut capability_options)
 }
 
 fn get_ed_capabilities() -> Vec<ObjectCapability> {
     let mut capability_options: Vec<MultiSelectItem<ObjectCapability>> = vec![
         MultiSelectItem{item: ObjectCapability::SignEddsa, selected: false},
         MultiSelectItem{item: ObjectCapability::ExportableUnderWrap, selected: false}];
-    get_multiselect_options(&mut capability_options);
-    get_selected_items(&capability_options)
+    get_selected_items(&mut capability_options)
 }
 
 fn asym_gen_key(session: Option<&Session>) -> Result<(), MgmError> {
@@ -240,60 +236,6 @@ fn asym_gen_key(session: Option<&Session>) -> Result<(), MgmError> {
         }
     }
     Ok(())
-}
-
-fn get_objects_list(session:&Session, id:u16, label:String) -> Result<Vec<ObjectHandle>, MgmError> {
-    let mut found_objects = session.list_objects_with_filter(id, ObjectType::AsymmetricKey, &label, ObjectAlgorithm::ANY, &Vec::new())?;
-    found_objects.extend(session.list_objects_with_filter(id, ObjectType::Opaque, &label, ObjectAlgorithm::OpaqueX509Certificate, &Vec::new())?);
-    Ok(found_objects)
-}
-
-fn get_filtered_objects(session: Option<&Session>) -> Result<Vec<ObjectHandle>, MgmError> {
-    let mut key_handles:Vec<ObjectHandle> = Vec::new();
-    match session {
-        None => {},
-        Some(session) => {
-            println!("\n  List key by:");
-            let criterias: [(String, IdLabelOption);3] = [
-                (String::from("All"), IdLabelOption::ALL),
-                (String::from("Filter by object ID"), IdLabelOption::ByID),
-                (String::from("Filter by object Label"), IdLabelOption::ByLabel)];
-            let criteria = get_menu_option(&criterias.to_vec());
-            println!();
-
-            match criteria {
-                IdLabelOption::ALL => key_handles = get_objects_list(session, 0, String::from(""))?,
-                IdLabelOption::ByID => {
-                    let key_id: u16 = get_integer_or_default("Enter key ID [Default 0]: ", 0);
-                    key_handles = get_objects_list(session, key_id, String::from(""))?;
-                },
-                IdLabelOption::ByLabel => {
-                    let label = get_string_or_default("Enter key label [Default empty]: ", "");
-                    key_handles = get_objects_list(session, 0, label)?;
-                },
-            }
-        }
-    }
-    Ok(key_handles)
-}
-
-fn asym_list_keys(session: Option<&Session>) -> Result<(), MgmError> {
-    match session {
-        None => println!("\n  > yubihsm-shell -a list-objects -t asymmetric-key"),
-        Some(s) => {
-            let key_handles:Vec<ObjectHandle> = get_filtered_objects(session)?;
-            println!("Found {} objects", key_handles.len());
-            for object in key_handles {
-                println!("  {}", s.get_object_info(object.object_id, object.object_type)?);
-            }
-        }
-    }
-    Ok(())
-}
-
-fn asym_delete_key(session: Option<&Session>) -> Result<(), MgmError>{
-    let keys = get_filtered_objects(session)?;
-    delete_objects(session, keys)
 }
 
 fn print_import_key_cmd(key_id:u16, label:String, domains:Vec<ObjectDomain>, capabilities:Vec<ObjectCapability>) {
@@ -427,6 +369,75 @@ fn asym_import_key(session:Option<&Session>) -> Result<(), MgmError>{
         },
     };
     Ok(())
+}
+
+fn get_objects_list(session:&Session, id:u16, label:String) -> Result<Vec<ObjectHandle>, MgmError> {
+    let mut found_objects = session.list_objects_with_filter(id, ObjectType::AsymmetricKey, &label, ObjectAlgorithm::ANY, &Vec::new())?;
+    found_objects.extend(session.list_objects_with_filter(id, ObjectType::Opaque, &label, ObjectAlgorithm::OpaqueX509Certificate, &Vec::new())?);
+    Ok(found_objects)
+}
+
+fn get_filtered_objects(session: Option<&Session>) -> Result<Vec<ObjectHandle>, MgmError> {
+    let mut key_handles:Vec<ObjectHandle> = Vec::new();
+    match session {
+        None => {},
+        Some(session) => {
+            println!("\n  List key by:");
+            let criterias: [(String, IdLabelOption);3] = [
+                (String::from("All"), IdLabelOption::ALL),
+                (String::from("Filter by object ID"), IdLabelOption::ByID),
+                (String::from("Filter by object Label"), IdLabelOption::ByLabel)];
+            let criteria = get_menu_option(&criterias.to_vec());
+            println!();
+
+            match criteria {
+                IdLabelOption::ALL => key_handles = get_objects_list(session, 0, String::from(""))?,
+                IdLabelOption::ByID => {
+                    let key_id: u16 = get_integer_or_default("Enter key ID [Default 0]: ", 0);
+                    key_handles = get_objects_list(session, key_id, String::from(""))?;
+                },
+                IdLabelOption::ByLabel => {
+                    let label = get_string_or_default("Enter key label [Default empty]: ", "");
+                    key_handles = get_objects_list(session, 0, label)?;
+                },
+            }
+        }
+    }
+    Ok(key_handles)
+}
+
+fn asym_list_keys(session: Option<&Session>) -> Result<(), MgmError> {
+    match session {
+        None => println!("\n  > yubihsm-shell -a list-objects -t asymmetric-key"),
+        Some(s) => {
+            let key_handles:Vec<ObjectHandle> = get_filtered_objects(session)?;
+            println!("Found {} objects", key_handles.len());
+            for object in key_handles {
+                println!("  {}", s.get_object_info(object.object_id, object.object_type)?);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn asym_get_key_properties(session: Option<&Session>) -> Result<(), MgmError>{
+    match session {
+        None => println!("No session available"),
+        Some(s) => {
+            println!();
+            if bool::from(get_boolean_answer("Is certificate?")) {
+                print_object_properties(s, ObjectType::Opaque);
+            } else {
+                print_object_properties(s, ObjectType::AsymmetricKey);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn asym_delete_key(session: Option<&Session>) -> Result<(), MgmError>{
+    let keys = get_filtered_objects(session)?;
+    delete_objects(session, keys)
 }
 
 fn get_hashed_bytes(hash_algo:HashAlgorithm, input:&[u8]) -> Result<Vec<u8>, MgmError> {
