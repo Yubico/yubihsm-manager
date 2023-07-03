@@ -6,12 +6,17 @@ extern crate clap;
 extern crate yubihsmrs;
 extern crate crossterm_input;
 extern crate openssl;
+extern crate pem;
+extern crate crossterm_utils;
 
+use std::fmt::format;
 use std::io::{Write, stdin, stdout};
 use clap::{App, AppSettings, Arg, SubCommand};
 use yubihsmrs::{Session, YubiHsm};
-use util::{get_integer, get_string, parse_id};
+use error::MgmError;
+use util::{get_integer_or_default, get_string, get_string_or_default, parse_id};
 
+pub mod error;
 pub mod util;
 pub mod asym_commands;
 
@@ -70,7 +75,7 @@ fn get_session_option(open_session:bool, authkey:u16, password:String) -> Option
     session
 }
 
-fn main() -> Result<(), yubihsmrs::error::Error> {
+fn main() -> Result<(), MgmError> {
 
     let matches = App::new(env!("CARGO_PKG_NAME"))
         .version(crate_version!())
@@ -125,11 +130,11 @@ fn main() -> Result<(), yubihsmrs::error::Error> {
         //let authkey = parse_id(matches.value_of("authkey").unwrap()).unwrap();
         authkey = match matches.value_of("authkey") {
             Some(authkey) => parse_id(matches.value_of("authkey").unwrap()).unwrap(),
-            None => get_integer("Login with authentication key ID [default 1]: ", true, 1),
+            None => get_integer_or_default("Login with authentication key ID [default 1]: ", 1),
         };
         password = match matches.value_of("password") {
             Some(password) => password.to_owned(),
-            None => get_string("Enter authentication password [default 'password']: ", "password"),
+            None => get_string_or_default("Enter authentication password [default 'password']: ", "password"),
         };
         println!("Using authentication key 0x{:04x}", authkey);
     }
@@ -172,7 +177,7 @@ fn main() -> Result<(), yubihsmrs::error::Error> {
         Some("asym") => asym_commands::exec_asym_command(session)?,
         Some("wrap") => asym_commands::exec_asym_command(session)?,
         Some("random") => asym_commands::exec_asym_command(session)?,
-        _ => unreachable!(),
+        _ => return Err(MgmError::Error(String::from("Unrecognized subcommand"))),
     }
 
     println!("All done");

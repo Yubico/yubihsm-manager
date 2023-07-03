@@ -1,9 +1,11 @@
 use openssl::nid::Nid;
 use openssl::pkey::PKey;
-use crate::util::{get_integer, get_string, get_domains, get_menu_option, get_multiselect_options, get_boolean_answer, get_selected_items, delete_objects, read_file}; // 0.17.1
+use pem::Pem;
+use crate::util::{get_string, get_domains, get_menu_option, get_multiselect_options, get_boolean_answer, get_selected_items, delete_objects, read_file}; // 0.17.1
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
-use util::get_common_properties;
+use error::MgmError;
+use util::{get_common_properties, get_integer_or_default, get_string_or_default, MultiSelectItem};
 
 
 #[derive(Debug, Clone, Copy)]
@@ -36,7 +38,7 @@ pub enum IdLabelOption {
 }
 
 
-pub fn exec_asym_command(session: Option<&Session>) -> Result<(), yubihsmrs::error::Error> {
+pub fn exec_asym_command(session: Option<&Session>) -> Result<(), MgmError> {
     let cmd = get_asym_command();
     match cmd {
         AsymCommands::ListKeys => asym_list_keys(session),
@@ -49,7 +51,7 @@ pub fn exec_asym_command(session: Option<&Session>) -> Result<(), yubihsmrs::err
 
 pub fn get_asym_command() -> AsymCommands {
     println!();
-    let mut commands: [(String, AsymCommands);9] = [
+    let commands: [(String, AsymCommands);9] = [
         (String::from("List keys"), AsymCommands::ListKeys),
         (String::from("Generate key"), AsymCommands::GenerateKey),
         (String::from("Import key"), AsymCommands::ImportKey),
@@ -64,7 +66,7 @@ pub fn get_asym_command() -> AsymCommands {
 
 pub fn get_asym_keytype() -> AsymKeyTypes {
     println!("\n  Choose key type:");
-    let mut types: [(String, AsymKeyTypes);3] = [
+    let types: [(String, AsymKeyTypes);3] = [
         (String::from("RSA"), AsymKeyTypes::RSA),
         (String::from("EC"), AsymKeyTypes::EC),
         (String::from("ED"), AsymKeyTypes::ED)];
@@ -73,7 +75,7 @@ pub fn get_asym_keytype() -> AsymKeyTypes {
 
 pub fn get_ec_algo() -> ObjectAlgorithm {
     println!("\n  Choose EC Curve:");
-    let mut curves: [(String, ObjectAlgorithm);8] = [
+    let curves: [(String, ObjectAlgorithm);8] = [
         (String::from("secp224r1"), ObjectAlgorithm::EcP224),
         (String::from("secp256r1"), ObjectAlgorithm::EcP256),
         (String::from("secp384r1"), ObjectAlgorithm::EcP384),
@@ -89,48 +91,47 @@ fn get_rsa_keylen() -> u32 {
     let accepted_len = vec![2048, 3072, 4096];
     let mut key_len:u32 = 0;
     while !accepted_len.contains(&key_len){
-        key_len = get_integer("Enter key length [2048, 3072, 4096] [defualt 2048]: ", true, 2048);
+        key_len = get_integer_or_default("Enter key length [2048, 3072, 4096] [defualt 2048]: ", 2048);
     }
     key_len
 }
 
 fn get_rsakey_capabilities() -> Vec<ObjectCapability> {
-    let mut capability_options: Vec<(ObjectCapability, bool)> = Vec::new();
-    capability_options.push((ObjectCapability::SignPkcs, false));
-    capability_options.push((ObjectCapability::SignPss, false));
-    capability_options.push((ObjectCapability::DecryptPkcs, false));
-    capability_options.push((ObjectCapability::DecryptOaep, false));
-    capability_options.push((ObjectCapability::ExportableUnderWrap, false));
+    let mut capability_options: Vec<MultiSelectItem<ObjectCapability>> = Vec::new();
+    capability_options.push(MultiSelectItem{item: ObjectCapability::SignPkcs, selected: false});
+    capability_options.push(MultiSelectItem{item: ObjectCapability::SignPss, selected: false});
+    capability_options.push(MultiSelectItem{item: ObjectCapability::DecryptPkcs, selected: false});
+    capability_options.push(MultiSelectItem{item: ObjectCapability::DecryptOaep, selected: false});
+    capability_options.push(MultiSelectItem{item: ObjectCapability::ExportableUnderWrap, selected: false});
     get_multiselect_options(&mut capability_options);
     get_selected_items(&capability_options)
 }
 
 fn get_ec_capabilities() -> Vec<ObjectCapability> {
-    let mut capability_options: Vec<(ObjectCapability, bool)> = Vec::new();
-    capability_options.push((ObjectCapability::SignEcdsa, false));
-    capability_options.push((ObjectCapability::DeriveEcdh, false));
-    capability_options.push((ObjectCapability::ExportableUnderWrap, false));
+    let mut capability_options: Vec<MultiSelectItem<ObjectCapability>> = Vec::new();
+    capability_options.push(MultiSelectItem{item: ObjectCapability::SignEcdsa, selected: false});
+    capability_options.push(MultiSelectItem{item: ObjectCapability::DeriveEcdh, selected: false});
+    capability_options.push(MultiSelectItem{item: ObjectCapability::ExportableUnderWrap, selected: false});
     get_multiselect_options(&mut capability_options);
     get_selected_items(&capability_options)
 }
 
 fn get_ed_capabilities() -> Vec<ObjectCapability> {
-    let mut capability_options: Vec<(ObjectCapability, bool)> = Vec::new();
-    capability_options.push((ObjectCapability::SignEddsa, false));
-    capability_options.push((ObjectCapability::ExportableUnderWrap, false));
+    let mut capability_options: Vec<MultiSelectItem<ObjectCapability>> = Vec::new();
+    capability_options.push(MultiSelectItem{item: ObjectCapability::SignEddsa, selected: false});
+    capability_options.push(MultiSelectItem{item: ObjectCapability::ExportableUnderWrap, selected: false});
     get_multiselect_options(&mut capability_options);
     get_selected_items(&capability_options)
 }
 
-fn asym_gen_key(session: Option<&Session>) -> Result<(), yubihsmrs::error::Error> {
+fn asym_gen_key(session: Option<&Session>) -> Result<(), MgmError> {
     println!();
-    let (mut key_id, label, domains) = get_common_properties();
+    let (key_id, label, domains) = get_common_properties();
 
-    let mut key_algorithm:ObjectAlgorithm = ObjectAlgorithm::RsaPkcs1Sha1;
+    let mut key_algorithm:ObjectAlgorithm = ObjectAlgorithm::ANY;
     let mut capabilities:Vec<ObjectCapability> = Vec::new();
 
-    let key_type = get_asym_keytype();
-    match key_type {
+    match get_asym_keytype() {
         AsymKeyTypes::RSA => {
             let key_len = get_rsa_keylen();
             key_algorithm = match key_len {
@@ -151,7 +152,7 @@ fn asym_gen_key(session: Option<&Session>) -> Result<(), yubihsmrs::error::Error
         }
     };
 
-    println!("\n  Generating RSA key with:");
+    println!("\n  Generating asymmetric key with:");
     println!("    Key algorithm: {}", key_algorithm);
     println!("    Label: {}", label);
     println!("    Key ID: {}", key_id);
@@ -185,30 +186,13 @@ fn asym_gen_key(session: Option<&Session>) -> Result<(), yubihsmrs::error::Error
     Ok(())
 }
 
-fn print_descriptor(desc:&ObjectDescriptor) {
-    print!("id: 0x{:04x?}\t", desc.id);
-    print!("label: {:40}\t", desc.label);
-    print!("algo: {:10}\t", desc.algorithm);
-    print!("seq: {:2}\t", desc.sequence);
-    print!("origin: {:10?}\t", desc.origin);
-    //print!(, "domains: ");
-    let mut dom_str = String::new().to_owned();
-    //desc.domains.iter().for_each(|domain| print!(, "{},", domain).unwrap());
-    desc.domains.iter().for_each(|domain| dom_str.push_str(format!("{},", domain).as_str()));
-    //desc.domains.iter().for_each(|domain| dom_str.push_str(&*domain.to_string()+","));
-    print!("domains: {:20}\t", dom_str);
-    print!("\tcapabilities: ");
-    desc.capabilities.iter().for_each(|cap| print!("{:?}, ", cap));
-    println!();
-}
-
-fn get_objects_list(session:&Session, id:u16, label:String) -> Result<Vec<ObjectHandle>, yubihsmrs::error::Error> {
+fn get_objects_list(session:&Session, id:u16, label:String) -> Result<Vec<ObjectHandle>, MgmError> {
     let mut found_objects = session.list_objects_with_filter(id, ObjectType::AsymmetricKey, &label, ObjectAlgorithm::ANY)?;
     found_objects.extend(session.list_objects_with_filter(id, ObjectType::Opaque, &label, ObjectAlgorithm::OpaqueX509Certificate)?);
     Ok(found_objects)
 }
 
-fn get_filtered_objects(session: Option<&Session>) -> Result<Vec<ObjectHandle>,yubihsmrs::error::Error> {
+fn get_filtered_objects(session: Option<&Session>) -> Result<Vec<ObjectHandle>, MgmError> {
     let mut key_handles:Vec<ObjectHandle> = Vec::new();
     match session {
         None => {},
@@ -224,11 +208,11 @@ fn get_filtered_objects(session: Option<&Session>) -> Result<Vec<ObjectHandle>,y
             match criteria {
                 IdLabelOption::ALL => key_handles = get_objects_list(session, 0, String::from(""))?,
                 IdLabelOption::ByID => {
-                    let mut key_id: u16 = get_integer("Enter key ID [Default 0]: ", true, 0);
+                    let key_id: u16 = get_integer_or_default("Enter key ID [Default 0]: ", 0);
                     key_handles = get_objects_list(session, key_id, String::from(""))?;
                 },
                 IdLabelOption::ByLabel => {
-                    let label = get_string("Enter key label [Default empty]: ", "");
+                    let label = get_string_or_default("Enter key label [Default empty]: ", "");
                     key_handles = get_objects_list(session, 0, label)?;
                 },
             }
@@ -237,23 +221,22 @@ fn get_filtered_objects(session: Option<&Session>) -> Result<Vec<ObjectHandle>,y
     Ok(key_handles)
 }
 
-fn asym_list_keys(session: Option<&Session>) -> Result<(), yubihsmrs::error::Error> {
+fn asym_list_keys(session: Option<&Session>) -> Result<(), MgmError> {
     match session {
         None => println!("\n  > yubihsm-shell -a list-objects -t asymmetric-key"),
         Some(s) => {
             let mut key_handles:Vec<ObjectHandle> = get_filtered_objects(session)?;
             println!("Found {} objects", key_handles.len());
-            for h in key_handles {
-                let desc = s.get_object_info(h.object_id, h.object_type).unwrap();
-                print_descriptor(&desc);
+            for object in key_handles {
+                println!("  {}", s.get_object_info(object.object_id, object.object_type)?);
             }
         }
     }
     Ok(())
 }
 
-fn asym_delete_key(session: Option<&Session>) -> Result<(), yubihsmrs::error::Error>{
-    let mut keys = get_filtered_objects(session)?;
+fn asym_delete_key(session: Option<&Session>) -> Result<(), MgmError>{
+    let keys = get_filtered_objects(session)?;
     delete_objects(session, keys)
 }
 
@@ -269,15 +252,16 @@ fn print_import_key_cmd(key_id:u16, label:String, domains:Vec<ObjectDomain>, cap
     println!();
 }
 
-fn asym_import_key(session:Option<&Session>) -> Result<(), yubihsmrs::error::Error>{
+fn asym_import_key(session:Option<&Session>) -> Result<(), MgmError>{
     println!();
     let (mut key_id, label, domains) = get_common_properties();
 
-    let key_str = read_file();
-    let pem = pem::parse(key_str).unwrap_or_else(|err| {
-        println!("Unable to parse PEM content: {}", err);
-        std::process::exit(1);
-    });
+    let mut pem = pem::parse(read_file("Enter absolute path to PEM file: "));
+    while pem.is_err() {
+        println!("Unable to parse PEM content: {}", pem.err().unwrap());
+        pem = pem::parse(read_file("Enter absolute path to PEM file: "));
+    }
+    let pem = pem.unwrap();
     let key_bytes = pem.contents();
 
     match openssl::pkey::PKey::private_key_from_der(&key_bytes) {
@@ -285,17 +269,17 @@ fn asym_import_key(session:Option<&Session>) -> Result<(), yubihsmrs::error::Err
             match key.id() {
                 openssl::pkey::Id::RSA => {
                     println!("RSA key");
-                    let private_rsa = key.rsa().unwrap();
-                    let p = private_rsa.p().unwrap();
-                    let q = private_rsa.q().unwrap();
+                    let private_rsa = key.rsa()?;
+                    let p = private_rsa.p().ok_or(MgmError::Error(String::from("Failed to read p value")))?;
+                    let q = private_rsa.q().ok_or(MgmError::Error(String::from("Failed to read q value")))?;
 
                     let key_algorithm: ObjectAlgorithm = match private_rsa.size() {
                         256 => ObjectAlgorithm::Rsa2048,
                         384 => ObjectAlgorithm::Rsa3072,
                         512 => ObjectAlgorithm::Rsa4096,
                         _ => {
-                            println!("Unrecognized algo");
-                            return Err(yubihsmrs::error::Error::InvalidParameter(String::from("KeyAlgorithm")));
+                            println!("Unrecognized RSA algorithm");
+                            return Err(MgmError::Error(format!("RSA key size {}", private_rsa.size())));
                         },
                     };
 
@@ -310,10 +294,10 @@ fn asym_import_key(session:Option<&Session>) -> Result<(), yubihsmrs::error::Err
                     }
                 },
                 openssl::pkey::Id::EC => {
-                    let private_ec = key.ec_key().unwrap();
+                    let private_ec = key.ec_key()?;
                     let s = private_ec.private_key();
                     let group = private_ec.group();
-                    let nid = group.curve_name().unwrap();
+                    let nid = group.curve_name().ok_or(MgmError::Error(String::from("Failed to read EC curve name")))?;
                     let key_algorithm: ObjectAlgorithm = match nid {
                         Nid::X9_62_PRIME256V1 => ObjectAlgorithm::EcP256,
                         Nid::SECP256K1 => ObjectAlgorithm::EcK256,
@@ -324,8 +308,8 @@ fn asym_import_key(session:Option<&Session>) -> Result<(), yubihsmrs::error::Err
                         Nid::BRAINPOOL_P384R1 => ObjectAlgorithm::EcBp384,
                         Nid::BRAINPOOL_P512R1 => ObjectAlgorithm::EcBp512,
                         _ => {
-                            println!("Unrecognized algo");
-                            return Err(yubihsmrs::error::Error::InvalidParameter(String::from("KeyAlgorithm")));
+                            println!("Unrecognized EC curve");
+                            return Err(MgmError::InvalidInput(format!("EC curve {:?}", nid)));
                         },
                     };
                     let capabilities = get_ec_capabilities();
@@ -339,8 +323,8 @@ fn asym_import_key(session:Option<&Session>) -> Result<(), yubihsmrs::error::Err
                     }
                 },
                 openssl::pkey::Id::ED25519 => {
-                    let private_ed= PKey::private_key_from_raw_bytes(key_bytes, openssl::pkey::Id::ED25519).unwrap();
-                    let k = private_ed.raw_private_key().unwrap();
+                    let private_ed= PKey::private_key_from_raw_bytes(key_bytes, openssl::pkey::Id::ED25519)?;
+                    let k = private_ed.raw_private_key()?;
                     let capabilities = get_ed_capabilities();
                     match session {
                         None => print_import_key_cmd(key_id, label, domains, capabilities),
@@ -356,11 +340,9 @@ fn asym_import_key(session:Option<&Session>) -> Result<(), yubihsmrs::error::Err
         }
         Err(err) => {
             let key_err = err;
-            println!("Not a key");
+            println!("Not a key. Trying to import as X509 certificate");
             match openssl::x509::X509::from_der(&key_bytes) {
                 Ok(cert) => {
-                    println!("Found cert");
-                    println!("subjectname: {:?}", cert.subject_name());
                     match session {
                         None => {
                             print!("  > yubihsm-shell -a put_opaque");
@@ -381,9 +363,9 @@ fn asym_import_key(session:Option<&Session>) -> Result<(), yubihsmrs::error::Err
                     }
                 },
                 Err(cert_err) => {
-                    println!("Error! Failed to find either private key or X509Certificate");
                     println!("  {}", key_err);
                     println!("  {}", cert_err);
+                    return Err(MgmError::Error(String::from("Error! Failed to find either private key or X509Certificate")));
                 }
             }
         },
