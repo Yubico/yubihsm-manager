@@ -7,7 +7,8 @@ use std::fs::File;
 use std::io::{stdin, stdout, Write};
 use std::num::IntErrorKind;
 use std::ops::Deref;
-use yubihsmrs::object::{ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
+use clap::ErrorKind;
+use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use crossterm::{execute, cursor::{MoveTo}, cursor};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size};
 use crossterm_input::{input, InputEvent};
@@ -24,14 +25,20 @@ pub struct MultiSelectItem<T:Display> {
 pub struct BasicDiscriptor {
     pub object_id: u16,
     pub object_label:String,
+    pub object_algorithm: ObjectAlgorithm,
 }
 
 impl Display for BasicDiscriptor {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "0x{:04x} : {}", self.object_id, self.object_label)
+        write!(f, "0x{:04x} : {:40} : {}", self.object_id, self.object_label, self.object_algorithm)
     }
 }
 
+impl From<ObjectDescriptor> for BasicDiscriptor {
+    fn from(object_desc: ObjectDescriptor) -> Self {
+        BasicDiscriptor {object_id: object_desc.id, object_label: object_desc.label, object_algorithm: object_desc.algorithm}
+    }
+}
 
 #[derive(Debug)]
 pub enum BooleanAnswer {
@@ -317,9 +324,34 @@ pub fn read_file(prompt:&str) -> String {
     }
 }
 
+pub fn read_file_bytes(prompt:&str) -> Vec<u8> {
+    let mut file_path = "".to_string();
+    while file_path == "" {
+        file_path = get_string(prompt);
+    }
+    match fs::read(file_path) {
+        Ok(content) => content,
+        Err(error) => {
+            println!("Failed to read file: {}", error);
+            read_file_bytes(prompt)
+        }
+    }
+}
+
 pub fn write_file(content: Vec<u8>, filename:String) -> Result<(), MgmError> {
-    let mut file = File::create(filename)?;
+    let mut file = match File::options().append(true).open(filename.clone()) {
+        Ok(f) => f,
+        Err(error) => {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                File::create(filename.clone())?
+            } else {
+                return Err(MgmError::StdIoError(error))
+            }
+        }
+    };
+
     file.write_all(content.deref())?;
+
     Ok(())
 }
 
