@@ -4,7 +4,7 @@ use std::fmt;
 use std::fmt::Display;
 use std::io::{stdout, Write};
 use openssl::bn::{BigNum, BigNumContext};
-use openssl::ec::{EcGroup, EcKey, EcPoint};
+use openssl::ec::{EcGroup, EcKey, EcPoint, PointConversionForm};
 use openssl::hash::{DigestBytes, MessageDigest};
 use openssl::nid::Nid;
 use openssl::pkey;
@@ -97,6 +97,7 @@ pub fn exec_asym_command(session: Option<&Session>) -> Result<(), MgmError> {
         AsymCommands::GetPublicKey => asym_get_public_key(session),
         AsymCommands::PerformSignature => asym_sign(session),
         AsymCommands::PerformRsaDecryption => asym_decrypt(session),
+        AsymCommands::DeriveEcdh => asym_derive_ecdh(session),
         AsymCommands::Exit => std::process::exit(0),
         _ => unreachable!()
     }
@@ -113,7 +114,7 @@ fn get_asym_command() -> AsymCommands {
         ("Get public key".to_string(), AsymCommands::GetPublicKey),
         ("Perform signature".to_string(), AsymCommands::PerformSignature),
         ("Perform RSA decryption".to_string(), AsymCommands::PerformRsaDecryption),
-        ("Derive ECDH (Not supported yet)".to_string(), AsymCommands::DeriveEcdh),
+        ("Derive ECDH".to_string(), AsymCommands::DeriveEcdh),
         ("Manage JAVA keys (Usable with SunPKCS11 provider) (Not supported yet)".to_string(), AsymCommands::ManageJavaKeys),
         ("Exit".to_string(), AsymCommands::Exit)];
     get_menu_option(&commands.to_vec())
@@ -177,6 +178,23 @@ fn get_ec_algo() -> ObjectAlgorithm {
         ("brainpool384r1".to_string(), ObjectAlgorithm::EcBp384),
         ("brainpool512r1".to_string(), ObjectAlgorithm::EcBp512)];
     get_menu_option(&curves.to_vec())
+}
+
+fn get_algo_from_nid(nid: Nid) -> Result<ObjectAlgorithm, MgmError> {
+    match nid {
+        Nid::X9_62_PRIME256V1 => Ok(ObjectAlgorithm::EcP256),
+        Nid::SECP256K1 => Ok(ObjectAlgorithm::EcK256),
+        Nid::SECP384R1 => Ok(ObjectAlgorithm::EcP384),
+        Nid::SECP521R1 => Ok(ObjectAlgorithm::EcP521),
+        Nid::SECP224R1 => Ok(ObjectAlgorithm::EcP224),
+        Nid::BRAINPOOL_P256R1 => Ok(ObjectAlgorithm::EcBp256),
+        Nid::BRAINPOOL_P384R1 => Ok(ObjectAlgorithm::EcBp384),
+        Nid::BRAINPOOL_P512R1 => Ok(ObjectAlgorithm::EcBp512),
+        _ => {
+            println!("Unrecognized EC curve");
+            Err(MgmError::InvalidInput(format!("EC curve {:?}", nid)))
+        },
+    }
 }
 
 fn get_rsa_keylen() -> u32 {
@@ -302,7 +320,7 @@ fn asym_import_key(session:Option<&Session>) -> Result<(), MgmError>{
     match openssl::pkey::PKey::private_key_from_der(&key_bytes) {
         Ok(key) => {
             match key.id() {
-                openssl::pkey::Id::RSA => {
+                pkey::Id::RSA => {
                     println!("RSA key");
                     let private_rsa = key.rsa()?;
                     let p = private_rsa.p().ok_or(MgmError::Error(String::from("Failed to read p value")))?;
@@ -328,25 +346,12 @@ fn asym_import_key(session:Option<&Session>) -> Result<(), MgmError>{
                         }
                     }
                 },
-                openssl::pkey::Id::EC => {
+                pkey::Id::EC => {
                     let private_ec = key.ec_key()?;
                     let s = private_ec.private_key();
                     let group = private_ec.group();
                     let nid = group.curve_name().ok_or(MgmError::Error(String::from("Failed to read EC curve name")))?;
-                    let key_algorithm: ObjectAlgorithm = match nid {
-                        Nid::X9_62_PRIME256V1 => ObjectAlgorithm::EcP256,
-                        Nid::SECP256K1 => ObjectAlgorithm::EcK256,
-                        Nid::SECP384R1 => ObjectAlgorithm::EcP384,
-                        Nid::SECP521R1 => ObjectAlgorithm::EcP521,
-                        Nid::SECP224R1 => ObjectAlgorithm::EcP224,
-                        Nid::BRAINPOOL_P256R1 => ObjectAlgorithm::EcBp256,
-                        Nid::BRAINPOOL_P384R1 => ObjectAlgorithm::EcBp384,
-                        Nid::BRAINPOOL_P512R1 => ObjectAlgorithm::EcBp512,
-                        _ => {
-                            println!("Unrecognized EC curve");
-                            return Err(MgmError::InvalidInput(format!("EC curve {:?}", nid)));
-                        },
-                    };
+                    let key_algorithm = get_algo_from_nid(nid)?;
                     let capabilities = get_ec_capabilities();
 
                     match session {
@@ -357,7 +362,7 @@ fn asym_import_key(session:Option<&Session>) -> Result<(), MgmError>{
                         }
                     }
                 },
-                openssl::pkey::Id::ED25519 => {
+                pkey::Id::ED25519 => {
                     let private_ed= PKey::private_key_from_raw_bytes(key_bytes, openssl::pkey::Id::ED25519)?;
                     let k = private_ed.raw_private_key()?;
                     let capabilities = get_ed_capabilities();
@@ -582,7 +587,7 @@ fn get_mgf1_algorithm(hash_algo:HashAlgorithm) -> ObjectAlgorithm {
 }
 
 
-fn get_signdec_key(session:&Session, capability:ObjectCapability) -> Result<BasicDiscriptor, MgmError> {
+fn get_operation_key(session:&Session, capability:ObjectCapability) -> Result<BasicDiscriptor, MgmError> {
     println!("\n  Choose signing or decryption key: ");
     let sign_capabilities: [ObjectCapability;1] = [capability];
     let key_handles = session.list_objects_with_filter(0, ObjectType::AsymmetricKey, "", ObjectAlgorithm::ANY, &sign_capabilities.to_vec())?;
@@ -617,24 +622,24 @@ fn asym_sign(session: Option<&Session>) -> Result<(), MgmError> {
                 SignAlgorithm::PKCS1 => {
                     let hash_algo = get_hash_algorithm();
                     let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
-                    let signing_key = get_signdec_key(s, ObjectCapability::SignPkcs)?;
+                    let signing_key = get_operation_key(s, ObjectCapability::SignPkcs)?;
                     s.sign_pkcs1v1_5(signing_key.object_id, true, hashed_bytes.as_slice())?
                 },
                 SignAlgorithm::PSS => {
                     let hash_algo = get_hash_algorithm();
                     let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
                     let mgf1_algo = get_mgf1_algorithm(hash_algo);
-                    let signing_key = get_signdec_key(s, ObjectCapability::SignPss)?;
+                    let signing_key = get_operation_key(s, ObjectCapability::SignPss)?;
                     s.sign_pss(signing_key.object_id, hashed_bytes.len(), mgf1_algo, hashed_bytes.as_slice())?
                 },
                 SignAlgorithm::ECDSA => {
                     let hash_algo = get_hash_algorithm();
                     let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
-                    let signing_key = get_signdec_key(s, ObjectCapability::SignEcdsa)?;
+                    let signing_key = get_operation_key(s, ObjectCapability::SignEcdsa)?;
                     s.sign_ecdsa(signing_key.object_id, hashed_bytes.as_slice())?
                 },
                 SignAlgorithm::EDDSA => {
-                    let signing_key = get_signdec_key(s, ObjectCapability::SignEddsa)?;
+                    let signing_key = get_operation_key(s, ObjectCapability::SignEddsa)?;
                     s.sign_eddsa(signing_key.object_id, input_str.as_bytes())?
                 },
             };
@@ -653,7 +658,7 @@ fn asym_decrypt(session: Option<&Session>) -> Result<(), MgmError> {
 
             let decrypted_data = match get_decrypt_algo() {
                 DecryptAlgorithm::PKCS1 => {
-                    let decryption_key = get_signdec_key(s, ObjectCapability::DecryptPkcs)?;
+                    let decryption_key = get_operation_key(s, ObjectCapability::DecryptPkcs)?;
                     s.decrypt_pkcs1v1_5(decryption_key.object_id, input_bytes.as_slice())?
                 },
                 DecryptAlgorithm::OAEP => {
@@ -666,7 +671,7 @@ fn asym_decrypt(session: Option<&Session>) -> Result<(), MgmError> {
                     let hash_algo = get_menu_option(&hash_algos.to_vec());
                     let label = get_hashed_bytes(hash_algo, input_bytes.as_slice())?;
                     let mgf1_algo = get_mgf1_algorithm(hash_algo);
-                    let decryption_key = get_signdec_key(s, ObjectCapability::DecryptOaep)?;
+                    let decryption_key = get_operation_key(s, ObjectCapability::DecryptOaep)?;
                     s.decrypt_oaep(decryption_key.object_id, input_bytes.as_slice(), label.as_slice(), mgf1_algo)?
                 },
             };
@@ -674,5 +679,34 @@ fn asym_decrypt(session: Option<&Session>) -> Result<(), MgmError> {
             write_file(decrypted_data, "data.dec".to_string())?;
         }
     }
+    Ok(())
+}
+
+fn asym_derive_ecdh(session: Option<&Session>) -> Result<(), MgmError> {
+    match  session {
+        None => println!("No session open"),
+        Some(s) => {
+
+            let pubkey = openssl::ec::EcKey::public_key_from_pem(read_file("Enter absolute path to EC public key PEM file: ").as_bytes())?;
+            let ec_point_ref = pubkey.public_key();
+            let ec_group_ref = pubkey.group();
+            let mut ctx = BigNumContext::new()?;
+            let ext_key = ec_point_ref.to_bytes(ec_group_ref, PointConversionForm::UNCOMPRESSED, &mut ctx)?;
+            let nid = ec_group_ref.curve_name().ok_or(MgmError::Error(String::from("Failed to read EC curve name")))?;
+            let ext_key_algo = get_algo_from_nid(nid)?;
+
+            let hsm_key = get_operation_key(s, ObjectCapability::DeriveEcdh)?;
+
+            if hsm_key.object_algorithm != ext_key_algo {
+                return Err(MgmError::Error("External EC public key has a different algorithm the the YubiHSM key".to_string()));
+            }
+
+            let ecdh = s.derive_ecdh(hsm_key.object_id, ext_key.as_slice())?;
+            for b in ecdh {
+                print!("{b:02x}");
+            }
+            println!();
+        }
+    };
     Ok(())
 }
