@@ -23,3 +23,7 @@ Or
 ```
 $ ./target/debug/yubihsm-manager
 ```
+
+Binaries for Debian systems, MacOS and Windows are also available for download via GithubActions artifacts.
+
+Note that on Windows, the libyubihsm.dll need to be in PATH
