@@ -37,6 +37,7 @@ serde = "1.0.164"
 pem = "2.0.1"
 rustls-pemfile = "1.0.2"
 openssl = "0.10.54"
+openssl-sys = "0.9.88"
 
 
 [dependencies.yubihsmrs]

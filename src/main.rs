@@ -21,6 +21,7 @@ use util::{get_integer_or_default, get_string, get_string_or_default, parse_id};
 pub mod error;
 pub mod util;
 pub mod asym_commands;
+pub mod auth_commands;
 
 fn is_valid_id(value: String) -> Result<(), String> {
     // NOTE(adma): dropping value just to keep the linter quiet, the
@@ -175,7 +176,7 @@ fn main() -> Result<(), MgmError> {
 
 
     match matches.subcommand_name() {
-        Some("auth") => asym_commands::exec_asym_command(session)?,
+        Some("auth") => auth_commands::exec_auth_command(session, authkey)?,
         Some("asym") => asym_commands::exec_asym_command(session)?,
         Some("wrap") => asym_commands::exec_asym_command(session)?,
         Some("random") => asym_commands::exec_asym_command(session)?,

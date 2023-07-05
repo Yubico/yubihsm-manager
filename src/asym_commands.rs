@@ -13,7 +13,7 @@ use crate::util::{get_string, get_menu_option, get_boolean_answer, get_selected_
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{BasicDiscriptor, get_common_properties, get_integer_or_default, get_string_or_default, MultiSelectItem, print_object_properties, read_file_bytes, write_file};
+use util::{BasicDiscriptor, get_common_properties, get_filtered_objects, get_integer_or_default, get_string_or_default, MultiSelectItem, print_object_properties, read_file_bytes, write_file};
 
 
 #[derive(Debug, Clone, Copy)]
@@ -58,13 +58,6 @@ enum HashAlgorithm {
     SHA256,
     SHA384,
     SHA512,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum IdLabelOption {
-    ALL,
-    ByID,
-    ByLabel,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -413,48 +406,11 @@ fn asym_import_key(session:Option<&Session>) -> Result<(), MgmError>{
     Ok(())
 }
 
-fn get_objects_list(session:&Session, id:u16, label:String, include_certs:bool) -> Result<Vec<ObjectHandle>, MgmError> {
-    let mut found_objects = session.list_objects_with_filter(id, ObjectType::AsymmetricKey, &label, ObjectAlgorithm::ANY, &Vec::new())?;
-    if include_certs {
-        found_objects.extend(session.list_objects_with_filter(id, ObjectType::Opaque, &label, ObjectAlgorithm::OpaqueX509Certificate, &Vec::new())?);
-    }
-    Ok(found_objects)
-}
-
-fn get_filtered_objects(session: Option<&Session>, include_certs:bool) -> Result<Vec<ObjectHandle>, MgmError> {
-    let mut key_handles:Vec<ObjectHandle> = Vec::new();
-    match session {
-        None => {},
-        Some(session) => {
-            println!("\n  List key by:");
-            let criterias: [(String, IdLabelOption);3] = [
-                (String::from("All"), IdLabelOption::ALL),
-                (String::from("Filter by object ID"), IdLabelOption::ByID),
-                (String::from("Filter by object Label"), IdLabelOption::ByLabel)];
-            let criteria = get_menu_option(&criterias.to_vec());
-            println!();
-
-            match criteria {
-                IdLabelOption::ALL => key_handles = get_objects_list(session, 0, "".to_string(), include_certs)?,
-                IdLabelOption::ByID => {
-                    let key_id: u16 = get_integer_or_default("Enter key ID [Default 0]: ", 0);
-                    key_handles = get_objects_list(session, key_id, "".to_string(), include_certs)?;
-                },
-                IdLabelOption::ByLabel => {
-                    let label = get_string_or_default("Enter key label [Default empty]: ", "");
-                    key_handles = get_objects_list(session, 0, label, include_certs)?;
-                },
-            }
-        }
-    }
-    Ok(key_handles)
-}
-
 fn asym_list_keys(session: Option<&Session>) -> Result<(), MgmError> {
     match session {
         None => println!("\n  > yubihsm-shell -a list-objects -t asymmetric-key"),
         Some(s) => {
-            let key_handles:Vec<ObjectHandle> = get_filtered_objects(session, true)?;
+            let key_handles:Vec<ObjectHandle> = get_filtered_objects(s, ObjectType::AsymmetricKey, true)?;
             println!("Found {} objects", key_handles.len());
             for object in key_handles {
                 println!("  {}", s.get_object_info(object.object_id, object.object_type)?);
@@ -480,8 +436,14 @@ fn asym_get_key_properties(session: Option<&Session>) -> Result<(), MgmError> {
 }
 
 fn asym_delete_key(session: Option<&Session>) -> Result<(), MgmError>{
-    let keys = get_filtered_objects(session, true)?;
-    delete_objects(session, keys)
+    match session {
+        None => println!("No session available"),
+        Some(s) => {
+            let keys = get_filtered_objects(s, ObjectType::AsymmetricKey, true)?;
+            delete_objects(session, keys)?
+        }
+    }
+    Ok(())
 }
 
 fn print_pem_string(pem_bytes:Vec<u8>) {
@@ -501,7 +463,7 @@ fn asym_get_public_key(session: Option<&Session>) -> Result<(), MgmError> {
     match session {
         None => println!("Session not available"),
         Some(s) => {
-            let keys = get_filtered_objects(session, false)?;
+            let keys = get_filtered_objects(s, ObjectType::AsymmetricKey, false)?;
             let mut pubkeys:Vec<(Vec<u8>, ObjectAlgorithm)> = Vec::new();
             match keys.len().cmp(&usize::try_from(1).unwrap()) {
                 Ordering::Equal => pubkeys.push(s.get_pubkey(keys[0].object_id)?),

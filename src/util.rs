@@ -16,6 +16,13 @@ use crossterm_screen::RawScreen;
 use yubihsmrs::{Session};
 use error::MgmError;
 
+#[derive(Debug, Clone, Copy)]
+enum IdLabelOption {
+    ALL,
+    ByID,
+    ByLabel,
+}
+
 pub struct MultiSelectItem<T:Display> {
     pub item: T,
     pub selected:bool,
@@ -280,6 +287,38 @@ pub fn get_selected_items<T:Display+Clone>(items: &mut Vec<MultiSelectItem<T>>) 
     selected_items
 }
 
+pub fn get_objects_list(session:&Session, object_type:ObjectType, id:u16, label:String, include_certs:bool) -> Result<Vec<ObjectHandle>, MgmError> {
+    let mut found_objects = session.list_objects_with_filter(id, object_type, &label, ObjectAlgorithm::ANY, &Vec::new())?;
+    if include_certs {
+        found_objects.extend(session.list_objects_with_filter(id, ObjectType::Opaque, &label, ObjectAlgorithm::OpaqueX509Certificate, &Vec::new())?);
+    }
+    Ok(found_objects)
+}
+
+pub fn get_filtered_objects(session: &Session, object_type:ObjectType, include_certs:bool) -> Result<Vec<ObjectHandle>, MgmError> {
+    let mut key_handles:Vec<ObjectHandle> = Vec::new();
+    println!("\n  List key by:");
+    let criterias: [(String, IdLabelOption); 3] = [
+        (String::from("All"), IdLabelOption::ALL),
+        (String::from("Filter by object ID"), IdLabelOption::ByID),
+        (String::from("Filter by object Label"), IdLabelOption::ByLabel)];
+    let criteria = get_menu_option(&criterias.to_vec());
+    println!();
+
+    match criteria {
+        IdLabelOption::ALL => key_handles = get_objects_list(session, object_type, 0, "".to_string(), include_certs)?,
+        IdLabelOption::ByID => {
+            let key_id: u16 = get_integer_or_default("Enter key ID [Default 0]: ", 0);
+            key_handles = get_objects_list(session, object_type, key_id, "".to_string(), include_certs)?;
+        },
+        IdLabelOption::ByLabel => {
+            let label = get_string_or_default("Enter key label [Default empty]: ", "");
+            key_handles = get_objects_list(session, object_type, 0, label, include_certs)?;
+        },
+    }
+    Ok(key_handles)
+}
+
 pub fn delete_objects(session: Option<&Session>, object_handles:Vec<ObjectHandle>) -> Result<(), MgmError> {
     match session {
         None => {
@@ -362,4 +401,22 @@ pub fn print_object_properties(session: &Session, object_type:ObjectType) {
         Ok(obj) => println!("{}", obj.to_string().replacen("\t", "\n", 10)),
         Err(err) => println!("{}", err),
     }
+}
+
+pub fn get_intersection<T:PartialEq>(a:Vec<T>, b:Vec<T>) -> Vec<T> {
+    let mut c:Vec<T> = Vec::new();
+    for t in a {
+        if b.contains(&t) {
+            c.push(t);
+        }
+    }
+    c
+}
+
+pub fn get_selection_items_from_vec<T:Display>(items:Vec<T>) -> Vec<MultiSelectItem<T>> {
+    let mut select_items:Vec<MultiSelectItem<T>> = Vec::new();
+    for item in items {
+        select_items.push(MultiSelectItem{item:item, selected:false});
+    }
+    select_items
 }

@@ -924,6 +924,7 @@ dependencies = [
  "crossterm_terminal",
  "crossterm_utils",
  "openssl",
+ "openssl-sys",
  "pem",
  "rustls-pemfile",
  "serde",
