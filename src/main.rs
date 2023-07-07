@@ -115,8 +115,14 @@ fn main() -> Result<(), MgmError> {
         Some("auth") => auth_commands::exec_auth_command(&session, authkey)?,
         Some("asym") => asym_commands::exec_asym_command(&session, authkey)?,
         //Some("wrap") => asym_commands::exec_asym_command(session, authkey)?,
-        //Some("random") => asym_commands::exec_asym_command(session, authkey)?,
-        //Some("reset") => asym_commands::exec_asym_command(session, authkey)?,
+        Some("random") => {
+            let nr_of_bytes:usize = get_integer_or_default("  Enter number of bytes [default 256]:", 256);
+            for b in session.get_random(nr_of_bytes)? {
+                print!("{b:02x}");
+            }
+            println!();
+        }
+        Some("reset") => session.reset()?,
         _ => return Err(MgmError::Error("Unrecognized subcommand".to_string())),
     }
 

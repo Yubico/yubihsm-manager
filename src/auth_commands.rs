@@ -4,7 +4,7 @@ use crate::util::{get_string, get_menu_option, get_boolean_answer, get_selected_
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{BasicDiscriptor, get_common_properties, get_filtered_objects, get_selection_items_from_vec, print_object_properties, select_object_capabilities};
+use util::{BasicDescriptor, get_common_properties, get_filtered_objects, get_selection_items_from_vec, print_object_properties, select_object_capabilities};
 
 const ALL_USER_CAPABILITIES: [ObjectCapability; 9] = [
     ObjectCapability::SignPkcs,
@@ -85,9 +85,9 @@ fn get_auth_command(session: &Session, current_authkey: u16) -> Result<AuthComma
 
 fn auth_list_keys(session: &Session) -> Result<(), MgmError> {
     let key_handles: Vec<ObjectHandle> = session.list_objects_with_filter(0, ObjectType::AuthenticationKey, "", ObjectAlgorithm::ANY, &Vec::new())?;
-    println!("Found {} objects", key_handles.len());
+    println!("\nFound {} objects", key_handles.len());
     for object in key_handles {
-        println!("  {}", BasicDiscriptor::from(session.get_object_info(object.object_id, object.object_type)?));
+        println!("  {}", BasicDescriptor::from(session.get_object_info(object.object_id, object.object_type)?));
     }
     Ok(())
 }

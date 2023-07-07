@@ -8,7 +8,6 @@ use std::fs::File;
 use std::io::{stdin, stdout, Write};
 use std::num::IntErrorKind;
 use std::ops::Deref;
-use clap::ErrorKind;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use crossterm::{execute, cursor::{MoveTo}, cursor};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size};
@@ -30,21 +29,21 @@ pub struct MultiSelectItem<T:Display> {
 }
 
 #[derive(Debug, Clone)]
-pub struct BasicDiscriptor {
+pub struct BasicDescriptor {
     pub object_id: u16,
     pub object_label:String,
     pub object_algorithm: ObjectAlgorithm,
 }
 
-impl Display for BasicDiscriptor {
+impl Display for BasicDescriptor {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "0x{:04x} : {:40} : {}", self.object_id, self.object_label, self.object_algorithm)
     }
 }
 
-impl From<ObjectDescriptor> for BasicDiscriptor {
+impl From<ObjectDescriptor> for BasicDescriptor {
     fn from(object_desc: ObjectDescriptor) -> Self {
-        BasicDiscriptor {object_id: object_desc.id, object_label: object_desc.label, object_algorithm: object_desc.algorithm}
+        BasicDescriptor {object_id: object_desc.id, object_label: object_desc.label, object_algorithm: object_desc.algorithm}
     }
 }
 

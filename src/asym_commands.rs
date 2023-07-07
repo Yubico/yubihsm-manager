@@ -14,7 +14,7 @@ use crate::util::{get_string, get_menu_option, get_boolean_answer, get_selected_
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{BasicDiscriptor, get_common_properties, get_filtered_objects, get_integer_or_default, MultiSelectItem, print_object_properties, read_file_bytes, select_object_capabilities, write_file};
+use util::{BasicDescriptor, get_common_properties, get_filtered_objects, get_integer_or_default, MultiSelectItem, print_object_properties, read_file_bytes, select_object_capabilities, write_file};
 
 const RSA_KEY_CAPABILITIES: [ObjectCapability; 5] = [
     ObjectCapability::SignPkcs,
@@ -438,9 +438,9 @@ fn asym_get_public_key(session: &Session) -> Result<(), MgmError> {
     match keys.len().cmp(&usize::try_from(1).unwrap()) {
         Ordering::Equal => pubkeys.push(session.get_pubkey(keys[0].object_id)?),
         Ordering::Greater => {
-            let mut key_options: Vec<MultiSelectItem<BasicDiscriptor>> = Vec::new();
+            let mut key_options: Vec<MultiSelectItem<BasicDescriptor>> = Vec::new();
             for handle in keys {
-                key_options.push(MultiSelectItem { item: BasicDiscriptor::from(session.get_object_info(handle.object_id, handle.object_type)?), selected: false });
+                key_options.push(MultiSelectItem { item: BasicDescriptor::from(session.get_object_info(handle.object_id, handle.object_type)?), selected: false });
             }
             let selected_keys = get_selected_items(&mut key_options);
             for desc in selected_keys {
@@ -515,13 +515,13 @@ fn get_mgf1_algorithm(hash_algo: HashAlgorithm) -> ObjectAlgorithm {
 }
 
 
-fn get_operation_key(session: &Session, capability: ObjectCapability) -> Result<BasicDiscriptor, MgmError> {
+fn get_operation_key(session: &Session, capability: ObjectCapability) -> Result<BasicDescriptor, MgmError> {
     println!("\n  Choose signing or decryption key: ");
     let sign_capabilities: [ObjectCapability; 1] = [capability];
     let key_handles = session.list_objects_with_filter(0, ObjectType::AsymmetricKey, "", ObjectAlgorithm::ANY, &sign_capabilities.to_vec())?;
-    let mut key_options: Vec<(String, BasicDiscriptor)> = Vec::new();
+    let mut key_options: Vec<(String, BasicDescriptor)> = Vec::new();
     for handle in key_handles {
-        let option = BasicDiscriptor::from(session.get_object_info(handle.object_id, handle.object_type)?);
+        let option = BasicDescriptor::from(session.get_object_info(handle.object_id, handle.object_type)?);
         key_options.push((option.to_string(), option));
     }
     let chosen = get_menu_option(&key_options);
