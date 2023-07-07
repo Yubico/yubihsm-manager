@@ -9,26 +9,26 @@ use openssl::ec::{EcGroup, EcKey, EcPoint, PointConversionForm};
 use openssl::hash::{DigestBytes, MessageDigest};
 use openssl::nid::Nid;
 use openssl::pkey;
-use openssl::pkey::{PKey, Public};
-use crate::util::{get_string, get_menu_option, get_boolean_answer, get_selected_items, delete_objects, read_file}; // 0.17.1
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
+use openssl::pkey::{PKey};
+use crate::util::{get_string, get_menu_option, get_boolean_answer, get_selected_items, delete_objects, read_file};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{BasicDiscriptor, get_common_properties, get_filtered_objects, get_integer_or_default, get_selection_items_from_hashset, get_selection_items_from_vec, get_string_or_default, MultiSelectItem, print_object_properties, read_file_bytes, select_object_capabilities, write_file};
+use util::{BasicDiscriptor, get_common_properties, get_filtered_objects, get_integer_or_default, MultiSelectItem, print_object_properties, read_file_bytes, select_object_capabilities, write_file};
 
-const RSA_KEY_CAPABILITIES: [ObjectCapability;5] = [
+const RSA_KEY_CAPABILITIES: [ObjectCapability; 5] = [
     ObjectCapability::SignPkcs,
     ObjectCapability::SignPss,
     ObjectCapability::SignEcdsa,
     ObjectCapability::SignEddsa,
     ObjectCapability::ExportableUnderWrap];
 
-const EC_KEY_CAPABILITIES: [ObjectCapability;3] = [
+const EC_KEY_CAPABILITIES: [ObjectCapability; 3] = [
     ObjectCapability::SignEcdsa,
     ObjectCapability::DeriveEcdh,
     ObjectCapability::ExportableUnderWrap];
 
-const ED_KEY_CAPABILITIES: [ObjectCapability;2] = [
+const ED_KEY_CAPABILITIES: [ObjectCapability; 2] = [
     ObjectCapability::SignEddsa,
     ObjectCapability::ExportableUnderWrap];
 
@@ -95,9 +95,9 @@ impl Display for InputOutputFormat {
 }
 
 
-pub fn exec_asym_command(session: Option<&Session>, current_authkey:u16) -> Result<(), MgmError> {
+pub fn exec_asym_command(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
     stdout().flush().unwrap();
-    let cmd = get_asym_command(session.unwrap(), current_authkey)?;
+    let cmd = get_asym_command(session, current_authkey)?;
     match cmd {
         AsymCommand::ListKeys => asym_list_keys(session),
         AsymCommand::GetKeyProperties => asym_get_key_properties(session),
@@ -113,8 +113,8 @@ pub fn exec_asym_command(session: Option<&Session>, current_authkey:u16) -> Resu
     }
 }
 
-fn get_asym_command(session:&Session, current_authkey:u16) -> Result<AsymCommand, MgmError> {
-    let capabilities:HashSet<ObjectCapability> =
+fn get_asym_command(session: &Session, current_authkey: u16) -> Result<AsymCommand, MgmError> {
+    let capabilities: HashSet<ObjectCapability> =
         session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?.capabilities.into_iter().collect();
 
     let mut commands: Vec<(String, AsymCommand)> = Vec::new();
@@ -153,7 +153,7 @@ fn get_asym_command(session:&Session, current_authkey:u16) -> Result<AsymCommand
         HashSet::from([
             ObjectCapability::PutOpaque,
             ObjectCapability::DeleteOpaque]).intersection(&capabilities).count() > 0 {
-        commands.push(("Manage JAVA keys (Usable with SunPKCS11 provider) (Not supported yet)".to_string(), AsymCommand::ManageJavaKeys));
+        commands.push(("Manage JAVA keys (Usable with SunPKCS11 provider) (not implemented yet)".to_string(), AsymCommand::ManageJavaKeys));
     }
     commands.push(("Exit".to_string(), AsymCommand::Exit));
     println!();
@@ -162,7 +162,7 @@ fn get_asym_command(session:&Session, current_authkey:u16) -> Result<AsymCommand
 
 fn get_asym_keytype() -> AsymKeyTypes {
     println!("\n  Choose key type:");
-    let types: [(String, AsymKeyTypes);3] = [
+    let types: [(String, AsymKeyTypes); 3] = [
         ("RSA".to_string(), AsymKeyTypes::RSA),
         ("EC".to_string(), AsymKeyTypes::EC),
         ("ED".to_string(), AsymKeyTypes::ED)];
@@ -171,17 +171,17 @@ fn get_asym_keytype() -> AsymKeyTypes {
 
 fn get_sign_algo() -> SignAlgorithm {
     println!("\n  Sign using:");
-    let algos: [(String, SignAlgorithm);4] = [
+    let algos: [(String, SignAlgorithm); 4] = [
         ("RSA-PKCS#1v1.5".to_string(), SignAlgorithm::PKCS1),
         ("RSA-PSS".to_string(), SignAlgorithm::PSS),
         ("ECDSA".to_string(), SignAlgorithm::ECDSA),
-        ("EDDSA".to_string(), SignAlgorithm::EDDSA),];
+        ("EDDSA".to_string(), SignAlgorithm::EDDSA), ];
     get_menu_option(&algos.to_vec())
 }
 
 fn get_decrypt_algo() -> DecryptAlgorithm {
     println!("\n  Decrypt using:");
-    let algos: [(String, DecryptAlgorithm);2] = [
+    let algos: [(String, DecryptAlgorithm); 2] = [
         ("RSA-PKCS#1v1.5".to_string(), DecryptAlgorithm::PKCS1),
         ("RSA-OAEP".to_string(), DecryptAlgorithm::OAEP)];
     get_menu_option(&algos.to_vec())
@@ -189,7 +189,7 @@ fn get_decrypt_algo() -> DecryptAlgorithm {
 
 fn get_hash_algorithm() -> HashAlgorithm {
     println!("\n  Choose hash algorithm:");
-    let types: [(String, HashAlgorithm);4] = [
+    let types: [(String, HashAlgorithm); 4] = [
         ("SHA1".to_string(), HashAlgorithm::SHA1),
         ("SHA256".to_string(), HashAlgorithm::SHA256),
         ("SHA384".to_string(), HashAlgorithm::SHA384),
@@ -199,7 +199,7 @@ fn get_hash_algorithm() -> HashAlgorithm {
 
 fn get_format(supported_formats: &Vec<InputOutputFormat>) -> InputOutputFormat {
     println!("\n  Choose input_format:");
-    let mut items:Vec<(String, InputOutputFormat)> = Vec::new();
+    let mut items: Vec<(String, InputOutputFormat)> = Vec::new();
     for f in supported_formats {
         items.push((f.to_string(), f.clone()));
     }
@@ -208,7 +208,7 @@ fn get_format(supported_formats: &Vec<InputOutputFormat>) -> InputOutputFormat {
 
 fn get_ec_algo() -> ObjectAlgorithm {
     println!("\n  Choose EC Curve:");
-    let curves: [(String, ObjectAlgorithm);8] = [
+    let curves: [(String, ObjectAlgorithm); 8] = [
         ("secp224r1".to_string(), ObjectAlgorithm::EcP224),
         ("secp256r1".to_string(), ObjectAlgorithm::EcP256),
         ("secp384r1".to_string(), ObjectAlgorithm::EcP384),
@@ -233,31 +233,31 @@ fn get_algo_from_nid(nid: Nid) -> Result<ObjectAlgorithm, MgmError> {
         _ => {
             println!("Unrecognized EC curve");
             Err(MgmError::InvalidInput(format!("EC curve {:?}", nid)))
-        },
+        }
     }
 }
 
 fn get_rsa_keylen() -> u32 {
     let accepted_len = vec![2048, 3072, 4096];
-    let mut key_len:u32 = 0;
-    while !accepted_len.contains(&key_len){
+    let mut key_len: u32 = 0;
+    while !accepted_len.contains(&key_len) {
         key_len = get_integer_or_default("Enter key length [2048, 3072, 4096] [defualt 2048]: ", 2048);
     }
     key_len
 }
 
-fn asym_gen_key(session: Option<&Session>, current_authkey:u16) -> Result<(), MgmError> {
+fn asym_gen_key(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
     println!();
     let (key_id, label, domains) = get_common_properties();
 
-    let permissible_capabilities:HashSet<ObjectCapability> =
-        session.unwrap().get_object_info(current_authkey, ObjectType::AuthenticationKey)?
+    let permissible_capabilities: HashSet<ObjectCapability> =
+        session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?
             .delegated_capabilities.expect("Cannot read current authentication key's delegated capabilities")
             .into_iter().collect();
 
 
-    let key_algorithm:ObjectAlgorithm;
-    let mut capabilities:Vec<ObjectCapability> = Vec::new();
+    let key_algorithm: ObjectAlgorithm;
+    let mut capabilities: Vec<ObjectCapability> = Vec::new();
 
     match get_asym_keytype() {
         AsymKeyTypes::RSA => {
@@ -291,30 +291,15 @@ fn asym_gen_key(session: Option<&Session>, current_authkey:u16) -> Result<(), Mg
     capabilities.iter().for_each(|cap| print!("{:?}, ", cap));
     println!("\n\n");
 
-    match session {
-        None => {
-            print!("  > yubihsm-shell -a generate_asymmetric-key");
-            print!(" -i {}", key_id);
-            print!(" -l \"{}\"", label);
-            print!(" -d ");
-            domains.iter().for_each(|domain| print!("{},", domain));
-            print!(" -A {}", key_algorithm);
-            print!(" -c ");
-            capabilities.iter().for_each(|cap| print!("{:?},", cap));
-            println!();
-        },
-        Some(session) => {
-            if bool::from(get_boolean_answer("Execute? ")) {
-                let key = session
-                    .generate_asymmetric_key_with_keyid(key_id, &label, &capabilities, &*domains, key_algorithm)?;
-                println!("  Generated asymmetric keypair with ID 0x{:04x} on the device", key.get_key_id());
-            }
-        }
+    if bool::from(get_boolean_answer("Execute? ")) {
+        let key = session
+            .generate_asymmetric_key_with_keyid(key_id, &label, &capabilities, &*domains, key_algorithm)?;
+        println!("  Generated asymmetric keypair with ID 0x{:04x} on the device", key.get_key_id());
     }
     Ok(())
 }
 
-fn print_import_key_cmd(key_id:u16, label:String, domains:Vec<ObjectDomain>, capabilities:Vec<ObjectCapability>) {
+fn print_import_key_cmd(key_id: u16, label: String, domains: Vec<ObjectDomain>, capabilities: Vec<ObjectCapability>) {
     print!("  > yubihsm-shell -a put_asymmetric-key");
     print!(" -i {}", key_id);
     print!(" -l \"{}\"", label);
@@ -326,7 +311,7 @@ fn print_import_key_cmd(key_id:u16, label:String, domains:Vec<ObjectDomain>, cap
     println!();
 }
 
-fn asym_import_key(session:Option<&Session>, current_authkey:u16) -> Result<(), MgmError>{
+fn asym_import_key(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
     println!();
     let (mut key_id, label, domains) = get_common_properties();
 
@@ -338,8 +323,8 @@ fn asym_import_key(session:Option<&Session>, current_authkey:u16) -> Result<(), 
     let pem = pem.unwrap();
     let key_bytes = pem.contents();
 
-    let permissible_capabilities:HashSet<ObjectCapability> =
-        session.unwrap().get_object_info(current_authkey, ObjectType::AuthenticationKey)?
+    let permissible_capabilities: HashSet<ObjectCapability> =
+        session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?
             .delegated_capabilities.expect("Cannot read current authentication key's delegated capabilities")
             .into_iter().collect();
 
@@ -359,19 +344,15 @@ fn asym_import_key(session:Option<&Session>, current_authkey:u16) -> Result<(), 
                         _ => {
                             println!("Unrecognized RSA algorithm");
                             return Err(MgmError::Error(format!("RSA key size {}", private_rsa.size())));
-                        },
+                        }
                     };
 
                     let capabilities = select_object_capabilities(&HashSet::from(RSA_KEY_CAPABILITIES), &permissible_capabilities);
 
-                    match session {
-                        None => print_import_key_cmd(key_id, label, domains, capabilities),
-                        Some(session) => {
-                            key_id = session
-                                .import_rsa_key(key_id, &label, &*domains, &capabilities, key_algorithm, &p.to_vec(), &q.to_vec())?
-                        }
-                    }
-                },
+
+                    key_id = session
+                        .import_rsa_key(key_id, &label, &*domains, &capabilities, key_algorithm, &p.to_vec(), &q.to_vec())?
+                }
                 pkey::Id::EC => {
                     let private_ec = key.ec_key()?;
                     let s = private_ec.private_key();
@@ -380,26 +361,16 @@ fn asym_import_key(session:Option<&Session>, current_authkey:u16) -> Result<(), 
                     let key_algorithm = get_algo_from_nid(nid)?;
                     let capabilities = select_object_capabilities(&HashSet::from(EC_KEY_CAPABILITIES), &permissible_capabilities);
 
-                    match session {
-                        None => print_import_key_cmd(key_id, label, domains, capabilities),
-                        Some(session) => {
-                            key_id = session
-                                .import_ec_key(key_id, &label, &*domains, &capabilities, key_algorithm, &s.to_vec())?
-                        }
-                    }
-                },
+                    key_id = session
+                        .import_ec_key(key_id, &label, &*domains, &capabilities, key_algorithm, &s.to_vec())?
+                }
                 pkey::Id::ED25519 => {
-                    let private_ed= PKey::private_key_from_raw_bytes(key_bytes, openssl::pkey::Id::ED25519)?;
+                    let private_ed = PKey::private_key_from_raw_bytes(key_bytes, openssl::pkey::Id::ED25519)?;
                     let k = private_ed.raw_private_key()?;
                     let capabilities = select_object_capabilities(&HashSet::from(ED_KEY_CAPABILITIES), &permissible_capabilities);
-                    match session {
-                        None => print_import_key_cmd(key_id, label, domains, capabilities),
-                        Some(session) => {
-                            key_id = session
-                                .import_ed_key(key_id, &label, &*domains, &capabilities, &k.to_vec())?
-                        }
-                    }
-                },
+                    key_id = session
+                        .import_ed_key(key_id, &label, &*domains, &capabilities, &k.to_vec())?
+                }
                 _ => println!("Unknown key type"),
             }
             println!("\n  Imported asymmetric keypair with ID 0x{:04x} on the device", key_id);
@@ -409,80 +380,49 @@ fn asym_import_key(session:Option<&Session>, current_authkey:u16) -> Result<(), 
             println!("Not a key. Trying to import as X509 certificate");
             match openssl::x509::X509::from_der(&key_bytes) {
                 Ok(cert) => {
-                    match session {
-                        None => {
-                            print!("  > yubihsm-shell -a put_opaque");
-                            print!(" -i {}", key_id);
-                            print!(" -l \"{}\"", label);
-                            print!(" -d ");
-                            domains.iter().for_each(|domain| print!("{},", domain));
-                            print!(" -c none");
-                            print!(" -A opaque-x509-certificate");
-                            print!(" --in <PATH_TO_FILE>");
-                            println!();
-                        },
-                        Some(session) => {
-                            key_id = session
-                                .import_cert(key_id, &label, &*domains, &cert.to_pem().unwrap())?;
-                            println!("\n  Imported X509Certificate with ID 0x{:04x} on the device", key_id)
-                        }
-                    }
-                },
+                    key_id = session
+                        .import_cert(key_id, &label, &*domains, &cert.to_pem().unwrap())?;
+                    println!("\n  Imported X509Certificate with ID 0x{:04x} on the device", key_id)
+                }
                 Err(cert_err) => {
                     println!("  {}", key_err);
                     println!("  {}", cert_err);
                     return Err(MgmError::Error(String::from("Error! Failed to find either private key or X509Certificate")));
                 }
             }
-        },
+        }
     };
     Ok(())
 }
 
-fn asym_list_keys(session: Option<&Session>) -> Result<(), MgmError> {
-    match session {
-        None => println!("\n  > yubihsm-shell -a list-objects -t asymmetric-key"),
-        Some(s) => {
-            let key_handles:Vec<ObjectHandle> = get_filtered_objects(s, ObjectType::AsymmetricKey, true)?;
-            println!("Found {} objects", key_handles.len());
-            for object in key_handles {
-                println!("  {}", s.get_object_info(object.object_id, object.object_type)?);
-            }
-        }
+fn asym_list_keys(session: &Session) -> Result<(), MgmError> {
+    let key_handles: Vec<ObjectHandle> = get_filtered_objects(session, ObjectType::AsymmetricKey, true)?;
+    println!("Found {} objects", key_handles.len());
+    for object in key_handles {
+        println!("  {}", session.get_object_info(object.object_id, object.object_type)?);
     }
     Ok(())
 }
 
-fn asym_get_key_properties(session: Option<&Session>) -> Result<(), MgmError> {
-    match session {
-        None => println!("No session available"),
-        Some(s) => {
-            println!();
-            if bool::from(get_boolean_answer("Is certificate?")) {
-                print_object_properties(s, ObjectType::Opaque);
-            } else {
-                print_object_properties(s, ObjectType::AsymmetricKey);
-            }
-        }
+fn asym_get_key_properties(session: &Session) -> Result<(), MgmError> {
+    println!();
+    if bool::from(get_boolean_answer("Is certificate?")) {
+        print_object_properties(session, ObjectType::Opaque);
+    } else {
+        print_object_properties(session, ObjectType::AsymmetricKey);
     }
     Ok(())
 }
 
-fn asym_delete_key(session: Option<&Session>) -> Result<(), MgmError>{
-    match session {
-        None => println!("No session available"),
-        Some(s) => {
-            let keys = get_filtered_objects(s, ObjectType::AsymmetricKey, true)?;
-            delete_objects(session, keys)?
-        }
-    }
-    Ok(())
+fn asym_delete_key(session: &Session) -> Result<(), MgmError> {
+    let keys = get_filtered_objects(session, ObjectType::AsymmetricKey, true)?;
+    delete_objects(session, keys)
 }
 
-fn print_pem_string(pem_bytes:Vec<u8>) {
+fn print_pem_string(pem_bytes: Vec<u8>) {
     println!();
     let pem_str = String::from_utf8(pem_bytes).unwrap();
-    let chars:Vec<char> = pem_str.chars().collect();
+    let chars: Vec<char> = pem_str.chars().collect();
     for c in chars {
         if c == '\n' {
             println!();
@@ -492,77 +432,70 @@ fn print_pem_string(pem_bytes:Vec<u8>) {
     }
 }
 
-fn asym_get_public_key(session: Option<&Session>) -> Result<(), MgmError> {
-    match session {
-        None => println!("Session not available"),
-        Some(s) => {
-            let keys = get_filtered_objects(s, ObjectType::AsymmetricKey, false)?;
-            let mut pubkeys:Vec<(Vec<u8>, ObjectAlgorithm)> = Vec::new();
-            match keys.len().cmp(&usize::try_from(1).unwrap()) {
-                Ordering::Equal => pubkeys.push(s.get_pubkey(keys[0].object_id)?),
-                Ordering::Greater => {
-                    let mut key_options:Vec<MultiSelectItem<BasicDiscriptor>> = Vec::new();
-                    for handle in keys {
-                        key_options.push(MultiSelectItem{item: BasicDiscriptor::from(s.get_object_info(handle.object_id, handle.object_type)?), selected: false});
-                    }
-                    let selected_keys = get_selected_items(&mut key_options);
-                    for desc in selected_keys {
-                        pubkeys.push(s.get_pubkey(desc.object_id)?);
-                    }
-                },
-                Ordering::Less => println!("No keys were found"),
-            };
-
-            for pubkey in pubkeys {
-                let key_algo = pubkey.1;
-                if [ObjectAlgorithm::Rsa2048, ObjectAlgorithm::Rsa3072, ObjectAlgorithm::Rsa4096].contains(&key_algo) {
-                    let e = BigNum::from_slice(&[0x01, 0x00, 0x01]).unwrap();
-                    let n = BigNum::from_slice(pubkey.0.as_slice())?;
-                    let rsa_pubkey = openssl::rsa::Rsa::from_public_components(n, e)?;
-                    write_file(rsa_pubkey.public_key_to_pem()?, "rsa_pubkey.pem".to_string())?;
-                    //print_pem_string(rsa_pubkey.public_key_to_pem()?);
-                } else if [ObjectAlgorithm::EcP224, ObjectAlgorithm::EcP256, ObjectAlgorithm::EcP384,
-                    ObjectAlgorithm::EcP521, ObjectAlgorithm::EcK256, ObjectAlgorithm::EcBp256,
-                    ObjectAlgorithm::EcBp384, ObjectAlgorithm::EcBp512].contains(&key_algo) {
-
-                    let nid = match key_algo {
-                        ObjectAlgorithm::EcP256 => Nid::X9_62_PRIME256V1,
-                        ObjectAlgorithm::EcK256 => Nid::SECP256K1,
-                        ObjectAlgorithm::EcP384 => Nid::SECP384R1,
-                        ObjectAlgorithm::EcP521 => Nid::SECP521R1,
-                        ObjectAlgorithm::EcP224 => Nid::SECP224R1,
-                        ObjectAlgorithm::EcBp256 => Nid::BRAINPOOL_P256R1,
-                        ObjectAlgorithm::EcBp384 => Nid::BRAINPOOL_P384R1,
-                        ObjectAlgorithm::EcBp512 => Nid::BRAINPOOL_P512R1,
-                        _ => unreachable!()
-                    };
-                    let ec_group = EcGroup::from_curve_name(nid)?;
-                    let mut ctx = BigNumContext::new()?;
-                    let mut ec_pubkey_bytes:Vec<u8> = Vec::new();
-                    ec_pubkey_bytes.push(0x04);
-                    ec_pubkey_bytes.extend(pubkey.0);
-                    let ec_point = EcPoint::from_bytes(&ec_group, ec_pubkey_bytes.as_slice(), &mut ctx)?;
-
-                    let ec_pubkey = EcKey::from_public_key(&ec_group, &ec_point)?;
-                    write_file(ec_pubkey.public_key_to_pem()?, "ec_pubkey.pem".to_string())?;
-                    //print_pem_string(ec_pubkey.public_key_to_pem()?);
-
-                } else if key_algo == ObjectAlgorithm::Ed25519 {
-                    let ed_pubkey = PKey::public_key_from_raw_bytes(pubkey.0.as_slice(), pkey::Id::ED25519)?;
-                    write_file(ed_pubkey.public_key_to_pem()?, "ed_pubkey.pem".to_string())?;
-                    //print_pem_string(ed_pubkey.public_key_to_pem()?);
-                } else {
-                    return Err(MgmError::Error("Object found was not an asymmetric key".to_string()));
-                }
+fn asym_get_public_key(session: &Session) -> Result<(), MgmError> {
+    let keys = get_filtered_objects(session, ObjectType::AsymmetricKey, false)?;
+    let mut pubkeys: Vec<(Vec<u8>, ObjectAlgorithm)> = Vec::new();
+    match keys.len().cmp(&usize::try_from(1).unwrap()) {
+        Ordering::Equal => pubkeys.push(session.get_pubkey(keys[0].object_id)?),
+        Ordering::Greater => {
+            let mut key_options: Vec<MultiSelectItem<BasicDiscriptor>> = Vec::new();
+            for handle in keys {
+                key_options.push(MultiSelectItem { item: BasicDiscriptor::from(session.get_object_info(handle.object_id, handle.object_type)?), selected: false });
             }
+            let selected_keys = get_selected_items(&mut key_options);
+            for desc in selected_keys {
+                pubkeys.push(session.get_pubkey(desc.object_id)?);
+            }
+        }
+        Ordering::Less => println!("No keys were found"),
+    };
+
+    for pubkey in pubkeys {
+        let key_algo = pubkey.1;
+        if [ObjectAlgorithm::Rsa2048, ObjectAlgorithm::Rsa3072, ObjectAlgorithm::Rsa4096].contains(&key_algo) {
+            let e = BigNum::from_slice(&[0x01, 0x00, 0x01]).unwrap();
+            let n = BigNum::from_slice(pubkey.0.as_slice())?;
+            let rsa_pubkey = openssl::rsa::Rsa::from_public_components(n, e)?;
+            write_file(rsa_pubkey.public_key_to_pem()?, "rsa_pubkey.pem".to_string())?;
+            //print_pem_string(rsa_pubkey.public_key_to_pem()?);
+        } else if [ObjectAlgorithm::EcP224, ObjectAlgorithm::EcP256, ObjectAlgorithm::EcP384,
+            ObjectAlgorithm::EcP521, ObjectAlgorithm::EcK256, ObjectAlgorithm::EcBp256,
+            ObjectAlgorithm::EcBp384, ObjectAlgorithm::EcBp512].contains(&key_algo) {
+            let nid = match key_algo {
+                ObjectAlgorithm::EcP256 => Nid::X9_62_PRIME256V1,
+                ObjectAlgorithm::EcK256 => Nid::SECP256K1,
+                ObjectAlgorithm::EcP384 => Nid::SECP384R1,
+                ObjectAlgorithm::EcP521 => Nid::SECP521R1,
+                ObjectAlgorithm::EcP224 => Nid::SECP224R1,
+                ObjectAlgorithm::EcBp256 => Nid::BRAINPOOL_P256R1,
+                ObjectAlgorithm::EcBp384 => Nid::BRAINPOOL_P384R1,
+                ObjectAlgorithm::EcBp512 => Nid::BRAINPOOL_P512R1,
+                _ => unreachable!()
+            };
+            let ec_group = EcGroup::from_curve_name(nid)?;
+            let mut ctx = BigNumContext::new()?;
+            let mut ec_pubkey_bytes: Vec<u8> = Vec::new();
+            ec_pubkey_bytes.push(0x04);
+            ec_pubkey_bytes.extend(pubkey.0);
+            let ec_point = EcPoint::from_bytes(&ec_group, ec_pubkey_bytes.as_slice(), &mut ctx)?;
+
+            let ec_pubkey = EcKey::from_public_key(&ec_group, &ec_point)?;
+            write_file(ec_pubkey.public_key_to_pem()?, "ec_pubkey.pem".to_string())?;
+            //print_pem_string(ec_pubkey.public_key_to_pem()?);
+        } else if key_algo == ObjectAlgorithm::Ed25519 {
+            let ed_pubkey = PKey::public_key_from_raw_bytes(pubkey.0.as_slice(), pkey::Id::ED25519)?;
+            write_file(ed_pubkey.public_key_to_pem()?, "ed_pubkey.pem".to_string())?;
+            //print_pem_string(ed_pubkey.public_key_to_pem()?);
+        } else {
+            return Err(MgmError::Error("Object found was not an asymmetric key".to_string()));
         }
     }
     Ok(())
 }
 
 
-fn get_hashed_bytes(hash_algo:HashAlgorithm, input:&[u8]) -> Result<Vec<u8>, MgmError> {
-    let digest:DigestBytes;
+fn get_hashed_bytes(hash_algo: HashAlgorithm, input: &[u8]) -> Result<Vec<u8>, MgmError> {
+    let digest: DigestBytes;
     match hash_algo {
         HashAlgorithm::SHA1 => digest = openssl::hash::hash(MessageDigest::sha1(), input)?,
         HashAlgorithm::SHA256 => digest = openssl::hash::hash(MessageDigest::sha256(), input)?,
@@ -572,7 +505,7 @@ fn get_hashed_bytes(hash_algo:HashAlgorithm, input:&[u8]) -> Result<Vec<u8>, Mgm
     Ok(digest.to_vec())
 }
 
-fn get_mgf1_algorithm(hash_algo:HashAlgorithm) -> ObjectAlgorithm {
+fn get_mgf1_algorithm(hash_algo: HashAlgorithm) -> ObjectAlgorithm {
     match hash_algo {
         HashAlgorithm::SHA1 => ObjectAlgorithm::Mgf1Sha1,
         HashAlgorithm::SHA256 => ObjectAlgorithm::Mgf1Sha256,
@@ -582,11 +515,11 @@ fn get_mgf1_algorithm(hash_algo:HashAlgorithm) -> ObjectAlgorithm {
 }
 
 
-fn get_operation_key(session:&Session, capability:ObjectCapability) -> Result<BasicDiscriptor, MgmError> {
+fn get_operation_key(session: &Session, capability: ObjectCapability) -> Result<BasicDiscriptor, MgmError> {
     println!("\n  Choose signing or decryption key: ");
-    let sign_capabilities: [ObjectCapability;1] = [capability];
+    let sign_capabilities: [ObjectCapability; 1] = [capability];
     let key_handles = session.list_objects_with_filter(0, ObjectType::AsymmetricKey, "", ObjectAlgorithm::ANY, &sign_capabilities.to_vec())?;
-    let mut key_options:Vec<(String, BasicDiscriptor)> = Vec::new();
+    let mut key_options: Vec<(String, BasicDiscriptor)> = Vec::new();
     for handle in key_handles {
         let option = BasicDiscriptor::from(session.get_object_info(handle.object_id, handle.object_type)?);
         key_options.push((option.to_string(), option));
@@ -596,112 +529,97 @@ fn get_operation_key(session:&Session, capability:ObjectCapability) -> Result<Ba
 }
 
 
+fn asym_sign(session: &Session) -> Result<(), MgmError> {
+    let mut input_str = "".to_string();
 
-fn asym_sign(session: Option<&Session>) -> Result<(), MgmError> {
-    match session {
-        None => println!("No session available"),
-        Some(s) => {
-            let mut input_str = "".to_string();
-
-            match get_format(&vec![InputOutputFormat::STDIN, InputOutputFormat::BINARY]) {
-                InputOutputFormat::STDIN => {
-                    input_str = get_string("\nData to sign: ");
-                },
-                InputOutputFormat::BINARY => {
-                    input_str = read_file("\nAbsolute path to file containing data to sign: ");
-                },
-                _ => unreachable!()
-            }
-
-            let signed_data = match get_sign_algo() {
-                SignAlgorithm::PKCS1 => {
-                    let hash_algo = get_hash_algorithm();
-                    let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
-                    let signing_key = get_operation_key(s, ObjectCapability::SignPkcs)?;
-                    s.sign_pkcs1v1_5(signing_key.object_id, true, hashed_bytes.as_slice())?
-                },
-                SignAlgorithm::PSS => {
-                    let hash_algo = get_hash_algorithm();
-                    let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
-                    let mgf1_algo = get_mgf1_algorithm(hash_algo);
-                    let signing_key = get_operation_key(s, ObjectCapability::SignPss)?;
-                    s.sign_pss(signing_key.object_id, hashed_bytes.len(), mgf1_algo, hashed_bytes.as_slice())?
-                },
-                SignAlgorithm::ECDSA => {
-                    let hash_algo = get_hash_algorithm();
-                    let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
-                    let signing_key = get_operation_key(s, ObjectCapability::SignEcdsa)?;
-                    s.sign_ecdsa(signing_key.object_id, hashed_bytes.as_slice())?
-                },
-                SignAlgorithm::EDDSA => {
-                    let signing_key = get_operation_key(s, ObjectCapability::SignEddsa)?;
-                    s.sign_eddsa(signing_key.object_id, input_str.as_bytes())?
-                },
-            };
-
-            write_file(signed_data, "data.sig".to_string())?;
+    match get_format(&vec![InputOutputFormat::STDIN, InputOutputFormat::BINARY]) {
+        InputOutputFormat::STDIN => {
+            input_str = get_string("\nData to sign: ");
         }
-    }
-    Ok(())
-}
-
-fn asym_decrypt(session: Option<&Session>) -> Result<(), MgmError> {
-    match session {
-        None => println!("No session available"),
-        Some(s) => {
-            let input_bytes = read_file_bytes("\nAbsolute path to file containing encrypted data: ");
-
-            let decrypted_data = match get_decrypt_algo() {
-                DecryptAlgorithm::PKCS1 => {
-                    let decryption_key = get_operation_key(s, ObjectCapability::DecryptPkcs)?;
-                    s.decrypt_pkcs1v1_5(decryption_key.object_id, input_bytes.as_slice())?
-                },
-                DecryptAlgorithm::OAEP => {
-                    println!("\n  Choose OAEP decryption algorithm:");
-                    let hash_algos: [(String, HashAlgorithm);4] = [
-                        ("RSA OAEP SHA1".to_string(), HashAlgorithm::SHA1),
-                        ("RSA OAEP SHA256".to_string(), HashAlgorithm::SHA256),
-                        ("RSA OAEP SHA384".to_string(), HashAlgorithm::SHA384),
-                        ("RSA OAEP SHA512".to_string(), HashAlgorithm::SHA512)];
-                    let hash_algo = get_menu_option(&hash_algos.to_vec());
-                    let label = get_hashed_bytes(hash_algo, input_bytes.as_slice())?;
-                    let mgf1_algo = get_mgf1_algorithm(hash_algo);
-                    let decryption_key = get_operation_key(s, ObjectCapability::DecryptOaep)?;
-                    s.decrypt_oaep(decryption_key.object_id, input_bytes.as_slice(), label.as_slice(), mgf1_algo)?
-                },
-            };
-
-            write_file(decrypted_data, "data.dec".to_string())?;
+        InputOutputFormat::BINARY => {
+            input_str = read_file("\nAbsolute path to file containing data to sign: ");
         }
+        _ => unreachable!()
     }
-    Ok(())
-}
 
-fn asym_derive_ecdh(session: Option<&Session>) -> Result<(), MgmError> {
-    match  session {
-        None => println!("No session open"),
-        Some(s) => {
-
-            let pubkey = openssl::ec::EcKey::public_key_from_pem(read_file("Enter absolute path to EC public key PEM file: ").as_bytes())?;
-            let ec_point_ref = pubkey.public_key();
-            let ec_group_ref = pubkey.group();
-            let mut ctx = BigNumContext::new()?;
-            let ext_key = ec_point_ref.to_bytes(ec_group_ref, PointConversionForm::UNCOMPRESSED, &mut ctx)?;
-            let nid = ec_group_ref.curve_name().ok_or(MgmError::Error(String::from("Failed to read EC curve name")))?;
-            let ext_key_algo = get_algo_from_nid(nid)?;
-
-            let hsm_key = get_operation_key(s, ObjectCapability::DeriveEcdh)?;
-
-            if hsm_key.object_algorithm != ext_key_algo {
-                return Err(MgmError::Error("External EC public key has a different algorithm the the YubiHSM key".to_string()));
-            }
-
-            let ecdh = s.derive_ecdh(hsm_key.object_id, ext_key.as_slice())?;
-            for b in ecdh {
-                print!("{b:02x}");
-            }
-            println!();
+    let signed_data = match get_sign_algo() {
+        SignAlgorithm::PKCS1 => {
+            let hash_algo = get_hash_algorithm();
+            let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
+            let signing_key = get_operation_key(session, ObjectCapability::SignPkcs)?;
+            session.sign_pkcs1v1_5(signing_key.object_id, true, hashed_bytes.as_slice())?
+        }
+        SignAlgorithm::PSS => {
+            let hash_algo = get_hash_algorithm();
+            let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
+            let mgf1_algo = get_mgf1_algorithm(hash_algo);
+            let signing_key = get_operation_key(session, ObjectCapability::SignPss)?;
+            session.sign_pss(signing_key.object_id, hashed_bytes.len(), mgf1_algo, hashed_bytes.as_slice())?
+        }
+        SignAlgorithm::ECDSA => {
+            let hash_algo = get_hash_algorithm();
+            let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
+            let signing_key = get_operation_key(session, ObjectCapability::SignEcdsa)?;
+            session.sign_ecdsa(signing_key.object_id, hashed_bytes.as_slice())?
+        }
+        SignAlgorithm::EDDSA => {
+            let signing_key = get_operation_key(session, ObjectCapability::SignEddsa)?;
+            session.sign_eddsa(signing_key.object_id, input_str.as_bytes())?
         }
     };
+
+    write_file(signed_data, "data.sig".to_string())?;
+    Ok(())
+}
+
+fn asym_decrypt(session: &Session) -> Result<(), MgmError> {
+    let input_bytes = read_file_bytes("\nAbsolute path to file containing encrypted data: ");
+
+    let decrypted_data = match get_decrypt_algo() {
+        DecryptAlgorithm::PKCS1 => {
+            let decryption_key = get_operation_key(session, ObjectCapability::DecryptPkcs)?;
+            session.decrypt_pkcs1v1_5(decryption_key.object_id, input_bytes.as_slice())?
+        }
+        DecryptAlgorithm::OAEP => {
+            println!("\n  Choose OAEP decryption algorithm:");
+            let hash_algos: [(String, HashAlgorithm); 4] = [
+                ("RSA OAEP SHA1".to_string(), HashAlgorithm::SHA1),
+                ("RSA OAEP SHA256".to_string(), HashAlgorithm::SHA256),
+                ("RSA OAEP SHA384".to_string(), HashAlgorithm::SHA384),
+                ("RSA OAEP SHA512".to_string(), HashAlgorithm::SHA512)];
+            let hash_algo = get_menu_option(&hash_algos.to_vec());
+            let label = get_hashed_bytes(hash_algo, input_bytes.as_slice())?;
+            let mgf1_algo = get_mgf1_algorithm(hash_algo);
+            let decryption_key = get_operation_key(session, ObjectCapability::DecryptOaep)?;
+            session.decrypt_oaep(decryption_key.object_id, input_bytes.as_slice(), label.as_slice(), mgf1_algo)?
+        }
+    };
+
+    write_file(decrypted_data, "data.dec".to_string())?;
+
+    Ok(())
+}
+
+fn asym_derive_ecdh(session: &Session) -> Result<(), MgmError> {
+    let pubkey = openssl::ec::EcKey::public_key_from_pem(read_file("Enter absolute path to EC public key PEM file: ").as_bytes())?;
+    let ec_point_ref = pubkey.public_key();
+    let ec_group_ref = pubkey.group();
+    let mut ctx = BigNumContext::new()?;
+    let ext_key = ec_point_ref.to_bytes(ec_group_ref, PointConversionForm::UNCOMPRESSED, &mut ctx)?;
+    let nid = ec_group_ref.curve_name().ok_or(MgmError::Error(String::from("Failed to read EC curve name")))?;
+    let ext_key_algo = get_algo_from_nid(nid)?;
+
+    let hsm_key = get_operation_key(session, ObjectCapability::DeriveEcdh)?;
+
+    if hsm_key.object_algorithm != ext_key_algo {
+        return Err(MgmError::Error("External EC public key has a different algorithm the the YubiHSM key".to_string()));
+    }
+
+    let ecdh = session.derive_ecdh(hsm_key.object_id, ext_key.as_slice())?;
+    for b in ecdh {
+        print!("{b:02x}");
+    }
+    println!();
+
     Ok(())
 }

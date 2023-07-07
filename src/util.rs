@@ -324,31 +324,20 @@ pub fn get_filtered_objects(session: &Session, object_type:ObjectType, include_c
     Ok(key_handles)
 }
 
-pub fn delete_objects(session: Option<&Session>, object_handles:Vec<ObjectHandle>) -> Result<(), MgmError> {
-    match session {
-        None => {
-            if object_handles.len() == 1 {
-                println!("  > yubihsm-shell -a delete-object -i {} -t {}", object_handles[0].object_id, object_handles[0].object_type);
-            } else {
-                println!("  > yubihsm-shell -a delete-object -i <OBJECT_ID> -t <OBJECT_TYPE>");
-            }
-        },
-        Some(session) => {
-            if object_handles.len() == 1 {
-                session.delete_object(object_handles[0].object_id, object_handles[0].object_type)?;
-                println!("Deleted {} with ID 0x{:x}", object_handles[0].object_type, object_handles[0].object_id);
-            } else {
-                let mut objects_options:Vec<MultiSelectItem<ObjectDescriptor>> = Vec::new();
-                for h in object_handles {
-                    objects_options.push(MultiSelectItem{item: session.get_object_info(h.object_id, h.object_type)?, selected: false});
-                }
+pub fn delete_objects(session: &Session, object_handles: Vec<ObjectHandle>) -> Result<(), MgmError> {
+    if object_handles.len() == 1 {
+        session.delete_object(object_handles[0].object_id, object_handles[0].object_type)?;
+        println!("Deleted {} with ID 0x{:x}", object_handles[0].object_type, object_handles[0].object_id);
+    } else {
+        let mut objects_options: Vec<MultiSelectItem<ObjectDescriptor>> = Vec::new();
+        for h in object_handles {
+            objects_options.push(MultiSelectItem { item: session.get_object_info(h.object_id, h.object_type)?, selected: false });
+        }
 
-                let delete_objects = get_selected_items(&mut objects_options);
-                for object in delete_objects {
-                    session.delete_object(object.id, object.object_type)?;
-                    println!("Deleted {} with id 0x{:04x}", object.object_type,  object.id);
-                }
-            }
+        let delete_objects = get_selected_items(&mut objects_options);
+        for object in delete_objects {
+            session.delete_object(object.id, object.object_type)?;
+            println!("Deleted {} with id 0x{:04x}", object.object_type, object.id);
         }
     }
     Ok(())

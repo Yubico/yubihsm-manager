@@ -31,55 +31,7 @@ fn is_valid_id(value: String) -> Result<(), String> {
     })
 }
 
-fn get_session(hsm: &YubiHsm, open_session:bool, authkey:u16, password:String) -> Option<Session> {
-    if !open_session {
-        None
-    } else {
-        Some(hsm
-            .establish_session(authkey, &password, true)
-            .unwrap_or_else(|err| {
-                println!("Unable to open session: {}", err);
-                std::process::exit(1);
-            }))
-    }
-}
-
-fn get_session_option(open_session:bool, authkey:u16, password:String) -> Option<Session>{
-    yubihsmrs::init().unwrap_or_else(|err| {
-        println!("Unable to initialize libyubihsm: {}", err);
-        std::process::exit(1);
-    });
-
-    //let h = YubiHsm::new(connector).unwrap_or_else(|err| {
-    let h = YubiHsm::new("http://127.0.0.1:12345").unwrap_or_else(|err| {
-        println!("Unable to create HSM object: {}", err);
-        std::process::exit(1);
-    });
-
-    //h.set_verbosity(matches.is_present("verbose"))
-    h.set_verbosity(false)
-        .unwrap_or_else(|err| {
-            println!("Unable to set verbosity: {}", err);
-            std::process::exit(1);
-        });
-
-    //let session = get_session(&h, open_session, authkey, password);
-    let mut session:Option<Session> =
-        if !open_session {
-            None
-        } else {
-            Some(h
-                .establish_session(authkey, &password, true)
-                .unwrap_or_else(|err| {
-                    println!("Unable to open session: {}", err);
-                    std::process::exit(1);
-                }))
-        };
-    session
-}
-
 fn main() -> Result<(), MgmError> {
-
     let matches = App::new(env!("CARGO_PKG_NAME"))
         .version(crate_version!())
         .about(env!("CARGO_PKG_DESCRIPTION"))
@@ -87,15 +39,10 @@ fn main() -> Result<(), MgmError> {
         .subcommands(vec![
             SubCommand::with_name("auth").about("Manage users"),
             SubCommand::with_name("asym").about("Manage asymmetric keys"),
-            SubCommand::with_name("wrap").about("Manage wrap keys"),
+            SubCommand::with_name("wrap").about("Manage wrap keys (not implemented yet)"),
             SubCommand::with_name("random").about("Get pseudo-random data from device"),
             SubCommand::with_name("reset").about("Resets the device"),
         ]).arg(
-        Arg::with_name("no-auth")
-            .long("no-auth")
-            .short("a")
-            .help("Don't open a session with the device"),
-    ).arg(
         Arg::with_name("authkey")
             .long("authkey")
             .short("k")
@@ -126,22 +73,20 @@ fn main() -> Result<(), MgmError> {
     ).get_matches();
 
     let connector = matches.value_of("connector").unwrap();
-    let open_session = !matches.is_present("no-auth");
 
-    let mut authkey:u16 = 1;
-    let mut password:String = "password".to_string();
-    if open_session {
-        //let authkey = parse_id(matches.value_of("authkey").unwrap()).unwrap();
-        authkey = match matches.value_of("authkey") {
-            Some(authkey) => parse_id(matches.value_of("authkey").unwrap()).unwrap(),
-            None => get_integer_or_default("Login with authentication key ID [default 1]: ", 1),
-        };
-        password = match matches.value_of("password") {
-            Some(password) => password.to_owned(),
-            None => get_string_or_default("Enter authentication password [default 'password']: ", "password"),
-        };
-        println!("Using authentication key 0x{:04x}", authkey);
-    }
+    let mut authkey: u16 = 1;
+    let mut password: String = "password".to_string();
+
+    authkey = match matches.value_of("authkey") {
+        Some(authkey) => parse_id(matches.value_of("authkey").unwrap()).unwrap(),
+        None => get_integer_or_default("Login with authentication key ID [default 1]: ", 1),
+    };
+    password = match matches.value_of("password") {
+        Some(password) => password.to_owned(),
+        None => get_string_or_default("Enter authentication password [default 'password']: ", "password"),
+    };
+    println!("Using authentication key 0x{:04x}", authkey);
+
 
     yubihsmrs::init().unwrap_or_else(|err| {
         println!("Unable to initialize libyubihsm: {}", err);
@@ -153,32 +98,22 @@ fn main() -> Result<(), MgmError> {
         std::process::exit(1);
     });
 
+    h.set_verbosity(matches.is_present("verbose"))
+        .unwrap_or_else(|err| {
+            println!("Unable to set verbosity: {}", err);
+            std::process::exit(1);
+        });
 
-    let s:Session;
-    //let session = get_session(&h, open_session, authkey, password);
-    let session:Option<&Session> =
-        if !open_session {
-            None
-        } else {
-            h.set_verbosity(matches.is_present("verbose"))
-                .unwrap_or_else(|err| {
-                    println!("Unable to set verbosity: {}", err);
-                    std::process::exit(1);
-                });
-
-            s = h
-                .establish_session(authkey, &password, true)
-                .unwrap_or_else(|err| {
-                    println!("Unable to open session: {}", err);
-                    std::process::exit(1);
-                });
-            Some(&s)
-        };
-
+    let session = h
+        .establish_session(authkey, &password, true)
+        .unwrap_or_else(|err| {
+            println!("Unable to open session: {}", err);
+            std::process::exit(1);
+        });
 
     match matches.subcommand_name() {
-        Some("auth") => auth_commands::exec_auth_command(session, authkey)?,
-        Some("asym") => asym_commands::exec_asym_command(session, authkey)?,
+        Some("auth") => auth_commands::exec_auth_command(&session, authkey)?,
+        Some("asym") => asym_commands::exec_asym_command(&session, authkey)?,
         //Some("wrap") => asym_commands::exec_asym_command(session, authkey)?,
         //Some("random") => asym_commands::exec_asym_command(session, authkey)?,
         //Some("reset") => asym_commands::exec_asym_command(session, authkey)?,
@@ -187,5 +122,4 @@ fn main() -> Result<(), MgmError> {
 
     println!("All done");
     Ok(())
-
 }
