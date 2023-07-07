@@ -1,9 +1,10 @@
+use std::collections::HashSet;
 use std::io::{stdout, Write};
 use crate::util::{get_string, get_menu_option, get_boolean_answer, get_selected_items, delete_objects, read_file}; // 0.17.1
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{BasicDiscriptor, get_common_properties, get_filtered_objects, get_integer_or_default, get_intersection, get_selection_items_from_vec, get_string_or_default, MultiSelectItem, print_object_properties, read_file_bytes, write_file};
+use util::{BasicDiscriptor, get_common_properties, get_filtered_objects, get_integer_or_default, get_selection_items_from_vec, get_string_or_default, MultiSelectItem, print_object_properties, read_file_bytes, select_object_capabilities, write_file};
 
 const ALL_USER_CAPABILITIES:[ObjectCapability;9] = [
     ObjectCapability::SignPkcs,
@@ -26,7 +27,7 @@ const ALL_ADMIN_CAPABILITIES:[ObjectCapability;5] = [
 ];
 
 #[derive(Debug, Clone, Copy)]
-enum AuthCommands {
+enum AuthCommand {
     ListKeys,
     GetKeyProperties,
     DeleteKey,
@@ -39,31 +40,48 @@ enum AuthCommands {
 
 pub fn exec_auth_command(session: Option<&Session>, current_authkey:u16) -> Result<(), MgmError> {
     stdout().flush().unwrap();
-    let cmd = get_auth_command();
+    let cmd = get_auth_command(session.unwrap(), current_authkey)?;
     match cmd {
-        AuthCommands::ListKeys => auth_list_keys(session),
-        AuthCommands::GetKeyProperties => auth_get_key_properties(session),
-        AuthCommands::DeleteKey => auth_delete_user(session),
-        AuthCommands::SetupUser => auth_setup_user(session, current_authkey),
-        AuthCommands::SetupAdmin => auth_setup_admin(session, current_authkey),
-        AuthCommands::SetupAuditor => auth_setup_auditor(session, current_authkey),
-        AuthCommands::Exit => std::process::exit(0),
+        AuthCommand::ListKeys => auth_list_keys(session),
+        AuthCommand::GetKeyProperties => auth_get_key_properties(session),
+        AuthCommand::DeleteKey => auth_delete_user(session),
+        AuthCommand::SetupUser => auth_setup_user(session, current_authkey),
+        AuthCommand::SetupAdmin => auth_setup_admin(session, current_authkey),
+        AuthCommand::SetupAuditor => auth_setup_auditor(session, current_authkey),
+        AuthCommand::SetupBackupAdmin => auth_setup_backupadmin(session,current_authkey),
+        AuthCommand::Exit => std::process::exit(0),
         _ => unreachable!()
     }
 }
 
-fn get_auth_command() -> AuthCommands {
-    println!();
-    let commands: [(String, AuthCommands);8] = [
-        ("List keys".to_string(), AuthCommands::ListKeys),
-        ("Get user info".to_string(), AuthCommands::GetKeyProperties),
-        ("Delete user".to_string(), AuthCommands::DeleteKey),
-        ("Setup user: Can only use keys".to_string(), AuthCommands::SetupUser),
-        ("Setup admin: Can create keys".to_string(), AuthCommands::SetupAdmin),
-        ("Setup auditor: Can only perform audit functions".to_string(), AuthCommands::SetupAuditor),
-        ("Setup backup user: Can do all the above, create new users and perform backup and restore operations".to_string(), AuthCommands::SetupBackupAdmin),
-        ("Exit".to_string(), AuthCommands::Exit)];
-    get_menu_option(&commands.to_vec())
+fn get_auth_command(session:&Session, current_authkey:u16) -> Result<AuthCommand, MgmError> {
+
+    let capabilities:HashSet<ObjectCapability> =
+        session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?.capabilities.into_iter().collect();
+    let delegated_capabilities:HashSet<ObjectCapability> =
+        session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?.delegated_capabilities.unwrap().into_iter().collect();
+
+
+    let mut commands:Vec<(String, AuthCommand)> = Vec::new();
+    commands.push(("List keys".to_string(), AuthCommand::ListKeys));
+    commands.push(("Get user info".to_string(), AuthCommand::GetKeyProperties));
+    if capabilities.contains(&ObjectCapability::DeleteAuthenticationKey) {
+        commands.push(("Delete user".to_string(), AuthCommand::DeleteKey));
+
+        if HashSet::from(ALL_USER_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
+            commands.push(("Setup user: Can only use keys".to_string(), AuthCommand::SetupUser));
+        }
+        if HashSet::from(ALL_ADMIN_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
+            commands.push(("Setup admin: Can create keys".to_string(), AuthCommand::SetupAdmin));
+        }
+        if delegated_capabilities.contains(&ObjectCapability::GetLogEntries) {
+            commands.push(("Setup auditor: Can only perform audit functions".to_string(), AuthCommand::SetupAuditor));
+        }
+        commands.push(("Setup backup user: Can have all the delegated capabilities of this user".to_string(), AuthCommand::SetupBackupAdmin))
+    }
+    commands.push(("Exit".to_string(), AuthCommand::Exit));
+
+    Ok(get_menu_option(&commands))
 }
 
 fn auth_list_keys(session: Option<&Session>) -> Result<(), MgmError> {
@@ -140,14 +158,13 @@ fn auth_setup_user(session:Option<&Session>, current_authkey:u16) -> Result<(), 
     match session {
         None => println!("Session not available"),
         Some(s) => {
-            let delegated_capabilities = s.get_object_info(
-                current_authkey, ObjectType::AuthenticationKey)?.delegated_capabilities.
-                expect("Cannot read object delegated capabilities");
-            let mut capabilities_options =
-                get_selection_items_from_vec(
-                    get_intersection(&ALL_USER_CAPABILITIES.to_vec(), &delegated_capabilities));
-            let selected_capabilities = get_selected_items(&mut capabilities_options);
-            create_user(s, selected_capabilities, Vec::new(), delegated_capabilities.contains(&ObjectCapability::ExportableUnderWrap))?
+            let permissible_capabilities:HashSet<ObjectCapability> =
+                session.unwrap().get_object_info(current_authkey, ObjectType::AuthenticationKey)?
+                    .delegated_capabilities.unwrap().into_iter().collect();
+
+            let selected_capabilities =
+                select_object_capabilities(&HashSet::from(ALL_USER_CAPABILITIES), &permissible_capabilities);
+            create_user(s, selected_capabilities, Vec::new(), permissible_capabilities.contains(&ObjectCapability::ExportableUnderWrap))?
         }
     }
     Ok(())
@@ -157,26 +174,21 @@ fn auth_setup_admin(session:Option<&Session>, current_authkey:u16) -> Result<(),
     match session {
         None => println!("Session not available"),
         Some(s) => {
-            let permissible_capabilities = s.get_object_info(
-                current_authkey, ObjectType::AuthenticationKey)?.delegated_capabilities.
-                expect("Cannot read current authentication key's delegated capabilities");
+            let permissible_capabilities:HashSet<ObjectCapability> =
+                session.unwrap().get_object_info(current_authkey, ObjectType::AuthenticationKey)?
+                    .delegated_capabilities.expect("Cannot read current authentication key's delegated capabilities")
+                    .into_iter().collect();
 
             print!("\nChoose admin user capabilities. ");
-            let mut capabilities_options =
-                get_selection_items_from_vec(
-                    get_intersection(&ALL_ADMIN_CAPABILITIES.to_vec(), &permissible_capabilities));
-            let selected_capabilities = get_selected_items(&mut capabilities_options);
+            let selected_capabilities =
+                select_object_capabilities(&HashSet::from(ALL_ADMIN_CAPABILITIES), &permissible_capabilities);
 
             print!("\nChoose admin user delegated capabilities. ");
-            let mut delegated_capabilities_options =
-                get_selection_items_from_vec(
-                    get_intersection(&ALL_USER_CAPABILITIES.to_vec(), &permissible_capabilities));
-            if permissible_capabilities.contains(&ObjectCapability::ExportableUnderWrap) {
-                delegated_capabilities_options.push(
-                    MultiSelectItem{item: ObjectCapability::ExportableUnderWrap, selected:false});
-            }
+            let mut delegated_caps:Vec<ObjectCapability> = Vec::new();
+            ALL_USER_CAPABILITIES.map(|c| delegated_caps.push(c));
+            delegated_caps.push(ObjectCapability::ExportableUnderWrap);
             let selected_delegated_capabilities =
-                get_selected_items(&mut delegated_capabilities_options);
+                select_object_capabilities(&delegated_caps.into_iter().collect(), &permissible_capabilities);
 
             create_user(s, selected_capabilities, selected_delegated_capabilities, permissible_capabilities.contains(&ObjectCapability::ExportableUnderWrap))?
         }
@@ -199,6 +211,39 @@ fn auth_setup_auditor(session:Option<&Session>, current_authkey:u16) -> Result<(
             let capabilities = vec![ObjectCapability::GetLogEntries];
 
             create_user(s, capabilities, Vec::new(), permissible_capabilities.contains(&ObjectCapability::ExportableUnderWrap))?
+        }
+    }
+    Ok(())
+}
+
+fn auth_setup_backupadmin(session:Option<&Session>, current_authkey:u16) -> Result<(), MgmError>{
+    match session {
+        None => println!("Session not available"),
+        Some(s) => {
+            let permissible_capabilities = s.get_object_info(
+                current_authkey, ObjectType::AuthenticationKey)?.delegated_capabilities.
+                expect("Cannot read current authentication key's delegated capabilities");
+
+            println!("\n  Current user delegated capabilities:");
+            for c in &permissible_capabilities {
+                println!("  {c}");
+            }
+            println!();
+
+            let mut capabilities = permissible_capabilities.clone();
+            if !bool::from(get_boolean_answer("Use all current user delegated capabilities as new user capabilities? ")) {
+                capabilities = get_selected_items(&mut get_selection_items_from_vec(&permissible_capabilities));
+            }
+            println!("");
+
+            let mut delegated_capabilities = permissible_capabilities.clone();
+            if !bool::from(get_boolean_answer("Use all current user delegated capabilities as new user delegated capabilities? ")) {
+                delegated_capabilities = get_selected_items(&mut get_selection_items_from_vec(&permissible_capabilities));
+            }
+            println!("");
+
+            // exportable_underwrap does not need to be added explicitly because it should already be there
+            create_user(s, capabilities, delegated_capabilities, false)?
         }
     }
     Ok(())

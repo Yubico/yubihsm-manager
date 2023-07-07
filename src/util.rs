@@ -9,7 +9,7 @@ use std::io::{stdin, stdout, Write};
 use std::num::IntErrorKind;
 use std::ops::Deref;
 use clap::ErrorKind;
-use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use crossterm::{execute, cursor::{MoveTo}, cursor};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size};
 use crossterm_input::{input, InputEvent};
@@ -187,9 +187,13 @@ pub fn get_common_properties() -> (u16, String, Vec<ObjectDomain>) {
 }
 
 pub fn get_menu_option<T:Clone>(items: &Vec<(String, T)>) -> T {
-    for i in 0..items.len() {
-        println!("  ({}) {}", i+1, items[i].0);
+    for item in items.into_iter().enumerate() {
+        let (i, x): (usize, &(String, T)) = item;
+        println!("  ({}) {}", i+1, x.0);
     }
+    /*for i in 0..items.len() {
+        println!("  ({}) {}", i+1, items[i].0);
+    }*/
     let mut choice: u16 = 0;
     while choice < 1 || choice > u16::try_from(items.len()).unwrap() {
         choice = get_integer("Your choice: ");
@@ -404,20 +408,10 @@ pub fn print_object_properties(session: &Session, object_type:ObjectType) {
     }
 }
 
-pub fn get_intersection<T:PartialEq+Clone>(a:&Vec<T>, b:&Vec<T>) -> Vec<T> {
-    let mut c:Vec<T> = Vec::new();
-    for t in a {
-        if b.contains(&t) {
-            c.push(t.clone());
-        }
-    }
-    c
-}
-
-pub fn get_selection_items_from_vec<T:Display>(items:Vec<T>) -> Vec<MultiSelectItem<T>> {
+pub fn get_selection_items_from_vec<T:Display+Clone>(items:&Vec<T>) -> Vec<MultiSelectItem<T>> {
     let mut select_items:Vec<MultiSelectItem<T>> = Vec::new();
     for item in items {
-        select_items.push(MultiSelectItem{item, selected:false});
+        select_items.push(MultiSelectItem{item:item.clone(), selected:false});
     }
     select_items
 }
@@ -428,4 +422,13 @@ pub fn get_selection_items_from_hashset<T:Display+Clone>(items:HashSet<&T>) -> V
         select_items.push(MultiSelectItem{item:item.clone(), selected:false});
     }
     select_items
+}
+
+pub fn select_object_capabilities(object_capabilities:&HashSet<ObjectCapability>, permissible_capabilities:&HashSet<ObjectCapability>) -> Vec<ObjectCapability> {
+    let selectable_capabilities:HashSet<&ObjectCapability> =
+        permissible_capabilities.intersection(&object_capabilities).collect();
+
+    let mut capability_options:Vec<MultiSelectItem<ObjectCapability>> =
+        get_selection_items_from_hashset(selectable_capabilities);
+    get_selected_items(&mut capability_options)
 }

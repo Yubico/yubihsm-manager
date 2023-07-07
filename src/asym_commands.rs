@@ -14,7 +14,7 @@ use crate::util::{get_string, get_menu_option, get_boolean_answer, get_selected_
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{BasicDiscriptor, get_common_properties, get_filtered_objects, get_integer_or_default, get_selection_items_from_hashset, get_selection_items_from_vec, get_string_or_default, MultiSelectItem, print_object_properties, read_file_bytes, write_file};
+use util::{BasicDiscriptor, get_common_properties, get_filtered_objects, get_integer_or_default, get_selection_items_from_hashset, get_selection_items_from_vec, get_string_or_default, MultiSelectItem, print_object_properties, read_file_bytes, select_object_capabilities, write_file};
 
 const RSA_KEY_CAPABILITIES: [ObjectCapability;5] = [
     ObjectCapability::SignPkcs,
@@ -34,7 +34,7 @@ const ED_KEY_CAPABILITIES: [ObjectCapability;2] = [
 
 
 #[derive(Debug, Clone, Copy)]
-enum AsymCommands {
+enum AsymCommand {
     ListKeys,
     GetKeyProperties,
     GenerateKey,
@@ -99,51 +99,51 @@ pub fn exec_asym_command(session: Option<&Session>, current_authkey:u16) -> Resu
     stdout().flush().unwrap();
     let cmd = get_asym_command(session.unwrap(), current_authkey)?;
     match cmd {
-        AsymCommands::ListKeys => asym_list_keys(session),
-        AsymCommands::GetKeyProperties => asym_get_key_properties(session),
-        AsymCommands::GenerateKey => asym_gen_key(session, current_authkey),
-        AsymCommands::ImportKey => asym_import_key(session, current_authkey),
-        AsymCommands::DeleteKey => asym_delete_key(session),
-        AsymCommands::GetPublicKey => asym_get_public_key(session),
-        AsymCommands::PerformSignature => asym_sign(session),
-        AsymCommands::PerformRsaDecryption => asym_decrypt(session),
-        AsymCommands::DeriveEcdh => asym_derive_ecdh(session),
-        AsymCommands::Exit => std::process::exit(0),
+        AsymCommand::ListKeys => asym_list_keys(session),
+        AsymCommand::GetKeyProperties => asym_get_key_properties(session),
+        AsymCommand::GenerateKey => asym_gen_key(session, current_authkey),
+        AsymCommand::ImportKey => asym_import_key(session, current_authkey),
+        AsymCommand::DeleteKey => asym_delete_key(session),
+        AsymCommand::GetPublicKey => asym_get_public_key(session),
+        AsymCommand::PerformSignature => asym_sign(session),
+        AsymCommand::PerformRsaDecryption => asym_decrypt(session),
+        AsymCommand::DeriveEcdh => asym_derive_ecdh(session),
+        AsymCommand::Exit => std::process::exit(0),
         _ => unreachable!()
     }
 }
 
-fn get_asym_command(session:&Session, current_authkey:u16) -> Result<AsymCommands, MgmError> {
+fn get_asym_command(session:&Session, current_authkey:u16) -> Result<AsymCommand, MgmError> {
     let capabilities:HashSet<ObjectCapability> =
         session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?.capabilities.into_iter().collect();
 
-    let mut commands: Vec<(String, AsymCommands)> = Vec::new();
-    commands.push(("List keys".to_string(), AsymCommands::ListKeys));
-    commands.push(("Get key properties".to_string(), AsymCommands::GetKeyProperties));
+    let mut commands: Vec<(String, AsymCommand)> = Vec::new();
+    commands.push(("List keys".to_string(), AsymCommand::ListKeys));
+    commands.push(("Get key properties".to_string(), AsymCommand::GetKeyProperties));
     if capabilities.contains(&ObjectCapability::GenerateAsymmetricKey) {
-        commands.push(("Generate key".to_string(), AsymCommands::GenerateKey));
+        commands.push(("Generate key".to_string(), AsymCommand::GenerateKey));
     }
     if capabilities.contains(&ObjectCapability::PutAsymmetricKey) {
-        commands.push(("Import key".to_string(), AsymCommands::ImportKey));
+        commands.push(("Import key".to_string(), AsymCommand::ImportKey));
     }
     if capabilities.contains(&ObjectCapability::DeleteAsymmetricKey) ||
         capabilities.contains(&ObjectCapability::DeleteOpaque) {
-        commands.push(("Delete key".to_string(), AsymCommands::DeleteKey));
+        commands.push(("Delete key".to_string(), AsymCommand::DeleteKey));
     }
-    commands.push(("Get public key".to_string(), AsymCommands::GetPublicKey));
+    commands.push(("Get public key".to_string(), AsymCommand::GetPublicKey));
     if HashSet::from([ObjectCapability::SignPkcs,
         ObjectCapability::SignPss,
         ObjectCapability::SignEcdsa,
         ObjectCapability::SignEddsa]).intersection(&capabilities).count() > 0 {
-        commands.push(("Perform signature".to_string(), AsymCommands::PerformSignature));
+        commands.push(("Perform signature".to_string(), AsymCommand::PerformSignature));
     }
     if HashSet::from([
         ObjectCapability::DecryptPkcs,
         ObjectCapability::DecryptOaep]).intersection(&capabilities).count() > 0 {
-        commands.push(("Perform RSA decryption".to_string(), AsymCommands::PerformRsaDecryption));
+        commands.push(("Perform RSA decryption".to_string(), AsymCommand::PerformRsaDecryption));
     }
     if capabilities.contains(&ObjectCapability::DeriveEcdh) {
-        ("Derive ECDH".to_string(), AsymCommands::DeriveEcdh);
+        ("Derive ECDH".to_string(), AsymCommand::DeriveEcdh);
     }
     if HashSet::from([
         ObjectCapability::GenerateAsymmetricKey,
@@ -153,9 +153,9 @@ fn get_asym_command(session:&Session, current_authkey:u16) -> Result<AsymCommand
         HashSet::from([
             ObjectCapability::PutOpaque,
             ObjectCapability::DeleteOpaque]).intersection(&capabilities).count() > 0 {
-        commands.push(("Manage JAVA keys (Usable with SunPKCS11 provider) (Not supported yet)".to_string(), AsymCommands::ManageJavaKeys));
+        commands.push(("Manage JAVA keys (Usable with SunPKCS11 provider) (Not supported yet)".to_string(), AsymCommand::ManageJavaKeys));
     }
-    commands.push(("Exit".to_string(), AsymCommands::Exit));
+    commands.push(("Exit".to_string(), AsymCommand::Exit));
     println!();
     Ok(get_menu_option(&commands))
 }
@@ -246,29 +246,14 @@ fn get_rsa_keylen() -> u32 {
     key_len
 }
 
-fn select_key_capabilities(keytype:AsymKeyTypes, permissible_capabilities:HashSet<ObjectCapability>) -> Vec<ObjectCapability> {
-    println!("  Choose key capabilities:");
-    let key_capabilities_hashset = match keytype {
-        AsymKeyTypes::RSA => HashSet::from(RSA_KEY_CAPABILITIES),
-        AsymKeyTypes::EC => HashSet::from(EC_KEY_CAPABILITIES),
-        AsymKeyTypes::ED => HashSet::from(ED_KEY_CAPABILITIES),
-        _ => unreachable!(),
-    };
-    let selectable_capabilities:HashSet<&ObjectCapability> =
-        permissible_capabilities.intersection(&key_capabilities_hashset).collect();
-
-    let mut capability_options:Vec<MultiSelectItem<ObjectCapability>> =
-        get_selection_items_from_hashset(selectable_capabilities);
-    get_selected_items(&mut capability_options)
-}
-
 fn asym_gen_key(session: Option<&Session>, current_authkey:u16) -> Result<(), MgmError> {
     println!();
     let (key_id, label, domains) = get_common_properties();
 
     let permissible_capabilities:HashSet<ObjectCapability> =
         session.unwrap().get_object_info(current_authkey, ObjectType::AuthenticationKey)?
-            .delegated_capabilities.unwrap().into_iter().collect();
+            .delegated_capabilities.expect("Cannot read current authentication key's delegated capabilities")
+            .into_iter().collect();
 
 
     let key_algorithm:ObjectAlgorithm;
@@ -283,15 +268,15 @@ fn asym_gen_key(session: Option<&Session>, current_authkey:u16) -> Result<(), Mg
                 4096 => ObjectAlgorithm::Rsa4096,
                 _ => unreachable!()
             };
-            capabilities = select_key_capabilities(AsymKeyTypes::RSA, permissible_capabilities);
+            capabilities = select_object_capabilities(&HashSet::from(RSA_KEY_CAPABILITIES), &permissible_capabilities);
         }
         AsymKeyTypes::EC => {
             key_algorithm = get_ec_algo();
-            capabilities = select_key_capabilities(AsymKeyTypes::EC, permissible_capabilities);
+            capabilities = select_object_capabilities(&HashSet::from(EC_KEY_CAPABILITIES), &permissible_capabilities);
         }
         AsymKeyTypes::ED => {
             key_algorithm = ObjectAlgorithm::Ed25519;
-            capabilities = select_key_capabilities(AsymKeyTypes::ED, permissible_capabilities);
+            capabilities = select_object_capabilities(&HashSet::from(ED_KEY_CAPABILITIES), &permissible_capabilities);
         }
     };
 
@@ -355,7 +340,8 @@ fn asym_import_key(session:Option<&Session>, current_authkey:u16) -> Result<(), 
 
     let permissible_capabilities:HashSet<ObjectCapability> =
         session.unwrap().get_object_info(current_authkey, ObjectType::AuthenticationKey)?
-            .delegated_capabilities.unwrap().into_iter().collect();
+            .delegated_capabilities.expect("Cannot read current authentication key's delegated capabilities")
+            .into_iter().collect();
 
     match openssl::pkey::PKey::private_key_from_der(&key_bytes) {
         Ok(key) => {
@@ -376,7 +362,7 @@ fn asym_import_key(session:Option<&Session>, current_authkey:u16) -> Result<(), 
                         },
                     };
 
-                    let capabilities = select_key_capabilities(AsymKeyTypes::RSA, permissible_capabilities);
+                    let capabilities = select_object_capabilities(&HashSet::from(RSA_KEY_CAPABILITIES), &permissible_capabilities);
 
                     match session {
                         None => print_import_key_cmd(key_id, label, domains, capabilities),
@@ -392,7 +378,7 @@ fn asym_import_key(session:Option<&Session>, current_authkey:u16) -> Result<(), 
                     let group = private_ec.group();
                     let nid = group.curve_name().ok_or(MgmError::Error(String::from("Failed to read EC curve name")))?;
                     let key_algorithm = get_algo_from_nid(nid)?;
-                    let capabilities = select_key_capabilities(AsymKeyTypes::EC, permissible_capabilities);
+                    let capabilities = select_object_capabilities(&HashSet::from(EC_KEY_CAPABILITIES), &permissible_capabilities);
 
                     match session {
                         None => print_import_key_cmd(key_id, label, domains, capabilities),
@@ -405,7 +391,7 @@ fn asym_import_key(session:Option<&Session>, current_authkey:u16) -> Result<(), 
                 pkey::Id::ED25519 => {
                     let private_ed= PKey::private_key_from_raw_bytes(key_bytes, openssl::pkey::Id::ED25519)?;
                     let k = private_ed.raw_private_key()?;
-                    let capabilities = select_key_capabilities(AsymKeyTypes::ED, permissible_capabilities);
+                    let capabilities = select_object_capabilities(&HashSet::from(ED_KEY_CAPABILITIES), &permissible_capabilities);
                     match session {
                         None => print_import_key_cmd(key_id, label, domains, capabilities),
                         Some(session) => {
