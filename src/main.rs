@@ -89,6 +89,7 @@ fn main() -> Result<(), MgmError> {
             SubCommand::with_name("asym").about("Manage asymmetric keys"),
             SubCommand::with_name("wrap").about("Manage wrap keys"),
             SubCommand::with_name("random").about("Get pseudo-random data from device"),
+            SubCommand::with_name("reset").about("Resets the device"),
         ]).arg(
         Arg::with_name("no-auth")
             .long("no-auth")
@@ -177,9 +178,10 @@ fn main() -> Result<(), MgmError> {
 
     match matches.subcommand_name() {
         Some("auth") => auth_commands::exec_auth_command(session, authkey)?,
-        Some("asym") => asym_commands::exec_asym_command(session)?,
-        Some("wrap") => asym_commands::exec_asym_command(session)?,
-        Some("random") => asym_commands::exec_asym_command(session)?,
+        Some("asym") => asym_commands::exec_asym_command(session, authkey)?,
+        //Some("wrap") => asym_commands::exec_asym_command(session, authkey)?,
+        //Some("random") => asym_commands::exec_asym_command(session, authkey)?,
+        //Some("reset") => asym_commands::exec_asym_command(session, authkey)?,
         _ => return Err(MgmError::Error("Unrecognized subcommand".to_string())),
     }
 

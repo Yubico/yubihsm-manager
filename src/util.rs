@@ -2,6 +2,7 @@ extern crate yubihsmrs;
 
 use std::fmt::Display;
 use std::{fmt, fs, process};
+use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{stdin, stdout, Write};
@@ -403,11 +404,11 @@ pub fn print_object_properties(session: &Session, object_type:ObjectType) {
     }
 }
 
-pub fn get_intersection<T:PartialEq>(a:Vec<T>, b:Vec<T>) -> Vec<T> {
+pub fn get_intersection<T:PartialEq+Clone>(a:&Vec<T>, b:&Vec<T>) -> Vec<T> {
     let mut c:Vec<T> = Vec::new();
     for t in a {
         if b.contains(&t) {
-            c.push(t);
+            c.push(t.clone());
         }
     }
     c
@@ -416,7 +417,15 @@ pub fn get_intersection<T:PartialEq>(a:Vec<T>, b:Vec<T>) -> Vec<T> {
 pub fn get_selection_items_from_vec<T:Display>(items:Vec<T>) -> Vec<MultiSelectItem<T>> {
     let mut select_items:Vec<MultiSelectItem<T>> = Vec::new();
     for item in items {
-        select_items.push(MultiSelectItem{item:item, selected:false});
+        select_items.push(MultiSelectItem{item, selected:false});
+    }
+    select_items
+}
+
+pub fn get_selection_items_from_hashset<T:Display+Clone>(items:HashSet<&T>) -> Vec<MultiSelectItem<T>> {
+    let mut select_items:Vec<MultiSelectItem<T>> = Vec::new();
+    for item in items {
+        select_items.push(MultiSelectItem{item:item.clone(), selected:false});
     }
     select_items
 }

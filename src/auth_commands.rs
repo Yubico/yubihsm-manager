@@ -45,6 +45,8 @@ pub fn exec_auth_command(session: Option<&Session>, current_authkey:u16) -> Resu
         AuthCommands::GetKeyProperties => auth_get_key_properties(session),
         AuthCommands::DeleteKey => auth_delete_user(session),
         AuthCommands::SetupUser => auth_setup_user(session, current_authkey),
+        AuthCommands::SetupAdmin => auth_setup_admin(session, current_authkey),
+        AuthCommands::SetupAuditor => auth_setup_auditor(session, current_authkey),
         AuthCommands::Exit => std::process::exit(0),
         _ => unreachable!()
     }
@@ -100,38 +102,103 @@ fn auth_delete_user(session: Option<&Session>) -> Result<(), MgmError>{
     Ok(())
 }
 
+fn create_user(
+    session:&Session,
+    mut capabilities:Vec<ObjectCapability>,
+    delegated_capabilities:Vec<ObjectCapability>,
+    exportable:bool,
+) -> Result<(), MgmError>{
+    println!();
+    let (key_id, label, domains) = get_common_properties();
+    let derivation_pwd = get_string("Enter user password: ");
+    if exportable &&
+        bool::from(get_boolean_answer("Should key be exportable under wrap? ")) {
+        capabilities.push(ObjectCapability::ExportableUnderWrap);
+    }
+
+    println!("\n  Creating authentication key with:");
+    println!("    Label: {}", label);
+    println!("    Key ID: {}", key_id);
+    print!("    Domains: ");
+    domains.iter().for_each(|domain| print!("{}, ", domain));
+    println!();
+    print!("    Capabilities: ");
+    capabilities.iter().for_each(|cap| print!("{:?}, ", cap));
+    println!();
+    print!("    Delegated capabilities: ");
+    delegated_capabilities.iter().for_each(|cap| print!("{:?}, ", cap));
+    println!();
+
+    if bool::from(get_boolean_answer("Execute? ")) {
+        let id = session.import_authentication_key(key_id, &label, &*domains, &capabilities, &delegated_capabilities, derivation_pwd.as_bytes())?;
+        println!("Created new authentication key with ID 0x{id:04x}");
+    }
+    Ok(())
+}
+
 fn auth_setup_user(session:Option<&Session>, current_authkey:u16) -> Result<(), MgmError>{
     match session {
         None => println!("Session not available"),
         Some(s) => {
-            let (mut key_id, label, domains) = get_common_properties();
-            let derivation_pwd = get_string("Enter user password: ");
-            let exportable = bool::from(get_boolean_answer("Should key be exportable under wrap? "));
             let delegated_capabilities = s.get_object_info(
                 current_authkey, ObjectType::AuthenticationKey)?.delegated_capabilities.
                 expect("Cannot read object delegated capabilities");
-            let mut capabilities_options = get_selection_items_from_vec(get_intersection(ALL_USER_CAPABILITIES.to_vec(), delegated_capabilities));
-            let mut selected_capabilities = get_selected_items(&mut capabilities_options);
-            if exportable {
-                selected_capabilities.push(ObjectCapability::ExportableUnderWrap);
+            let mut capabilities_options =
+                get_selection_items_from_vec(
+                    get_intersection(&ALL_USER_CAPABILITIES.to_vec(), &delegated_capabilities));
+            let selected_capabilities = get_selected_items(&mut capabilities_options);
+            create_user(s, selected_capabilities, Vec::new(), delegated_capabilities.contains(&ObjectCapability::ExportableUnderWrap))?
+        }
+    }
+    Ok(())
+}
+
+fn auth_setup_admin(session:Option<&Session>, current_authkey:u16) -> Result<(), MgmError>{
+    match session {
+        None => println!("Session not available"),
+        Some(s) => {
+            let permissible_capabilities = s.get_object_info(
+                current_authkey, ObjectType::AuthenticationKey)?.delegated_capabilities.
+                expect("Cannot read current authentication key's delegated capabilities");
+
+            print!("\nChoose admin user capabilities. ");
+            let mut capabilities_options =
+                get_selection_items_from_vec(
+                    get_intersection(&ALL_ADMIN_CAPABILITIES.to_vec(), &permissible_capabilities));
+            let selected_capabilities = get_selected_items(&mut capabilities_options);
+
+            print!("\nChoose admin user delegated capabilities. ");
+            let mut delegated_capabilities_options =
+                get_selection_items_from_vec(
+                    get_intersection(&ALL_USER_CAPABILITIES.to_vec(), &permissible_capabilities));
+            if permissible_capabilities.contains(&ObjectCapability::ExportableUnderWrap) {
+                delegated_capabilities_options.push(
+                    MultiSelectItem{item: ObjectCapability::ExportableUnderWrap, selected:false});
+            }
+            let selected_delegated_capabilities =
+                get_selected_items(&mut delegated_capabilities_options);
+
+            create_user(s, selected_capabilities, selected_delegated_capabilities, permissible_capabilities.contains(&ObjectCapability::ExportableUnderWrap))?
+        }
+    }
+    Ok(())
+}
+
+fn auth_setup_auditor(session:Option<&Session>, current_authkey:u16) -> Result<(), MgmError>{
+    match session {
+        None => println!("Session not available"),
+        Some(s) => {
+            let permissible_capabilities = s.get_object_info(
+                current_authkey, ObjectType::AuthenticationKey)?.delegated_capabilities.
+                expect("Cannot read current authentication key's delegated capabilities");
+
+            if !permissible_capabilities.contains(&ObjectCapability::GetLogEntries) {
+                return Err(MgmError::Error("Current user does not have permission to create auditor".to_string()));
             }
 
-            println!("\n  Creating authentication key with:");
-            println!("    Label: {}", label);
-            println!("    Key ID: {}", key_id);
-            print!("    Domains: ");
-            domains.iter().for_each(|domain| print!("{}, ", domain));
-            println!();
-            print!("    Capabilities: ");
-            selected_capabilities.iter().for_each(|cap| print!("{:?}, ", cap));
-            println!();
-            println!("    Delegated capabilities: None");
-            println!();
+            let capabilities = vec![ObjectCapability::GetLogEntries];
 
-            if bool::from(get_boolean_answer("Execute? ")) {
-                s.import_authentication_key(key_id, &label, &*domains, &selected_capabilities, &Vec::new(), derivation_pwd.as_bytes())?;
-                println!("Created new authentication key with ID 0x{key_id:04x}");
-            }
+            create_user(s, capabilities, Vec::new(), permissible_capabilities.contains(&ObjectCapability::ExportableUnderWrap))?
         }
     }
     Ok(())
