@@ -16,6 +16,24 @@ use yubihsmrs::Session;
 use error::MgmError;
 use util::{BasicDescriptor, get_common_properties, get_filtered_objects, get_integer_or_default, MultiSelectItem, print_object_properties, read_file_bytes, select_object_capabilities, write_file};
 
+const EJBCA_ATTESTATION_TEMPLATE: &str =
+    "MIIC+jCCAeKgAwIBAgIGAWbt9mc3MA0GCSqGSIb3DQEBBQUAMD4xPDA6BgNVBAMM\
+     M0R1bW15IGNlcnRpZmljYXRlIGNyZWF0ZWQgYnkgYSBDRVNlQ29yZSBhcHBsaWNh\
+     dGlvbjAeFw0xODExMDcxMTM3MjBaFw00ODEwMzExMTM3MjBaMD4xPDA6BgNVBAMM\
+     M0R1bW15IGNlcnRpZmljYXRlIGNyZWF0ZWQgYnkgYSBDRVNlQ29yZSBhcHBsaWNh\
+     dGlvbjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMTxMBMtwHJCzNHi\
+     d0GszdXM49jQdEZOuaLK1hyIjpuhRImJYbdvmF5cYa2suR2yw6DygWGFLafqVEuL\
+     dXvnib3r0jBX2w7ZSrPWuJ592QUgNllHCvNG/dNgwLfCVOr9fs1ifJaa09gtQ2EG\
+     3iV7j3AMxb7rc8x4d3nsJad+UPCyqB3HXGDRLbOT38zI72zhXm4BqiCMt6+2rcPE\
+     +nneNiTMVjrGwzbZkCak6xnwq8/tLTtvD0+yPLQdKb4NaQfXPmYNTrzTmvYmVD8P\
+     0bIUo/CoXIh0BkJXwHzX7J9nDW9Qd7BR2Q2vbUaou/STlWQooqoTnVnEK8zvAXkl\
+     ubqSUPMCAwEAATANBgkqhkiG9w0BAQUFAAOCAQEAGXwmRWewOcbPV/Jx6wkNDOvE\
+     oo4bieBqeRyU/XfDYbuevfNSBnbQktThl1pR21hrJ2l9qV3D1AJDKck/x74hyjl9\
+     mh37eqbPAdfx3yY7vN03RYWr12fW0kLJA9bsm0jYdJN4BHV/zCXlSqPS0The+Zfg\
+     eVCiQCnEZx/z1jfxwIIg6N8Y7luPWIi36XsGqI75IhkJFw8Jup5HIB4p4P0txinm\
+     hxzAwAjKm7yCiBA5oxX1fvSPdlwMb9mcO7qC5wKrsMyuzIpllBbGaCRFCcAtu9Zu\
+     MvBJNrMLPK3bz4QvT5dYW/cXcjJbnIDqQKqSVV6feYk3iyS07HkaPGP3rxGpdQ==";
+
 const RSA_KEY_CAPABILITIES: [ObjectCapability; 5] = [
     ObjectCapability::SignPkcs,
     ObjectCapability::SignPss,
@@ -45,6 +63,15 @@ enum AsymCommand {
     PerformRsaDecryption,
     DeriveEcdh,
     ManageJavaKeys,
+    Exit,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum AsymJavaCommand {
+    ListKeys,
+    GenerateKey,
+    ImportKey,
+    DeleteKey,
     Exit,
 }
 
@@ -108,6 +135,7 @@ pub fn exec_asym_command(session: &Session, current_authkey: u16) -> Result<(), 
         AsymCommand::PerformSignature => asym_sign(session),
         AsymCommand::PerformRsaDecryption => asym_decrypt(session),
         AsymCommand::DeriveEcdh => asym_derive_ecdh(session),
+        AsymCommand::ManageJavaKeys => asym_java_manage(session, current_authkey),
         AsymCommand::Exit => std::process::exit(0),
         _ => unreachable!()
     }
@@ -143,7 +171,7 @@ fn get_asym_command(session: &Session, current_authkey: u16) -> Result<AsymComma
         commands.push(("Perform RSA decryption".to_string(), AsymCommand::PerformRsaDecryption));
     }
     if capabilities.contains(&ObjectCapability::DeriveEcdh) {
-        ("Derive ECDH".to_string(), AsymCommand::DeriveEcdh);
+        commands.push(("Derive ECDH".to_string(), AsymCommand::DeriveEcdh));
     }
     if HashSet::from([
         ObjectCapability::GenerateAsymmetricKey,
@@ -153,7 +181,7 @@ fn get_asym_command(session: &Session, current_authkey: u16) -> Result<AsymComma
         HashSet::from([
             ObjectCapability::PutOpaque,
             ObjectCapability::DeleteOpaque]).intersection(&capabilities).count() > 0 {
-        commands.push(("Manage JAVA keys (Usable with SunPKCS11 provider) (not implemented yet)".to_string(), AsymCommand::ManageJavaKeys));
+        commands.push(("Manage JAVA keys (Usable with SunPKCS11 provider)".to_string(), AsymCommand::ManageJavaKeys));
     }
     commands.push(("Exit".to_string(), AsymCommand::Exit));
     println!();
@@ -621,5 +649,48 @@ fn asym_derive_ecdh(session: &Session) -> Result<(), MgmError> {
     }
     println!();
 
+    Ok(())
+}
+
+fn get_asym_java_command(session: &Session, current_authkey: u16) -> Result<AsymJavaCommand, MgmError> {
+    let capabilities: HashSet<ObjectCapability> =
+        session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?.capabilities.into_iter().collect();
+
+    let mut commands: Vec<(String, AsymJavaCommand)> = Vec::new();
+    commands.push(("List JAVA keys".to_string(), AsymJavaCommand::ListKeys));
+
+    if capabilities.contains(&ObjectCapability::GenerateAsymmetricKey) &&
+        capabilities.contains(&ObjectCapability::PutOpaque) &&
+        capabilities.contains(&ObjectCapability::SignAttestationCertificate) {
+        commands.push(("Generate JAVA key".to_string(), AsymJavaCommand::GenerateKey));
+    }
+
+    if capabilities.contains(&ObjectCapability::PutAsymmetricKey) &&
+        capabilities.contains(&ObjectCapability::PutOpaque) &&
+        capabilities.contains(&ObjectCapability::SignAttestationCertificate) {
+        commands.push(("Import JAVA key".to_string(), AsymJavaCommand::ImportKey));
+    }
+
+    if capabilities.contains(&ObjectCapability::DeleteAsymmetricKey) &&
+        capabilities.contains(&ObjectCapability::DeleteOpaque) {
+        commands.push(("Delete JAVA key".to_string(), AsymJavaCommand::DeleteKey));
+    }
+    commands.push(("Exit".to_string(), AsymJavaCommand::Exit));
+    println!();
+    Ok(get_menu_option(&commands))
+}
+
+fn asym_java_manage(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
+    stdout().flush().unwrap();
+    println!("\n  A JAVA key is a pair of an asymmetric key and an X509Certificate, both stored on the YubiHSM using the same ObjectID");
+    let cmd = get_asym_java_command(session, current_authkey)?;
+    match cmd {
+        AsymJavaCommand::ListKeys => println!("-- Listing java keys (not implemented yet)"),
+        AsymJavaCommand::GenerateKey => println!("-- Generating java keys (not implemented yet)"),
+        AsymJavaCommand::ImportKey => println!("-- Importing java keys (not implemented yet)"),
+        AsymJavaCommand::DeleteKey => println!("-- Deleting java keys (not implemented yet)"),
+        AsymJavaCommand::Exit => std::process::exit(0),
+        _ => unreachable!()
+    }
     Ok(())
 }
