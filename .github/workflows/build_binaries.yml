@@ -8,7 +8,7 @@ jobs:
     name: Ubuntu
     runs-on: ubuntu-latest
     env:
-      YUBIHSMSDK_VERSION: 2022-06
+      YUBIHSMSDK_VERSION: 2023-08
 
     steps:
       - name: Checkout repository
@@ -21,7 +21,7 @@ jobs:
           set -x
 
           cd ..
-          curl -L --max-redirs 2 -o - https://developers.yubico.com/YubiHSM2/Releases/yubihsm2-sdk-$YUBIHSMSDK_VERSION-ubuntu1804-amd64.tar.gz |\
+          curl -L --max-redirs 2 -o - https://developers.yubico.com/YubiHSM2/Releases/yubihsm2-sdk-$YUBIHSMSDK_VERSION-ubuntu2204-amd64.tar.gz |\
               tar -xzvf -
           cd yubihsm2-sdk
           sudo dpkg -i ./libyubihsm*_amd64.deb
@@ -67,7 +67,7 @@ jobs:
     name: MacOS
     runs-on: macos-latest
     env:
-      YUBIHSMSDK_VERSION: 2022-06
+      YUBIHSMSDK_VERSION: 2023-08
 
     steps:
       - name: Checkout repository
@@ -125,7 +125,7 @@ jobs:
     name: Windows
     runs-on: windows-latest
     env:
-      LIBYUBIHSM_VERSION: 2.4.0
+      LIBYUBIHSM_VERSION: 2.4.1
 
     steps:
       - name: Checkout repository
