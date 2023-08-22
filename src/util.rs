@@ -201,7 +201,7 @@ pub fn get_menu_option<T:Clone>(items: &Vec<(String, T)>) -> T {
 }
 
 pub fn get_selected_items<T:Display+Clone>(items: &mut Vec<MultiSelectItem<T>>) -> Vec<T>{
-    // Get the number of capabilities
+    // Get the number of items
     let items_len = u16::try_from(items.len()).unwrap();
     let item_str_length = usize::try_from(size().expect("Unable to read terminal size").0).unwrap()-40;
     // Print out the options
@@ -278,7 +278,7 @@ pub fn get_selected_items<T:Display+Clone>(items: &mut Vec<MultiSelectItem<T>>) 
 
     //execute!(stdout(), RestorePosition).unwrap();
     execute!(stdout(), MoveTo(current_x, current_y)).expect("Unable to restore cursor");
-    disable_raw_mode().unwrap();
+    disable_raw_mode().expect("Unable to exit raw mode");
     //drop(raw);
     stdout().flush().expect("Unable to flush stdout()");
 
