@@ -12,7 +12,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       # download yubihsm-sdk installer from dev.y.c and install it
       - name: install yubihsm-shell
@@ -58,7 +58,7 @@ jobs:
           ./target/release/yubihsm-manager --help
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v1
+        uses: actions/upload-artifact@v3
         with:
           name: yubihsm-manager-deb
           path: artifact
@@ -71,7 +71,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       # download yubihsm-sdk installer from dev.y.c and install it
       - name: install yubihsm-shell
@@ -116,7 +116,7 @@ jobs:
           ./target/release/yubihsm-manager --help
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: yubihsm-manager-macos
           path: artifact
@@ -129,7 +129,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       # downloads and build yubihsm-shell from source release on dev.y.c
       - name: install yubihsm-shell
@@ -172,7 +172,7 @@ jobs:
           install target/release/yubihsm-manager $env:GITHUB_WORKSPACE/artifact/yubihsm-manager
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: yubihsm-manager-windows
           path: artifact
