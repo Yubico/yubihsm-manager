@@ -1,4 +1,4 @@
-use std::{error, fmt, fs, io};
+use std::{error, fmt};
 
 /// Enum listing possible errors from `YubiHSM`.
 #[derive(Debug)]

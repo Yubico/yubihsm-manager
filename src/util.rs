@@ -9,10 +9,9 @@ use std::io::{stdin, stdout, Write};
 use std::num::IntErrorKind;
 use std::ops::Deref;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
-use crossterm::{execute, cursor::{MoveTo}, cursor};
+use crossterm::{execute, cursor::{MoveTo}, cursor, event};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size};
-use crossterm_input::{input, InputEvent};
-use crossterm_screen::RawScreen;
 use yubihsmrs::{Session};
 use error::MgmError;
 
@@ -190,9 +189,7 @@ pub fn get_menu_option<T:Clone>(items: &Vec<(String, T)>) -> T {
         let (i, x): (usize, &(String, T)) = item;
         println!("  ({}) {}", i+1, x.0);
     }
-    /*for i in 0..items.len() {
-        println!("  ({}) {}", i+1, items[i].0);
-    }*/
+
     let mut choice: u16 = 0;
     while choice < 1 || choice > u16::try_from(items.len()).unwrap() {
         choice = get_integer("Your choice: ");
@@ -204,8 +201,9 @@ pub fn get_selected_items<T:Display+Clone>(items: &mut Vec<MultiSelectItem<T>>) 
     // Get the number of items
     let items_len = u16::try_from(items.len()).unwrap();
     let item_str_length = usize::try_from(size().expect("Unable to read terminal size").0).unwrap()-40;
+
     // Print out the options
-    println!("\n  Click space to select and unselect. Click 'Enter' when done.");
+    println!("\n  Press the space button to select and unselect item. Press 'Enter' when done.");
     for item in &mut *items {
         if item.item.to_string().len() > item_str_length {
             println!("  [ ] {}...", item.item.to_string().split_at(item_str_length).0);
@@ -222,30 +220,27 @@ pub fn get_selected_items<T:Display+Clone>(items: &mut Vec<MultiSelectItem<T>>) 
     let mut y = current_y - items_len;
     let y_offset = y;
 
-    stdout().flush().expect("Unable to flush stdout");
-
     enable_raw_mode().expect("Unable to run in raw mode");
-    //let raw = RawScreen::into_raw_mode();
-
-    //let input = input();
-    let mut reader = input().read_sync();
 
     loop {
 
         execute!(stdout(), MoveTo(x, y)).expect("Unable to move cursor");
 
-        if let Some(input_event) = reader.next() {
-            match input_event {
-                InputEvent::Keyboard(crossterm_input::KeyEvent::Char(c)) => {
+        if let Ok(Event::Key(key_event)) = event::read() {
+            match key_event {
+                KeyEvent {
+                    code: KeyCode::Char(c),
+                    kind: KeyEventKind::Press,
+                    modifiers: KeyModifiers::NONE,
+                    state: _,
+                } => {
                     match c {
                         ' ' => {
                             let index = usize::try_from(y - y_offset).unwrap();
                             if items[index].selected {
                                 print!(" ");
-                                //items[index].1 = false;
                             } else {
                                 print!("*");
-                                //items[index].1 = true;
                             }
                             items[index].selected = !items[index].selected;
                         },
@@ -253,19 +248,39 @@ pub fn get_selected_items<T:Display+Clone>(items: &mut Vec<MultiSelectItem<T>>) 
                         _ => {},
                     }
                 },
-                InputEvent::Keyboard(crossterm_input::KeyEvent::Ctrl('c')) => {
+                KeyEvent {
+                    code: KeyCode::Char('c'),
+                    kind: KeyEventKind::Press,
+                    modifiers: KeyModifiers::CONTROL,
+                    state: _,
+                } => {
                     execute!(stdout(), MoveTo(current_x, current_y)).expect("Unable to restore cursor");
                     disable_raw_mode().unwrap();
                     process::exit(1)
                 },
-                InputEvent::Keyboard(crossterm_input::KeyEvent::Enter) => break,
-                InputEvent::Keyboard(crossterm_input::KeyEvent::Up) => {
+                KeyEvent {
+                    code: KeyCode::Enter,
+                    kind: KeyEventKind::Press,
+                    modifiers: _,
+                    state: _,
+                } => break,
+                KeyEvent {
+                    code: KeyCode::Up,
+                    kind: KeyEventKind::Press,
+                    modifiers: _,
+                    state: _,
+                } => {
                     y -= 1;
                     if y < y_offset {
                         y += items_len;
                     }
                 },
-                InputEvent::Keyboard(crossterm_input::KeyEvent::Down) => {
+                KeyEvent {
+                    code: KeyCode::Down,
+                    kind: KeyEventKind::Press,
+                    modifiers: _,
+                    state: _,
+                } => {
                     y += 1;
                     if y >= y_offset + items_len {
                         y = y_offset;
@@ -279,8 +294,6 @@ pub fn get_selected_items<T:Display+Clone>(items: &mut Vec<MultiSelectItem<T>>) 
     //execute!(stdout(), RestorePosition).unwrap();
     execute!(stdout(), MoveTo(current_x, current_y)).expect("Unable to restore cursor");
     disable_raw_mode().expect("Unable to exit raw mode");
-    //drop(raw);
-    stdout().flush().expect("Unable to flush stdout()");
 
     let mut selected_items: Vec<T> = Vec::new();
     for c in items {
@@ -344,7 +357,7 @@ pub fn delete_objects(session: &Session, object_handles: Vec<ObjectHandle>) -> R
 
 pub fn read_file(prompt:&str) -> String {
     let mut file_path = "".to_string();
-    while file_path == "" {
+    while file_path.is_empty() {
         file_path = get_string(prompt);
     }
     match fs::read_to_string(file_path) {
@@ -358,7 +371,7 @@ pub fn read_file(prompt:&str) -> String {
 
 pub fn read_file_bytes(prompt:&str) -> Vec<u8> {
     let mut file_path = "".to_string();
-    while file_path == "" {
+    while file_path.is_empty() {
         file_path = get_string(prompt);
     }
     match fs::read(file_path) {
@@ -375,7 +388,7 @@ pub fn write_file(content: Vec<u8>, filename:String) -> Result<(), MgmError> {
         Ok(f) => f,
         Err(error) => {
             if error.kind() == std::io::ErrorKind::NotFound {
-                File::create(filename.clone())?
+                File::create(filename)?
             } else {
                 return Err(MgmError::StdIoError(error))
             }
@@ -391,7 +404,7 @@ pub fn print_object_properties(session: &Session, object_type:ObjectType) {
     let key_id: u16 = get_integer("Enter key ID: ");
     let object = session.get_object_info(key_id, object_type);
     match object {
-        Ok(obj) => println!("{}", obj.to_string().replacen("\t", "\n", 10)),
+        Ok(obj) => println!("{}", obj.to_string().replacen('\t', "\n", 10)),
         Err(err) => println!("{}", err),
     }
 }
@@ -414,7 +427,7 @@ pub fn get_selection_items_from_hashset<T:Display+Clone>(items:HashSet<&T>) -> V
 
 pub fn select_object_capabilities(object_capabilities:&HashSet<ObjectCapability>, permissible_capabilities:&HashSet<ObjectCapability>) -> Vec<ObjectCapability> {
     let selectable_capabilities:HashSet<&ObjectCapability> =
-        permissible_capabilities.intersection(&object_capabilities).collect();
+        permissible_capabilities.intersection(object_capabilities).collect();
 
     let mut capability_options:Vec<MultiSelectItem<ObjectCapability>> =
         get_selection_items_from_hashset(selectable_capabilities);

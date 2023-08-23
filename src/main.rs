@@ -1,22 +1,16 @@
 extern crate crossterm;
+extern crate yubihsmrs;
+extern crate openssl;
+extern crate pem;
+extern crate serde;
 
 #[macro_use]
 extern crate clap;
 
-extern crate yubihsmrs;
-extern crate crossterm_input;
-extern crate openssl;
-extern crate pem;
-extern crate crossterm_utils;
-extern crate crossterm_screen;
-extern crate serde;
-
-use std::fmt::format;
-use std::io::{Write, stdin, stdout};
 use clap::{App, AppSettings, Arg, SubCommand};
-use yubihsmrs::{Session, YubiHsm};
+use yubihsmrs::{YubiHsm};
 use error::MgmError;
-use util::{get_integer_or_default, get_string, get_string_or_default, parse_id};
+use util::{get_integer_or_default, get_string_or_default, parse_id};
 
 pub mod error;
 pub mod util;
@@ -78,7 +72,7 @@ fn main() -> Result<(), MgmError> {
     let mut password: String = "password".to_string();
 
     authkey = match matches.value_of("authkey") {
-        Some(authkey) => parse_id(matches.value_of("authkey").unwrap()).unwrap(),
+        Some(auth_key) => parse_id(auth_key).unwrap(),
         None => get_integer_or_default("Login with authentication key ID [default 1]: ", 1),
     };
     password = match matches.value_of("password") {
