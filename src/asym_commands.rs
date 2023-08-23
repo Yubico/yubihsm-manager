@@ -11,7 +11,7 @@ use openssl::nid::Nid;
 use openssl::pkey;
 use openssl::pkey::{PKey};
 use crate::util::{get_string, get_menu_option, get_boolean_answer, get_selected_items, delete_objects, read_file};
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectHandle, ObjectType};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
 use util::{BasicDescriptor, get_common_properties, get_filtered_objects, get_integer_or_default, MultiSelectItem, print_object_properties, read_file_bytes, select_object_capabilities, write_file};
@@ -677,7 +677,7 @@ fn get_asym_java_command(session: &Session, current_authkey: u16) -> Result<Asym
         capabilities.contains(&ObjectCapability::DeleteOpaque) {
         commands.push(("Delete JAVA key".to_string(), AsymJavaCommand::DeleteKey));
     }
-    commands.push(("Exit".to_string(), AsymJavaCommand::Exit));
+    commands.push(("Return to main menu".to_string(), AsymJavaCommand::Exit));
     println!();
     Ok(get_menu_option(&commands))
 }
@@ -685,14 +685,49 @@ fn get_asym_java_command(session: &Session, current_authkey: u16) -> Result<Asym
 fn asym_java_manage(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
     stdout().flush().unwrap();
     println!("\n  A JAVA key is a pair of an asymmetric key and an X509Certificate, both stored on the YubiHSM using the same ObjectID");
-    let cmd = get_asym_java_command(session, current_authkey)?;
-    match cmd {
-        AsymJavaCommand::ListKeys => println!("-- Listing java keys (not implemented yet)"),
-        AsymJavaCommand::GenerateKey => println!("-- Generating java keys (not implemented yet)"),
-        AsymJavaCommand::ImportKey => println!("-- Importing java keys (not implemented yet)"),
-        AsymJavaCommand::DeleteKey => println!("-- Deleting java keys (not implemented yet)"),
-        AsymJavaCommand::Exit => std::process::exit(0),
-        _ => unreachable!()
+    loop {
+        let cmd = get_asym_java_command(session, current_authkey)?;
+        match cmd {
+            AsymJavaCommand::ListKeys => java_list_keys(session)?,
+            AsymJavaCommand::GenerateKey => println!("-- Generating java keys (not implemented yet)"),
+            AsymJavaCommand::ImportKey => println!("-- Importing java keys (not implemented yet)"),
+            AsymJavaCommand::DeleteKey => java_delete_keys(session)?,
+            AsymJavaCommand::Exit => break,
+            _ => unreachable!()
+        }
     }
+    Ok(())
+}
+
+fn java_get_all_keys(session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
+    let mut key_handles:Vec<ObjectDescriptor> = Vec::new();
+    let cert_handles: Vec<ObjectHandle> = session.list_objects_with_filter(0, ObjectType::Opaque, "", ObjectAlgorithm::OpaqueX509Certificate, &Vec::new())?;
+    for cert in cert_handles {
+        if let Ok(object_desc) = session.get_object_info(cert.object_id, ObjectType::AsymmetricKey) {
+            key_handles.push(object_desc);
+        }
+    }
+    Ok(key_handles)
+}
+
+fn java_list_keys(session: &Session) -> Result<(), MgmError> {
+    for key in java_get_all_keys(session)? {
+        println!("{}", key);
+    }
+    Ok(())
+}
+
+fn java_delete_keys(session: &Session) -> Result<(), MgmError> {
+    let mut key_options: Vec<MultiSelectItem<ObjectDescriptor>> = Vec::new();
+    for k in java_get_all_keys(session)? {
+        key_options.push(MultiSelectItem { item: k, selected: false });
+    }
+
+    for k in get_selected_items(&mut key_options) {
+        session.delete_object(k.id, k.object_type)?;
+        session.delete_object(k.id, ObjectType::Opaque)?;
+        println!("Deleted asymmetric key and X509 certificate with id 0x{:04x}", k.id);
+    }
+
     Ok(())
 }
