@@ -8,7 +8,7 @@ use openssl::bn::{BigNum, BigNumContext};
 use openssl::ec::{EcGroup, EcKey, EcPoint, PointConversionForm};
 use openssl::hash::{DigestBytes, MessageDigest};
 use openssl::nid::Nid;
-use openssl::pkey;
+use openssl::{base64, pkey};
 use openssl::pkey::{PKey};
 use crate::util::{get_string, get_menu_option, get_boolean_answer, get_selected_items, delete_objects, read_file};
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
@@ -16,7 +16,7 @@ use yubihsmrs::Session;
 use error::MgmError;
 use util::{BasicDescriptor, get_common_properties, get_filtered_objects, get_integer_or_default, MultiSelectItem, print_object_properties, read_file_bytes, select_object_capabilities, write_file};
 
-const EJBCA_ATTESTATION_TEMPLATE: &str =
+const ATTESTATION_CERT_TEMPLATE: &str =
     "MIIC+jCCAeKgAwIBAgIGAWbt9mc3MA0GCSqGSIb3DQEBBQUAMD4xPDA6BgNVBAMM\
      M0R1bW15IGNlcnRpZmljYXRlIGNyZWF0ZWQgYnkgYSBDRVNlQ29yZSBhcHBsaWNh\
      dGlvbjAeFw0xODExMDcxMTM3MjBaFw00ODEwMzExMTM3MjBaMD4xPDA6BgNVBAMM\
@@ -689,7 +689,7 @@ fn asym_java_manage(session: &Session, current_authkey: u16) -> Result<(), MgmEr
         let cmd = get_asym_java_command(session, current_authkey)?;
         match cmd {
             AsymJavaCommand::ListKeys => java_list_keys(session)?,
-            AsymJavaCommand::GenerateKey => println!("-- Generating java keys (not implemented yet)"),
+            AsymJavaCommand::GenerateKey => java_gen_key(session)?,
             AsymJavaCommand::ImportKey => println!("-- Importing java keys (not implemented yet)"),
             AsymJavaCommand::DeleteKey => java_delete_keys(session)?,
             AsymJavaCommand::Exit => break,
@@ -728,6 +728,69 @@ fn java_delete_keys(session: &Session) -> Result<(), MgmError> {
         session.delete_object(k.id, ObjectType::Opaque)?;
         println!("Deleted asymmetric key and X509 certificate with id 0x{:04x}", k.id);
     }
+
+    Ok(())
+}
+
+fn java_gen_key(session: &Session) -> Result<(), MgmError> {
+    println!();
+    let (key_id, label, domains) = get_common_properties();
+
+
+    let key_algorithm: ObjectAlgorithm;
+    let mut capabilities: Vec<ObjectCapability> = Vec::new();
+
+    if bool::from(get_boolean_answer("Is RSA key? ")) {
+        let key_len = get_rsa_keylen();
+        key_algorithm = match key_len {
+            2048 => ObjectAlgorithm::Rsa2048,
+            3072 => ObjectAlgorithm::Rsa3072,
+            4096 => ObjectAlgorithm::Rsa4096,
+            _ => unreachable!()
+        };
+        capabilities.extend(vec![
+            ObjectCapability::SignPkcs,
+            ObjectCapability::SignPss,
+            ObjectCapability::SignAttestationCertificate,
+            ObjectCapability::ExportableUnderWrap,
+        ].to_vec());
+    } else {
+        key_algorithm = get_ec_algo();
+        capabilities.extend(vec![
+            ObjectCapability::SignEcdsa,
+            ObjectCapability::SignAttestationCertificate,
+            ObjectCapability::ExportableUnderWrap,
+        ].to_vec());
+    }
+
+    let key = session
+        .generate_asymmetric_key_with_keyid(key_id, &label, &capabilities, &*domains, key_algorithm)?;
+
+    // Import attestation certificate template into the device
+    let cert = base64::decode_block(ATTESTATION_CERT_TEMPLATE).unwrap();
+    let cert_id = session.import_cert(key.get_key_id(), &label, &*domains, &cert)?;
+    if cert_id != key.get_key_id() {
+        println!("Failed to store the attestation certificate template with the same ID as the asymmetric key");
+        session.delete_object(key.get_key_id(), ObjectType::AsymmetricKey)?;
+        session.delete_object(cert_id, ObjectType::Opaque)?;
+        return Err(MgmError::Error(String::from("Failed to store the attestation certificate template with the same ID as the asymmetric key")));
+    }
+
+    // Generate self signed certificate for the asymmetric key
+    let selfsigned_cert = key.sign_attestation_certificate(key.get_key_id(), session)?;
+
+    // Delete the attestation template certificate from the device
+    session.delete_object(cert_id, ObjectType::Opaque)?;
+
+    let cert = session.import_opaque(key.get_key_id(), &label, &*domains, &[ObjectCapability::ExportableUnderWrap], ObjectAlgorithm::OpaqueX509Certificate, &selfsigned_cert)?;
+    if cert.get_id() != key.get_key_id() {
+        println!("Failed to store X509 certificate with the same ID as the asymmetric key");
+        session.delete_object(key.get_key_id(), ObjectType::AsymmetricKey)?;
+        session.delete_object(cert.get_id(), ObjectType::Opaque)?;
+        return Err(MgmError::Error(String::from("Failed to store X509 certificate with the same ID as the asymmetric key")));
+    }
+
+    println!("Stored selfsigned certificate with ID 0x{:04x} on the device", cert.get_id());
 
     Ok(())
 }
