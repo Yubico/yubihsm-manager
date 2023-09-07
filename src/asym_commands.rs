@@ -72,6 +72,7 @@ enum AsymJavaCommand {
     GenerateKey,
     ImportKey,
     DeleteKey,
+    ReturnToMenu,
     Exit,
 }
 
@@ -327,18 +328,6 @@ fn asym_gen_key(session: &Session, current_authkey: u16) -> Result<(), MgmError>
         println!("  Generated asymmetric keypair with ID 0x{:04x} on the device", key.get_key_id());
     }
     Ok(())
-}
-
-fn print_import_key_cmd(key_id: u16, label: String, domains: Vec<ObjectDomain>, capabilities: Vec<ObjectCapability>) {
-    print!("  > yubihsm-shell -a put_asymmetric-key");
-    print!(" -i {}", key_id);
-    print!(" -l \"{}\"", label);
-    print!(" -d ");
-    domains.iter().for_each(|domain| print!("{},", domain));
-    print!(" -c ");
-    capabilities.iter().for_each(|cap| print!("{:?},", cap));
-    print!(" --in <PATH_TO_FILE>");
-    println!();
 }
 
 fn asym_import_key(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
@@ -677,7 +666,8 @@ fn get_asym_java_command(session: &Session, current_authkey: u16) -> Result<Asym
         capabilities.contains(&ObjectCapability::DeleteOpaque) {
         commands.push(("Delete JAVA key".to_string(), AsymJavaCommand::DeleteKey));
     }
-    commands.push(("Return to main menu".to_string(), AsymJavaCommand::Exit));
+    commands.push(("Return to main menu".to_string(), AsymJavaCommand::ReturnToMenu));
+    commands.push(("Exit".to_string(), AsymJavaCommand::Exit));
     println!();
     Ok(get_menu_option(&commands))
 }
@@ -690,9 +680,10 @@ fn asym_java_manage(session: &Session, current_authkey: u16) -> Result<(), MgmEr
         match cmd {
             AsymJavaCommand::ListKeys => java_list_keys(session)?,
             AsymJavaCommand::GenerateKey => java_gen_key(session)?,
-            AsymJavaCommand::ImportKey => println!("-- Importing java keys (not implemented yet)"),
+            AsymJavaCommand::ImportKey => java_import_key(session)?,
             AsymJavaCommand::DeleteKey => java_delete_keys(session)?,
-            AsymJavaCommand::Exit => break,
+            AsymJavaCommand::ReturnToMenu => break,
+            AsymJavaCommand::Exit => std::process::exit(0),
             _ => unreachable!()
         }
     }
@@ -751,6 +742,8 @@ fn java_gen_key(session: &Session) -> Result<(), MgmError> {
         capabilities.extend(vec![
             ObjectCapability::SignPkcs,
             ObjectCapability::SignPss,
+            ObjectCapability::DecryptPkcs,
+            ObjectCapability::DecryptOaep,
             ObjectCapability::SignAttestationCertificate,
             ObjectCapability::ExportableUnderWrap,
         ].to_vec());
@@ -758,39 +751,148 @@ fn java_gen_key(session: &Session) -> Result<(), MgmError> {
         key_algorithm = get_ec_algo();
         capabilities.extend(vec![
             ObjectCapability::SignEcdsa,
+            ObjectCapability::DeriveEcdh,
             ObjectCapability::SignAttestationCertificate,
             ObjectCapability::ExportableUnderWrap,
         ].to_vec());
     }
 
-    let key = session
-        .generate_asymmetric_key_with_keyid(key_id, &label, &capabilities, &*domains, key_algorithm)?;
+    println!("\n  Generating asymmetric key with:");
+    println!("    Key algorithm: {}", key_algorithm);
+    println!("    Label: {}", label);
+    println!("    Key ID: {}", key_id);
+    print!("    Domains: ");
+    domains.iter().for_each(|domain| print!("{}, ", domain));
+    println!();
+    print!("    Capabilities: ");
+    capabilities.iter().for_each(|cap| print!("{:?}, ", cap));
+    println!("\n\n");
 
-    // Import attestation certificate template into the device
-    let cert = base64::decode_block(ATTESTATION_CERT_TEMPLATE).unwrap();
-    let cert_id = session.import_cert(key.get_key_id(), &label, &*domains, &cert)?;
-    if cert_id != key.get_key_id() {
-        println!("Failed to store the attestation certificate template with the same ID as the asymmetric key");
-        session.delete_object(key.get_key_id(), ObjectType::AsymmetricKey)?;
+    if bool::from(get_boolean_answer("Execute? ")) {
+        let key = session
+            .generate_asymmetric_key_with_keyid(key_id, &label, &capabilities, &*domains, key_algorithm)?;
+
+        // Import attestation certificate template into the device
+        let cert = base64::decode_block(ATTESTATION_CERT_TEMPLATE).unwrap();
+        let cert_id = session.import_cert(key.get_key_id(), &label, &*domains, &cert)?;
+        if cert_id != key.get_key_id() {
+            println!("Failed to store the attestation certificate template with the same ID as the asymmetric key");
+            session.delete_object(key.get_key_id(), ObjectType::AsymmetricKey)?;
+            session.delete_object(cert_id, ObjectType::Opaque)?;
+            return Err(MgmError::Error(String::from("Failed to store the attestation certificate template with the same ID as the asymmetric key")));
+        }
+
+        // Generate self signed certificate for the asymmetric key
+        let selfsigned_cert = key.sign_attestation_certificate(key.get_key_id(), session)?;
+
+        // Delete the attestation template certificate from the device
         session.delete_object(cert_id, ObjectType::Opaque)?;
-        return Err(MgmError::Error(String::from("Failed to store the attestation certificate template with the same ID as the asymmetric key")));
+
+        let cert = session.import_opaque(key.get_key_id(), &label, &*domains, &[ObjectCapability::ExportableUnderWrap], ObjectAlgorithm::OpaqueX509Certificate, &selfsigned_cert)?;
+        if cert.get_id() != key.get_key_id() {
+            println!("Failed to store X509 certificate with the same ID as the asymmetric key");
+            session.delete_object(key.get_key_id(), ObjectType::AsymmetricKey)?;
+            session.delete_object(cert.get_id(), ObjectType::Opaque)?;
+            return Err(MgmError::Error(String::from("Failed to store X509 certificate with the same ID as the asymmetric key")));
+        }
+
+        println!("Stored selfsigned certificate with ID 0x{:04x} on the device", cert.get_id());
     }
+    Ok(())
+}
 
-    // Generate self signed certificate for the asymmetric key
-    let selfsigned_cert = key.sign_attestation_certificate(key.get_key_id(), session)?;
+fn java_import_key(session: &Session ) -> Result<(), MgmError> {
+    println!();
+    let (mut key_id, label, domains) = get_common_properties();
 
-    // Delete the attestation template certificate from the device
-    session.delete_object(cert_id, ObjectType::Opaque)?;
-
-    let cert = session.import_opaque(key.get_key_id(), &label, &*domains, &[ObjectCapability::ExportableUnderWrap], ObjectAlgorithm::OpaqueX509Certificate, &selfsigned_cert)?;
-    if cert.get_id() != key.get_key_id() {
-        println!("Failed to store X509 certificate with the same ID as the asymmetric key");
-        session.delete_object(key.get_key_id(), ObjectType::AsymmetricKey)?;
-        session.delete_object(cert.get_id(), ObjectType::Opaque)?;
-        return Err(MgmError::Error(String::from("Failed to store X509 certificate with the same ID as the asymmetric key")));
+    let mut pem = pem::parse(read_file("Enter absolute path to PEM file containing private key: "));
+    while pem.is_err() {
+        println!("Unable to parse PEM content: {}", pem.err().unwrap());
+        pem = pem::parse(read_file("Enter absolute path to PEM file: "));
     }
+    let pem = pem.unwrap();
+    let key_bytes = pem.contents();
 
-    println!("Stored selfsigned certificate with ID 0x{:04x} on the device", cert.get_id());
+    let mut capabilities: Vec<ObjectCapability> = Vec::new();
+
+    match openssl::pkey::PKey::private_key_from_der(&key_bytes) {
+        Ok(key) => {
+            match key.id() {
+                pkey::Id::RSA => {
+                    println!("RSA key");
+                    let private_rsa = key.rsa()?;
+                    let p = private_rsa.p().ok_or(MgmError::Error(String::from("Failed to read p value")))?;
+                    let q = private_rsa.q().ok_or(MgmError::Error(String::from("Failed to read q value")))?;
+
+                    let key_algorithm: ObjectAlgorithm = match private_rsa.size() {
+                        256 => ObjectAlgorithm::Rsa2048,
+                        384 => ObjectAlgorithm::Rsa3072,
+                        512 => ObjectAlgorithm::Rsa4096,
+                        _ => {
+                            println!("Unrecognized RSA algorithm");
+                            return Err(MgmError::Error(format!("RSA key size {}", private_rsa.size())));
+                        }
+                    };
+
+                    capabilities.extend(vec![
+                        ObjectCapability::SignPkcs,
+                        ObjectCapability::SignPss,
+                        ObjectCapability::DecryptPkcs,
+                        ObjectCapability::DecryptOaep,
+                        ObjectCapability::SignAttestationCertificate,
+                        ObjectCapability::ExportableUnderWrap,
+                    ].to_vec());
+
+                    key_id = session
+                        .import_rsa_key(key_id, &label, &*domains, &capabilities, key_algorithm, &p.to_vec(), &q.to_vec())?
+                }
+                pkey::Id::EC => {
+                    let private_ec = key.ec_key()?;
+                    let s = private_ec.private_key();
+                    let group = private_ec.group();
+                    let nid = group.curve_name().ok_or(MgmError::Error(String::from("Failed to read EC curve name")))?;
+                    let key_algorithm = get_algo_from_nid(nid)?;
+
+                    capabilities.extend(vec![
+                        ObjectCapability::SignEcdsa,
+                        ObjectCapability::DeriveEcdh,
+                        ObjectCapability::SignAttestationCertificate,
+                        ObjectCapability::ExportableUnderWrap,
+                    ].to_vec());
+                    key_id = session
+                        .import_ec_key(key_id, &label, &*domains, &capabilities, key_algorithm, &s.to_vec())?
+                }
+                _ => println!("Unknown or unsupported key type"),
+            }
+            println!("\n  Imported asymmetric keypair with ID 0x{:04x} on the device", key_id);
+        }
+        Err(err) => {
+            println!("  {}", err);
+            return Err(MgmError::Error(String::from("Error! Failed to find either private key in file")));
+        }
+    };
+
+
+    let mut pem_cert = pem::parse(read_file("Enter absolute path to PEM file containing X509Certificate: "));
+    while pem_cert.is_err() {
+        println!("Unable to parse PEM content: {}", pem_cert.err().unwrap());
+        pem_cert = pem::parse(read_file("Enter absolute path to PEM file: "));
+    }
+    let pem_cert = pem_cert.unwrap();
+    let cert_bytes = pem_cert.contents();
+
+    match openssl::x509::X509::from_der(&cert_bytes) {
+        Ok(cert) => {
+            key_id = session
+                .import_cert(key_id, &label, &*domains, &cert.to_pem().unwrap())?;
+            println!("\n  Imported X509Certificate with ID 0x{:04x} on the device", key_id)
+        }
+        Err(cert_err) => {
+            println!("  {}", cert_err);
+            session.delete_object(key_id, ObjectType::AsymmetricKey)?;
+            return Err(MgmError::Error(String::from("Error! Failed to find X509Certificate in file")));
+        }
+    }
 
     Ok(())
 }
