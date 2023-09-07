@@ -178,7 +178,7 @@ pub fn get_domains(prompt: &str) -> Vec<ObjectDomain> {
 }
 
 pub fn get_common_properties() -> (u16, String, Vec<ObjectDomain>) {
-    let mut key_id: u16 = get_integer_or_default("Enter key ID [Default 0]: ", 0);
+    let mut key_id: u16 = get_integer_or_default("Enter key ID [Default 0 for device generated ID]: ", 0);
     let label = get_string_or_default("Enter key label [Default empty]: ", "");
     let domains = get_domains("Enter domain(s), multiple domains are separated by ',' [1-16]: ");
     (key_id, label, domains)

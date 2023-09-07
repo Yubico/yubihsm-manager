@@ -37,8 +37,8 @@ const ATTESTATION_CERT_TEMPLATE: &str =
 const RSA_KEY_CAPABILITIES: [ObjectCapability; 5] = [
     ObjectCapability::SignPkcs,
     ObjectCapability::SignPss,
-    ObjectCapability::SignEcdsa,
-    ObjectCapability::SignEddsa,
+    ObjectCapability::DecryptPkcs,
+    ObjectCapability::DecryptOaep,
     ObjectCapability::ExportableUnderWrap];
 
 const EC_KEY_CAPABILITIES: [ObjectCapability; 3] = [
