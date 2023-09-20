@@ -277,6 +277,18 @@ fn get_rsa_keylen() -> u32 {
     key_len
 }
 
+fn get_rsa_key_algo(size_in_bytes:u32) -> Result<ObjectAlgorithm, MgmError> {
+    match size_in_bytes {
+        256 => Ok(ObjectAlgorithm::Rsa2048),
+        384 => Ok(ObjectAlgorithm::Rsa3072),
+        512 => Ok(ObjectAlgorithm::Rsa4096),
+        _ => {
+            println!("Unsupported RSA key size");
+            Err(MgmError::Error(format!("RSA key size {} bytes", size_in_bytes)))
+        }
+    }
+}
+
 fn asym_gen_key(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
     println!();
     let (key_id, label, domains) = get_common_properties();
@@ -293,12 +305,7 @@ fn asym_gen_key(session: &Session, current_authkey: u16) -> Result<(), MgmError>
     match get_asym_keytype() {
         AsymKeyTypes::RSA => {
             let key_len = get_rsa_keylen();
-            key_algorithm = match key_len {
-                2048 => ObjectAlgorithm::Rsa2048,
-                3072 => ObjectAlgorithm::Rsa3072,
-                4096 => ObjectAlgorithm::Rsa4096,
-                _ => unreachable!()
-            };
+            key_algorithm = get_rsa_key_algo(key_len/8)?;
             capabilities = select_object_capabilities(&HashSet::from(RSA_KEY_CAPABILITIES), &permissible_capabilities);
         }
         AsymKeyTypes::EC => {
@@ -355,16 +362,7 @@ fn asym_import_key(session: &Session, current_authkey: u16) -> Result<(), MgmErr
                     let private_rsa = key.rsa()?;
                     let p = private_rsa.p().ok_or(MgmError::Error(String::from("Failed to read p value")))?;
                     let q = private_rsa.q().ok_or(MgmError::Error(String::from("Failed to read q value")))?;
-
-                    let key_algorithm: ObjectAlgorithm = match private_rsa.size() {
-                        256 => ObjectAlgorithm::Rsa2048,
-                        384 => ObjectAlgorithm::Rsa3072,
-                        512 => ObjectAlgorithm::Rsa4096,
-                        _ => {
-                            println!("Unrecognized RSA algorithm");
-                            return Err(MgmError::Error(format!("RSA key size {}", private_rsa.size())));
-                        }
-                    };
+                    let key_algorithm = get_rsa_key_algo(private_rsa.size())?;
 
                     let capabilities = select_object_capabilities(&HashSet::from(RSA_KEY_CAPABILITIES), &permissible_capabilities);
 
@@ -702,7 +700,9 @@ fn java_get_all_keys(session: &Session) -> Result<Vec<ObjectDescriptor>, MgmErro
 }
 
 fn java_list_keys(session: &Session) -> Result<(), MgmError> {
-    for key in java_get_all_keys(session)? {
+    let all_java_keys = java_get_all_keys(session)?;
+    println!("Found {} objects", all_java_keys.len());
+    for key in all_java_keys {
         println!("{}", key);
     }
     Ok(())
@@ -733,12 +733,8 @@ fn java_gen_key(session: &Session) -> Result<(), MgmError> {
 
     if bool::from(get_boolean_answer("Is RSA key? ")) {
         let key_len = get_rsa_keylen();
-        key_algorithm = match key_len {
-            2048 => ObjectAlgorithm::Rsa2048,
-            3072 => ObjectAlgorithm::Rsa3072,
-            4096 => ObjectAlgorithm::Rsa4096,
-            _ => unreachable!()
-        };
+        key_algorithm = get_rsa_key_algo(key_len/8)?;
+
         capabilities.extend(vec![
             ObjectCapability::SignPkcs,
             ObjectCapability::SignPss,
@@ -824,15 +820,7 @@ fn java_import_key(session: &Session ) -> Result<(), MgmError> {
                     let p = private_rsa.p().ok_or(MgmError::Error(String::from("Failed to read p value")))?;
                     let q = private_rsa.q().ok_or(MgmError::Error(String::from("Failed to read q value")))?;
 
-                    let key_algorithm: ObjectAlgorithm = match private_rsa.size() {
-                        256 => ObjectAlgorithm::Rsa2048,
-                        384 => ObjectAlgorithm::Rsa3072,
-                        512 => ObjectAlgorithm::Rsa4096,
-                        _ => {
-                            println!("Unrecognized RSA algorithm");
-                            return Err(MgmError::Error(format!("RSA key size {}", private_rsa.size())));
-                        }
-                    };
+                    let key_algorithm = get_rsa_key_algo(private_rsa.size())?;
 
                     capabilities.extend(vec![
                         ObjectCapability::SignPkcs,
