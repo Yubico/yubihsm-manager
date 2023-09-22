@@ -3,6 +3,13 @@ extern crate yubihsmrs;
 extern crate openssl;
 extern crate pem;
 extern crate serde;
+extern crate hex;
+extern crate base64;
+extern crate rusty_secrets;
+extern crate regex;
+extern crate scan_dir;
+#[macro_use]
+extern crate lazy_static;
 
 #[macro_use]
 extern crate clap;
@@ -16,6 +23,7 @@ pub mod error;
 pub mod util;
 pub mod asym_commands;
 pub mod auth_commands;
+pub mod wrap_commands;
 
 fn is_valid_id(value: String) -> Result<(), String> {
     // NOTE(adma): dropping value just to keep the linter quiet, the
@@ -108,7 +116,7 @@ fn main() -> Result<(), MgmError> {
     match matches.subcommand_name() {
         Some("auth") => auth_commands::exec_auth_command(&session, authkey)?,
         Some("asym") => asym_commands::exec_asym_command(&session, authkey)?,
-        //Some("wrap") => asym_commands::exec_asym_command(session, authkey)?,
+        Some("wrap") => wrap_commands::exec_wrap_command(&session, authkey)?,
         Some("random") => {
             let nr_of_bytes:usize = get_integer_or_default("  Enter number of bytes [default 256]:", 256);
             for b in session.get_random(nr_of_bytes)? {

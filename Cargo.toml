@@ -33,6 +33,12 @@ serde = "1.0.164"
 pem = "2.0.1"
 rustls-pemfile = "1.0.2"
 openssl = "0.10.54"
+lazy_static = "1.4.0"
+regex = "1.8.4"
+rusty_secrets = "0.0.2"
+hex = "0.4.3"
+base64 = "0.21.2"
+scan_dir = "0.3.3"
 #openssl-sys = "0.9.88"
 
 

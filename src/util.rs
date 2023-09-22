@@ -96,7 +96,7 @@ pub fn get_string_or_default(prompt: &str, default_value: &str) -> String {
 }
 
 
-fn get_integer<T>(prompt: &str) -> T
+pub fn get_integer<T>(prompt: &str) -> T
     where
         T: std::str::FromStr,
         T: From<u16>, // NOTE(adma): a FromStrRadix trait would be better

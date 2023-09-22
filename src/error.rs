@@ -1,4 +1,5 @@
 use std::{error, fmt};
+use std::fmt::Pointer;
 
 /// Enum listing possible errors from `YubiHSM`.
 #[derive(Debug)]
@@ -9,6 +10,8 @@ pub enum MgmError {
     OpenSSLError(openssl::error::ErrorStack),
     /// An error from std::io
     StdIoError(std::io::Error),
+    /// Hex parsing error
+    HexError(hex::FromHexError),
     /// Unexpected or unsupported parameter
     InvalidInput(String),
     /// Generic Error
@@ -21,6 +24,7 @@ impl fmt::Display for MgmError {
             MgmError::LibYubiHsm(ref err) => err.fmt(f),
             MgmError::OpenSSLError(ref err) => err.fmt(f),
             MgmError::StdIoError(ref err) => err.fmt(f),
+            MgmError::HexError(ref err) => err.fmt(f),
             MgmError::InvalidInput(ref param) => write!(f, "Unsupported or unrecognized value: {}", param),
             MgmError::Error(ref param) => write!(f, "{}", param),
         }
@@ -33,6 +37,7 @@ impl error::Error for MgmError {
             MgmError::LibYubiHsm(ref err) => err.description(),
             MgmError::OpenSSLError(ref err) => err.description(),
             MgmError::StdIoError(ref err) => err.description(),
+            MgmError::HexError(ref err) => err.description(),
             MgmError::InvalidInput(_) => "Unexpected or unsupported parameter",
             MgmError::Error(_) => "Unspecified error clarified by an error message",
         }
@@ -43,6 +48,7 @@ impl error::Error for MgmError {
             MgmError::LibYubiHsm(ref err) => Some(err),
             MgmError::OpenSSLError(ref err) => Some(err),
             MgmError::StdIoError(ref err) => Some(err),
+            MgmError::HexError(ref err) => Some(err),
             MgmError::InvalidInput(_) => None,
             MgmError::Error(_) => None,
         }
@@ -64,5 +70,11 @@ impl From<openssl::error::ErrorStack> for MgmError {
 impl From<std::io::Error> for MgmError {
     fn from(error: std::io::Error) -> Self {
         MgmError::StdIoError(error)
+    }
+}
+
+impl From<hex::FromHexError> for MgmError {
+    fn from(error: hex::FromHexError) -> Self {
+        MgmError::HexError(error)
     }
 }
