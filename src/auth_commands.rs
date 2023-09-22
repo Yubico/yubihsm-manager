@@ -39,18 +39,19 @@ enum AuthCommand {
 }
 
 pub fn exec_auth_command(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
-    stdout().flush().unwrap();
-    let cmd = get_auth_command(session, current_authkey)?;
-    match cmd {
-        AuthCommand::ListKeys => auth_list_keys(session),
-        AuthCommand::GetKeyProperties => auth_get_key_properties(session),
-        AuthCommand::DeleteKey => auth_delete_user(session),
-        AuthCommand::SetupUser => auth_setup_user(session, current_authkey),
-        AuthCommand::SetupAdmin => auth_setup_admin(session, current_authkey),
-        AuthCommand::SetupAuditor => auth_setup_auditor(session, current_authkey),
-        AuthCommand::SetupBackupAdmin => auth_setup_backupadmin(session, current_authkey),
-        AuthCommand::Exit => std::process::exit(0),
-        _ => unreachable!()
+    loop {
+        println!();
+        let cmd = get_auth_command(session, current_authkey)?;
+        match cmd {
+            AuthCommand::ListKeys => auth_list_keys(session)?,
+            AuthCommand::GetKeyProperties => auth_get_key_properties(session)?,
+            AuthCommand::DeleteKey => auth_delete_user(session)?,
+            AuthCommand::SetupUser => auth_setup_user(session, current_authkey)?,
+            AuthCommand::SetupAdmin => auth_setup_admin(session, current_authkey)?,
+            AuthCommand::SetupAuditor => auth_setup_auditor(session, current_authkey)?,
+            AuthCommand::SetupBackupAdmin => auth_setup_backupadmin(session, current_authkey)?,
+            AuthCommand::Exit => std::process::exit(0),
+        }
     }
 }
 
@@ -131,7 +132,7 @@ fn create_user(
     println!();
 
     if bool::from(get_boolean_answer("Execute? ")) {
-        let id = session.import_authentication_key(key_id, &label, &*domains, &capabilities, &delegated_capabilities, derivation_pwd.as_bytes())?;
+        let id = session.import_authentication_key(key_id, &label, &domains, &capabilities, &delegated_capabilities, derivation_pwd.as_bytes())?;
         println!("Created new authentication key with ID 0x{id:04x}");
     }
     Ok(())
@@ -196,13 +197,13 @@ fn auth_setup_backupadmin(session: &Session, current_authkey: u16) -> Result<(),
     if !bool::from(get_boolean_answer("Use all current user delegated capabilities as new user capabilities? ")) {
         capabilities = get_selected_items(&mut get_selection_items_from_vec(&permissible_capabilities));
     }
-    println!("");
+    println!();
 
     let mut delegated_capabilities = permissible_capabilities.clone();
     if !bool::from(get_boolean_answer("Use all current user delegated capabilities as new user delegated capabilities? ")) {
         delegated_capabilities = get_selected_items(&mut get_selection_items_from_vec(&permissible_capabilities));
     }
-    println!("");
+    println!();
 
     // exportable_underwrap does not need to be added explicitly because it should already be there
     create_user(session, capabilities, delegated_capabilities, false)
