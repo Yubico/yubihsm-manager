@@ -571,7 +571,6 @@ fn recover_wrapkey() -> (
     (wrap_id, key_algorithm, domains, capabilities, delegated, key.to_vec())
 }
 
-#[cfg(not(target_os = "windows"))]
 fn clear_screen() {
     std::process::Command::new("clear")
         .status()
