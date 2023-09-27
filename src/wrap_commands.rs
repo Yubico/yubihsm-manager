@@ -45,16 +45,21 @@ pub fn exec_wrap_command(session: &Session, current_authkey: u16) -> Result<(), 
     loop {
         stdout().flush().unwrap();
         let cmd = get_wrap_command(session, current_authkey)?;
-        match cmd {
-            WrapCommand::ListKeys => wrap_list_keys(session)?,
-            WrapCommand::GetKeyProperties => wrap_get_key_properties(session)?,
-            WrapCommand::GenerateKey => wrap_gen_key(session, current_authkey)?,
-            WrapCommand::ImportKey => wrap_import_key(session, current_authkey)?,
-            WrapCommand::DeleteKey => wrap_delete_key(session)?,
-            WrapCommand::PerformBackup => backup_device(session)?,
-            WrapCommand::PerformRestore => restore_device(session)?,
+        let result = match cmd {
+            WrapCommand::ListKeys => wrap_list_keys(session),
+            WrapCommand::GetKeyProperties => wrap_get_key_properties(session),
+            WrapCommand::GenerateKey => wrap_gen_key(session, current_authkey),
+            WrapCommand::ImportKey => wrap_import_key(session, current_authkey),
+            WrapCommand::DeleteKey => wrap_delete_key(session),
+            WrapCommand::PerformBackup => backup_device(session),
+            WrapCommand::PerformRestore => restore_device(session),
             WrapCommand::Exit => std::process::exit(0),
-        }
+        };
+
+        result.unwrap_or_else(|err| {
+            println!("ERROR! {}", err);
+            std::process::exit(1);
+        });
     }
 }
 

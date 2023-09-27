@@ -132,19 +132,24 @@ pub fn exec_asym_command(session: &Session, current_authkey: u16) -> Result<(), 
     loop {
         stdout().flush().unwrap();
         let cmd = get_asym_command(session, current_authkey)?;
-        match cmd {
-            AsymCommand::ListKeys => asym_list_keys(session)?,
-            AsymCommand::GetKeyProperties => asym_get_key_properties(session)?,
-            AsymCommand::GenerateKey => asym_gen_key(session, current_authkey)?,
-            AsymCommand::ImportKey => asym_import_key(session, current_authkey)?,
-            AsymCommand::DeleteKey => asym_delete_key(session)?,
-            AsymCommand::GetPublicKey => asym_get_public_key(session)?,
-            AsymCommand::PerformSignature => asym_sign(session)?,
-            AsymCommand::PerformRsaDecryption => asym_decrypt(session)?,
-            AsymCommand::DeriveEcdh => asym_derive_ecdh(session)?,
-            AsymCommand::ManageJavaKeys => asym_java_manage(session, current_authkey)?,
+        let result = match cmd {
+            AsymCommand::ListKeys => asym_list_keys(session),
+            AsymCommand::GetKeyProperties => asym_get_key_properties(session),
+            AsymCommand::GenerateKey => asym_gen_key(session, current_authkey),
+            AsymCommand::ImportKey => asym_import_key(session, current_authkey),
+            AsymCommand::DeleteKey => asym_delete_key(session),
+            AsymCommand::GetPublicKey => asym_get_public_key(session),
+            AsymCommand::PerformSignature => asym_sign(session),
+            AsymCommand::PerformRsaDecryption => asym_decrypt(session),
+            AsymCommand::DeriveEcdh => asym_derive_ecdh(session),
+            AsymCommand::ManageJavaKeys => asym_java_manage(session, current_authkey),
             AsymCommand::Exit => std::process::exit(0),
-        }
+        };
+
+        result.unwrap_or_else(|err| {
+            println!("ERROR! {}", err);
+            std::process::exit(1);
+        });
     }
 }
 

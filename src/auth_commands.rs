@@ -60,17 +60,23 @@ pub fn exec_auth_command(session: &Session, current_authkey: u16) -> Result<(), 
     loop {
         println!();
         let cmd = get_auth_command(session, current_authkey)?;
-        match cmd {
-            AuthCommand::ListKeys => auth_list_keys(session)?,
-            AuthCommand::GetKeyProperties => auth_get_key_properties(session)?,
-            AuthCommand::DeleteKey => auth_delete_user(session)?,
-            AuthCommand::SetupUser => auth_setup_user(session, current_authkey)?,
-            AuthCommand::SetupAdmin => auth_setup_admin(session, current_authkey)?,
-            AuthCommand::SetupAuditor => auth_setup_auditor(session, current_authkey)?,
-            AuthCommand::SetupBackupAdmin => auth_setup_backupadmin(session, current_authkey)?,
-            AuthCommand::SetupKsp => setup_ksp(session, current_authkey)?,
+        let result = match cmd {
+            AuthCommand::ListKeys => auth_list_keys(session),
+            AuthCommand::GetKeyProperties => auth_get_key_properties(session),
+            AuthCommand::DeleteKey => auth_delete_user(session),
+            AuthCommand::SetupUser => auth_setup_user(session, current_authkey),
+            AuthCommand::SetupAdmin => auth_setup_admin(session, current_authkey),
+            AuthCommand::SetupAuditor => auth_setup_auditor(session, current_authkey),
+            AuthCommand::SetupBackupAdmin => auth_setup_backupadmin(session, current_authkey),
+            AuthCommand::SetupKsp => setup_ksp(session, current_authkey),
             AuthCommand::Exit => std::process::exit(0),
-        }
+        };
+
+        result.unwrap_or_else(|err| {
+            println!("ERROR! {}", err);
+            std::process::exit(1);
+        });
+
     }
 }
 
