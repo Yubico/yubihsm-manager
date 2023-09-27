@@ -4,17 +4,22 @@ use std::convert::TryFrom;
 use std::fmt;
 use std::fmt::Display;
 use std::io::{stdout, Write};
+
+use openssl::{base64, pkey};
 use openssl::bn::{BigNum, BigNumContext};
 use openssl::ec::{EcGroup, EcKey, EcPoint, PointConversionForm};
 use openssl::hash::{DigestBytes, MessageDigest};
 use openssl::nid::Nid;
-use openssl::{base64, pkey};
-use openssl::pkey::{PKey};
-use crate::util::{get_string, get_menu_option, get_boolean_answer, get_selected_items, delete_objects, read_file};
+use openssl::pkey::PKey;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
+
 use error::MgmError;
-use util::{BasicDescriptor, get_common_properties, get_filtered_objects, get_integer_or_default, MultiSelectItem, print_object_properties, read_file_bytes, select_object_capabilities, write_file};
+use util::{BasicDescriptor, get_common_properties, get_domains, get_filtered_objects, get_integer_or_default, MultiSelectItem, print_object_properties, read_file_bytes, select_object_capabilities, write_file};
+use wrap_commands::{get_threshold_and_shares, object_to_file, split_wrapkey};
+
+use crate::util::{delete_objects, get_boolean_answer, get_menu_option, get_selected_items, get_string, read_file};
+
 
 const ATTESTATION_CERT_TEMPLATE: &str =
     "MIIC+jCCAeKgAwIBAgIGAWbt9mc3MA0GCSqGSIb3DQEBBQUAMD4xPDA6BgNVBAMM\
@@ -139,7 +144,6 @@ pub fn exec_asym_command(session: &Session, current_authkey: u16) -> Result<(), 
             AsymCommand::DeriveEcdh => asym_derive_ecdh(session)?,
             AsymCommand::ManageJavaKeys => asym_java_manage(session, current_authkey)?,
             AsymCommand::Exit => std::process::exit(0),
-            _ => unreachable!()
         }
     }
 }
@@ -382,7 +386,7 @@ fn asym_import_key(session: &Session, current_authkey: u16) -> Result<(), MgmErr
                         .import_ec_key(key_id, &label, &*domains, &capabilities, key_algorithm, &s.to_vec())?
                 }
                 pkey::Id::ED25519 => {
-                    let private_ed = PKey::private_key_from_raw_bytes(key_bytes, openssl::pkey::Id::ED25519)?;
+                    let private_ed = PKey::private_key_from_raw_bytes(key_bytes, pkey::Id::ED25519)?;
                     let k = private_ed.raw_private_key()?;
                     let capabilities = select_object_capabilities(&HashSet::from(ED_KEY_CAPABILITIES), &permissible_capabilities);
                     key_id = session
@@ -682,7 +686,6 @@ fn asym_java_manage(session: &Session, current_authkey: u16) -> Result<(), MgmEr
             AsymJavaCommand::DeleteKey => java_delete_keys(session)?,
             AsymJavaCommand::ReturnToMenu => break,
             AsymJavaCommand::Exit => std::process::exit(0),
-            _ => unreachable!()
         }
     }
     Ok(())

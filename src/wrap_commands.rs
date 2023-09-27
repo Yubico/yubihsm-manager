@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::error::Error;
 use std::fs::File;
 use std::io::{Read, stdout, Write};
 use openssl::base64;
@@ -30,6 +31,9 @@ enum WrapImportKeyCommand {
 }
 
 const ACCEPTED_WRAP_KEY_LEN: [u32;3] = [128, 192, 256];
+const WRAP_SPLIT_PREFIX_LEN: usize = 20; // 2 object ID bytes + 2 domains bytes +
+                                         // 8 capabilities bytes +
+                                         // 8 delegated capabilities bytes
 
 lazy_static! {
     static ref SHARE_RE_256: Regex = Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{70}$").unwrap();
@@ -260,12 +264,14 @@ fn import_device_generated(session:&Session, current_authkey:u16) ->  Result<(),
 }
 
 fn import_from_shares(session:&Session) -> Result<(), MgmError> {
-    let (wrap_id, algo, domains, capabilities, delegated, key) = recover_wrapkey();
+    let (wrap_id, algo, domains, capabilities, delegated, key) = recover_wrapkey()?;
+
+    let label = get_string("  Enter key label: ");
 
     let wrap_id = session
         .import_wrap_key(
             wrap_id,
-            "Wrap key",
+            &label,
             &domains,
             &capabilities,
             algo,
@@ -309,17 +315,17 @@ fn backup_device(session: &Session) -> Result<(), MgmError> {
     Ok(())
 }
 
-fn object_to_file(id: u16, object_type: ObjectType, data: &[u8]) -> Result<String, String> {
+pub fn object_to_file(id: u16, object_type: ObjectType, data: &[u8]) -> Result<String, MgmError> {
     let path_string = format!("./0x{:04x}-{}.yhw", id, object_type);
     let path = std::path::Path::new(&path_string);
 
     let mut file = match File::create(path) {
-        Err(why) => panic!("couldn't create {}: {}", path.display(), why),
+        Err(why) => return Err(MgmError::Error(format!("couldn't create {}: {}", path.display(), why))),
         Ok(file) => file,
     };
 
     match file.write_all(base64::encode_block(data).as_bytes()) {
-        Err(why) => Err(why.to_string()),
+        Err(why) => Err(MgmError::Error(why.to_string())),
         Ok(_) => Ok(path_string.to_owned()),
     }
 }
@@ -337,16 +343,10 @@ fn restore_device(session: &Session) -> Result<(), MgmError> {
 
     for f in files {
         println!("reading {}", &f.display());
-        let mut file = File::open(&f).unwrap_or_else(|err| {
-            println!("Unable to import read file {}: {}", f.display(), err);
-            std::process::exit(1);
-        });
+        let mut file = File::open(&f)?;
 
         let mut wrap = String::new();
-        file.read_to_string(&mut wrap).unwrap_or_else(|err| {
-            println!("Unable to read from file {}: {}", f.display(), err);
-            std::process::exit(1);
-        });
+        file.read_to_string(&mut wrap)?;
 
         let data = match base64::decode_block(&wrap) {
             Ok(decoded) => decoded,
@@ -390,7 +390,7 @@ fn restore_device(session: &Session) -> Result<(), MgmError> {
 
 
 
-fn get_threshold_and_shares() -> (u32, u32) {
+pub fn get_threshold_and_shares() -> (u32, u32) {
     let mut shares;
     let mut threshold;
 
@@ -422,7 +422,7 @@ fn get_threshold_and_shares() -> (u32, u32) {
     }
 }
 
-fn split_wrapkey(
+pub fn split_wrapkey(
     wrap_id: u16,
     domains: &[ObjectDomain],
     capabilities: &[ObjectCapability],
@@ -466,27 +466,25 @@ fn split_wrapkey(
         });
 
     for share in shares {
-        //loop {
+        clear_screen();
+        println!("{}", share);
+        if Into::<bool>::into(get_boolean_answer("Have you recorded the key share?")) {
             clear_screen();
-            println!("{}", share);
-            if Into::<bool>::into(get_boolean_answer("Have you recorded the key share?")) {
-                clear_screen();
-                get_string("Press any key to display next key share or to return to menu");
-            }
-        //}
+            get_string("Press any key to display next key share or to return to menu");
+        }
     }
 
     clear_screen();
 }
 
-fn recover_wrapkey() -> (
+fn recover_wrapkey() -> Result<(
     u16,
     ObjectAlgorithm,
     Vec<ObjectDomain>,
     Vec<ObjectCapability>,
     Vec<ObjectCapability>,
     Vec<u8>,
-) {
+), MgmError> {
     let shares = get_integer::<u16>("Enter the number of shares:");
 
     let mut shares_vec = Vec::new();
@@ -534,41 +532,30 @@ fn recover_wrapkey() -> (
         clear_screen();
     }
 
-    let secret = rusty_secrets::recover_secret(shares_vec).unwrap_or_else(|err| {
-        println!("Unable to recover key: {}", err);
-        std::process::exit(1);
-    });
+    let secret = match rusty_secrets::recover_secret(shares_vec) {
+        Ok(sec) => sec,
+        Err(err) => return Err(MgmError::Error(format!("Unable to recover key: {}", err.description()))),
+    };
 
-    // TODO(adma): magic numbers ...
-
-    if secret.len() != 2 + 2 + 8 + 8 + (key_len/8) {
-        println!(
+    if secret.len() != WRAP_SPLIT_PREFIX_LEN + (key_len/8) {
+        return Err(MgmError::Error(format!(
             "Wrong length for recovered secret: expected {}, found {}",
-            2 + 2 + 8 + 8 + (key_len/8),
+            WRAP_SPLIT_PREFIX_LEN + (key_len/8),
             secret.len()
-        )
+        )));
     }
 
     let wrap_id = ((u16::from(secret[0])) << 8) | u16::from(secret[1]);
 
-    let domains = ObjectDomain::from_bytes(&secret[2..4]).unwrap_or_else(|err| {
-        println!("Unable to parse domains: {}", err);
-        std::process::exit(1);
-    });
+    let domains = ObjectDomain::from_bytes(&secret[2..4])?;
 
-    let capabilities = ObjectCapability::from_bytes(&secret[4..12]).unwrap_or_else(|err| {
-        println!("Unable to parse capabilities: {}", err);
-        std::process::exit(1);
-    });
+    let capabilities = ObjectCapability::from_bytes(&secret[4..12])?;
 
-    let delegated = ObjectCapability::from_bytes(&secret[12..20]).unwrap_or_else(|err| {
-        println!("Unable to parse delegated capabilities: {}", err);
-        std::process::exit(1);
-    });
+    let delegated = ObjectCapability::from_bytes(&secret[12..20])?;
 
     let key = &secret[20..];
 
-    (wrap_id, key_algorithm, domains, capabilities, delegated, key.to_vec())
+    Ok((wrap_id, key_algorithm, domains, capabilities, delegated, key.to_vec()))
 }
 
 fn clear_screen() {

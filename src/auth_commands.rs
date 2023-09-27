@@ -1,10 +1,13 @@
 use std::collections::HashSet;
 use std::io::{stdout, Write};
 use crate::util::{get_string, get_menu_option, get_boolean_answer, get_selected_items, delete_objects};
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectHandle, ObjectType};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{BasicDescriptor, get_common_properties, get_filtered_objects, get_selection_items_from_vec, print_object_properties, select_object_capabilities};
+use util::{BasicDescriptor, get_common_properties, get_domains, get_filtered_objects, get_integer_or_default, get_selection_items_from_vec, print_object_properties, select_object_capabilities};
+use wrap_commands::{get_threshold_and_shares, object_to_file, split_wrapkey};
+
+const KSP_WRAPKEY_LEN: usize = 32;
 
 const ALL_USER_CAPABILITIES: [ObjectCapability; 9] = [
     ObjectCapability::SignPkcs,
@@ -26,6 +29,20 @@ const ALL_ADMIN_CAPABILITIES: [ObjectCapability; 5] = [
     ObjectCapability::DeleteOpaque,
 ];
 
+const KSP_AUTHKEY_DELEGATED_CAPABILITIES: [ObjectCapability; 11] = [
+    ObjectCapability::GenerateAsymmetricKey,
+    ObjectCapability::SignPkcs,
+    ObjectCapability::SignPss,
+    ObjectCapability::SignEcdsa,
+    ObjectCapability::DeriveEcdh,
+    ObjectCapability::ExportableUnderWrap,
+    ObjectCapability::ExportWrapped,
+    ObjectCapability::ImportWrapped,
+    ObjectCapability::ExportWrapped,
+    ObjectCapability::ExportableUnderWrap,
+    ObjectCapability::GetLogEntries,
+];
+
 #[derive(Debug, Clone, Copy)]
 enum AuthCommand {
     ListKeys,
@@ -35,6 +52,7 @@ enum AuthCommand {
     SetupAdmin,
     SetupAuditor,
     SetupBackupAdmin,
+    SetupKsp,
     Exit,
 }
 
@@ -50,6 +68,7 @@ pub fn exec_auth_command(session: &Session, current_authkey: u16) -> Result<(), 
             AuthCommand::SetupAdmin => auth_setup_admin(session, current_authkey)?,
             AuthCommand::SetupAuditor => auth_setup_auditor(session, current_authkey)?,
             AuthCommand::SetupBackupAdmin => auth_setup_backupadmin(session, current_authkey)?,
+            AuthCommand::SetupKsp => setup_ksp(session, current_authkey)?,
             AuthCommand::Exit => std::process::exit(0),
         }
     }
@@ -67,6 +86,8 @@ fn get_auth_command(session: &Session, current_authkey: u16) -> Result<AuthComma
     commands.push(("Get user info".to_string(), AuthCommand::GetKeyProperties));
     if capabilities.contains(&ObjectCapability::DeleteAuthenticationKey) {
         commands.push(("Delete user".to_string(), AuthCommand::DeleteKey));
+    }
+    if capabilities.contains(&ObjectCapability::PutAuthenticationKey) {
 
         if HashSet::from(ALL_USER_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
             commands.push(("Setup user: Can only use keys".to_string(), AuthCommand::SetupUser));
@@ -77,7 +98,12 @@ fn get_auth_command(session: &Session, current_authkey: u16) -> Result<AuthComma
         if delegated_capabilities.contains(&ObjectCapability::GetLogEntries) {
             commands.push(("Setup auditor: Can only perform audit functions".to_string(), AuthCommand::SetupAuditor));
         }
-        commands.push(("Setup backup user: Can have all the delegated capabilities of this user".to_string(), AuthCommand::SetupBackupAdmin))
+        commands.push(("Setup backup user: Can have all the delegated capabilities of this user".to_string(), AuthCommand::SetupBackupAdmin));
+
+        if capabilities.contains(&ObjectCapability::PutWrapKey) &&
+           HashSet::from(KSP_AUTHKEY_DELEGATED_CAPABILITIES).intersection(&delegated_capabilities).count() > 0  {
+            commands.push(("Setup KSP user".to_string(), AuthCommand::SetupKsp));
+        }
     }
     commands.push(("Exit".to_string(), AuthCommand::Exit));
 
@@ -209,3 +235,167 @@ fn auth_setup_backupadmin(session: &Session, current_authkey: u16) -> Result<(),
     create_user(session, capabilities, delegated_capabilities, false)
 }
 
+
+fn setup_ksp(session: &Session, current_authkey: u16) -> Result<(), MgmError>{
+    let capabilities_rsa_decrypt = &[ObjectCapability::DecryptPkcs, ObjectCapability::DecryptOaep];
+
+    let mut wrapkey_delegated = vec![
+        ObjectCapability::GenerateAsymmetricKey,
+        ObjectCapability::SignPkcs,
+        ObjectCapability::SignPss,
+        ObjectCapability::SignEcdsa,
+        ObjectCapability::DeriveEcdh,
+        ObjectCapability::ImportWrapped,
+        ObjectCapability::ExportWrapped,
+        ObjectCapability::ExportableUnderWrap,
+        ObjectCapability::GetLogEntries,
+    ];
+
+    let mut authkey_capabilities = vec![
+        ObjectCapability::GenerateAsymmetricKey,
+        ObjectCapability::SignPkcs,
+        ObjectCapability::SignPss,
+        ObjectCapability::SignEcdsa,
+        ObjectCapability::DeriveEcdh,
+        ObjectCapability::ImportWrapped,
+        ObjectCapability::ExportWrapped,
+        ObjectCapability::ExportableUnderWrap,
+    ];
+
+    let mut authkey_delegated = vec![
+        ObjectCapability::GenerateAsymmetricKey,
+        ObjectCapability::SignPkcs,
+        ObjectCapability::SignPss,
+        ObjectCapability::SignEcdsa,
+        ObjectCapability::DeriveEcdh,
+        ObjectCapability::ExportableUnderWrap,
+    ];
+
+    if Into::<bool>::into(get_boolean_answer(
+        "Would you like to add RSA decryption capabilities?",
+    )) {
+        wrapkey_delegated.extend_from_slice(capabilities_rsa_decrypt);
+        authkey_capabilities.extend_from_slice(capabilities_rsa_decrypt);
+        authkey_delegated.extend_from_slice(capabilities_rsa_decrypt);
+    }
+
+    let &wrapkey_capabilities = &[
+        ObjectCapability::ImportWrapped,
+        ObjectCapability::ExportWrapped,
+    ];
+
+    let wrapkey = session.get_random(KSP_WRAPKEY_LEN).unwrap_or_else(|err| {
+        println!("Unable to generate random data: {}", err);
+        std::process::exit(1);
+    });
+
+    let domains = get_domains("Enter domains:");
+
+    // Create a wrapping key for importing application authentication keys and secrets
+    let wrap_id = get_integer_or_default("Enter wrap key ID (0 to choose automatically):", 0);
+    let wrap_id = session
+        .import_wrap_key(
+            wrap_id,
+            "Wrap key",
+            &domains,
+            &wrapkey_capabilities,
+            ObjectAlgorithm::Aes256CcmWrap,
+            &wrapkey_delegated,
+            &wrapkey,
+        )?;
+    println!("Stored wrap key with ID 0x{:04x} on the device\n", wrap_id);
+
+    // Split the wrap key
+    let (threshold, shares) = get_threshold_and_shares();
+    split_wrapkey(
+        wrap_id,
+        &domains,
+        &wrapkey_capabilities,
+        &wrapkey_delegated,
+        &wrapkey,
+        threshold,
+        shares,
+    );
+
+    // Create an authentication key for usage with the above wrap key
+    let auth_id = get_integer_or_default(
+        "Enter application authentication key ID (0 to choose automatically):",
+        0);
+    let application_password = get_string("Enter application authentication key password:");
+    let auth_id = session
+        .import_authentication_key(
+            auth_id,
+            "Application auth key",
+            &domains,
+            &authkey_capabilities,
+            &authkey_delegated,
+            application_password.as_bytes(),
+        )?;
+    println!(
+        "Stored application authentication key with ID 0x{:04x} on the device",
+        auth_id
+    );
+
+    let mut export = false;
+    if bool::from(get_boolean_answer("Export Authentication key? ")) {
+        export = true;
+        let auth_wrapped = session
+            .export_wrapped(wrap_id, ObjectType::AuthenticationKey, auth_id)?;
+
+        let auth_file = object_to_file(auth_id, ObjectType::AuthenticationKey, &auth_wrapped)?;
+
+        println!(
+            "Saved wrapped application authentication key to {}\n",
+            auth_file
+        );
+    }
+
+    if bool::from(get_boolean_answer("Would you like to create an audit key?")) {
+        add_audit_key(session, wrap_id, &domains, export)?;
+    }
+
+    if bool::from(get_boolean_answer("Delete previous authentication key (strongly recommended)?")) {
+        delete_objects(session, vec![ObjectHandle{object_type:ObjectType::AuthenticationKey, object_id:current_authkey}].to_vec())?;
+    }
+
+    Ok(())
+}
+
+fn add_audit_key(
+    session: &Session,
+    wrap_id: u16,
+    domains: &[ObjectDomain],
+    export: bool,
+) -> Result<(), MgmError> {
+    let audit_id = get_integer_or_default("Enter audit key ID (0 to choose automatically):", 0);
+    let audit_password = get_string("Enter audit authentication key password:");
+
+    // Create audit auth key
+    let audit_id = session
+        .import_authentication_key(
+            audit_id,
+            "Audit auth key",
+            domains,
+            &[
+                ObjectCapability::GetLogEntries,
+                ObjectCapability::ExportableUnderWrap,
+            ],
+            &[],
+            audit_password.as_bytes(),
+        )?;
+    println!(
+        "Stored audit authentication key with ID 0x{:04x} on the device",
+        audit_id
+    );
+
+    if export {
+        let audit_wrapped = session
+            .export_wrapped(wrap_id, ObjectType::AuthenticationKey, audit_id)?;
+
+        let audit_file =
+            object_to_file(audit_id, ObjectType::AuthenticationKey, &audit_wrapped)?;
+        println!("Saved wrapped audit authentication key to {}\n", audit_file);
+    }
+
+    Ok(())
+}
