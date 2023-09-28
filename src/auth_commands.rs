@@ -83,9 +83,11 @@ pub fn exec_auth_command(session: &Session, current_authkey: u16) -> Result<(), 
 fn get_auth_command(session: &Session, current_authkey: u16) -> Result<AuthCommand, MgmError> {
     let capabilities: HashSet<ObjectCapability> =
         session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?.capabilities.into_iter().collect();
-    let delegated_capabilities: HashSet<ObjectCapability> =
-        session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?.delegated_capabilities.unwrap().into_iter().collect();
-
+    let delegated_capabilities_vec = session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?.delegated_capabilities;
+    let mut delegated_capabilities: HashSet<ObjectCapability> = HashSet::new();
+    if let Some(..) = delegated_capabilities_vec {
+        delegated_capabilities = delegated_capabilities_vec.unwrap().into_iter().collect();
+    }
 
     let mut commands: Vec<(String, AuthCommand)> = Vec::new();
     commands.push(("List keys".to_string(), AuthCommand::ListKeys));
@@ -96,10 +98,10 @@ fn get_auth_command(session: &Session, current_authkey: u16) -> Result<AuthComma
     if capabilities.contains(&ObjectCapability::PutAuthenticationKey) {
 
         if HashSet::from(ALL_USER_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
-            commands.push(("Setup user: Can only use keys".to_string(), AuthCommand::SetupUser));
+            commands.push(("Setup user: Can only use asymmetric keys".to_string(), AuthCommand::SetupUser));
         }
         if HashSet::from(ALL_ADMIN_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
-            commands.push(("Setup admin: Can create keys".to_string(), AuthCommand::SetupAdmin));
+            commands.push(("Setup admin: Can manage asymmetric keys".to_string(), AuthCommand::SetupAdmin));
         }
         if delegated_capabilities.contains(&ObjectCapability::GetLogEntries) {
             commands.push(("Setup auditor: Can only perform audit functions".to_string(), AuthCommand::SetupAuditor));
