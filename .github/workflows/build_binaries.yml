@@ -118,7 +118,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
-          name: yubihsm-manager-macos
+          name: yubihsm-manager-macos-amd
           path: artifact
 
   MacOS-Build-arm:
@@ -176,7 +176,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
-          name: yubihsm-manager-macos
+          name: yubihsm-manager-macos-arm
           path: artifact
 
   Windows-Build:
