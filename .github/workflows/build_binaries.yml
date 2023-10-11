@@ -65,7 +65,15 @@ jobs:
 
   MacOS-Build:
     name: MacOS
-    runs-on: macos-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            arch: amd
+          - os: macos-latest-xlarge
+            arch: arm
     env:
       YUBIHSMSDK_VERSION: 2023-08
 
@@ -80,7 +88,7 @@ jobs:
           set -x
 
           cd ..
-          curl -L --max-redirs 2 -o yubihsm-sdk-installer.pkg https://developers.yubico.com/YubiHSM2/Releases/yubihsm2-sdk-$YUBIHSMSDK_VERSION-darwin-amd64.pkg
+          curl -L --max-redirs 2 -o yubihsm-sdk-installer.pkg https://developers.yubico.com/YubiHSM2/Releases/yubihsm2-sdk-$YUBIHSMSDK_VERSION-darwin-universal.pkg
           sudo installer -verbose -store -pkg yubihsm-sdk-installer.pkg -target /
 
       - name: clone yubihsmrs
@@ -118,7 +126,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
-          name: yubihsm-manager-macos
+          name: yubihsm-manager-macos-${{ matrix.arch }}
           path: artifact
 
   Windows-Build:
