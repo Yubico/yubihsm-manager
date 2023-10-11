@@ -125,10 +125,8 @@ jobs:
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
-        env:
-          ARCH: ${{ matrix.arch }}
         with:
-          name: yubihsm-manager-macos-$ARCH
+          name: yubihsm-manager-macos-${{ matrix.arch }}
           path: artifact
 
   Windows-Build:
