@@ -1,15 +1,15 @@
 use std::collections::HashSet;
-use std::io::{stdout, Write};
-use crate::util::{get_string, get_menu_option, get_boolean_answer, get_selected_items, delete_objects};
+
+use crate::util::{delete_objects};
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{BasicDescriptor, get_common_properties, get_domains, get_filtered_objects, get_integer_or_default, get_selection_items_from_vec, print_object_properties, select_object_capabilities};
+use util::{get_common_properties, get_domains, get_id, get_object_properties_str, get_permissible_capabilities, list_objects, print_object_properties, select_object_capabilities};
 use wrap_commands::{get_threshold_and_shares, object_to_file, split_wrapkey};
 
 const KSP_WRAPKEY_LEN: usize = 32;
 
-const ALL_USER_CAPABILITIES: [ObjectCapability; 9] = [
+const ALL_USER_CAPABILITIES: [ObjectCapability; 10] = [
     ObjectCapability::SignPkcs,
     ObjectCapability::SignPss,
     ObjectCapability::SignEcdsa,
@@ -19,14 +19,16 @@ const ALL_USER_CAPABILITIES: [ObjectCapability; 9] = [
     ObjectCapability::DeriveEcdh,
     ObjectCapability::SignSshCertificate,
     ObjectCapability::SignAttestationCertificate,
+    ObjectCapability::ExportableUnderWrap,
 ];
 
-const ALL_ADMIN_CAPABILITIES: [ObjectCapability; 5] = [
+const ALL_ADMIN_CAPABILITIES: [ObjectCapability; 6] = [
     ObjectCapability::GenerateAsymmetricKey,
     ObjectCapability::PutAsymmetricKey,
     ObjectCapability::DeleteAsymmetricKey,
     ObjectCapability::PutOpaque,
     ObjectCapability::DeleteOpaque,
+    ObjectCapability::ExportableUnderWrap,
 ];
 
 const KSP_AUTHKEY_DELEGATED_CAPABILITIES: [ObjectCapability; 11] = [
@@ -43,8 +45,9 @@ const KSP_AUTHKEY_DELEGATED_CAPABILITIES: [ObjectCapability; 11] = [
     ObjectCapability::GetLogEntries,
 ];
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum AuthCommand {
+    #[default]
     ListKeys,
     GetKeyProperties,
     DeleteKey,
@@ -58,7 +61,6 @@ enum AuthCommand {
 
 pub fn exec_auth_command(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
     loop {
-        println!();
         let cmd = get_auth_command(session, current_authkey)?;
         let result = match cmd {
             AuthCommand::ListKeys => auth_list_keys(session),
@@ -73,7 +75,8 @@ pub fn exec_auth_command(session: &Session, current_authkey: u16) -> Result<(), 
         };
 
         result.unwrap_or_else(|err| {
-            println!("ERROR! {}", err);
+            cliclack::log::error(format!("ERROR! {}", err)).unwrap_or_else(|e| {
+                println!("Unable to display error message: {}", e)});
             std::process::exit(1);
         });
 
@@ -82,124 +85,140 @@ pub fn exec_auth_command(session: &Session, current_authkey: u16) -> Result<(), 
 
 fn get_auth_command(session: &Session, current_authkey: u16) -> Result<AuthCommand, MgmError> {
     let capabilities: HashSet<ObjectCapability> =
-        session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?.capabilities.into_iter().collect();
-    let delegated_capabilities_vec = session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?.delegated_capabilities;
+        session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?
+            .capabilities.into_iter().collect();
+    let delegated_capabilities_vec =
+        session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?.delegated_capabilities;
     let mut delegated_capabilities: HashSet<ObjectCapability> = HashSet::new();
     if let Some(..) = delegated_capabilities_vec {
         delegated_capabilities = delegated_capabilities_vec.unwrap().into_iter().collect();
     }
 
-    let mut commands: Vec<(String, AuthCommand)> = Vec::new();
-    commands.push(("List keys".to_string(), AuthCommand::ListKeys));
-    commands.push(("Get user info".to_string(), AuthCommand::GetKeyProperties));
+    let mut commands = cliclack::select("");
+    commands = commands.item(AuthCommand::ListKeys, "List keys", "");
+    commands = commands.item(AuthCommand::GetKeyProperties, "Get user info", "");
     if capabilities.contains(&ObjectCapability::DeleteAuthenticationKey) {
-        commands.push(("Delete user".to_string(), AuthCommand::DeleteKey));
+        commands = commands.item(AuthCommand::DeleteKey,"Delete user", "");
     }
     if capabilities.contains(&ObjectCapability::PutAuthenticationKey) {
 
         if HashSet::from(ALL_USER_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
-            commands.push(("Setup user: Can only use asymmetric keys".to_string(), AuthCommand::SetupUser));
+            commands = commands.item(AuthCommand::SetupUser, "Setup user", "Can only use asymmetric keys");
         }
         if HashSet::from(ALL_ADMIN_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
-            commands.push(("Setup admin: Can manage asymmetric keys".to_string(), AuthCommand::SetupAdmin));
+            commands = commands.item(AuthCommand::SetupAdmin, "Setup admin", "Can only manage asymmetric keys");
         }
         if delegated_capabilities.contains(&ObjectCapability::GetLogEntries) {
-            commands.push(("Setup auditor: Can only perform audit functions".to_string(), AuthCommand::SetupAuditor));
+            commands = commands.item(AuthCommand::SetupAuditor, "Setup auditor", "Can only perform audit functions");
         }
-        commands.push(("Setup backup user: Can have all the delegated capabilities of this user".to_string(), AuthCommand::SetupBackupAdmin));
+        commands = commands.item(AuthCommand::SetupBackupAdmin, "Setup backup user", "Can have all the delegated capabilities of this user");
 
         if capabilities.contains(&ObjectCapability::PutWrapKey) &&
            HashSet::from(KSP_AUTHKEY_DELEGATED_CAPABILITIES).intersection(&delegated_capabilities).count() > 0  {
-            commands.push(("Setup KSP user".to_string(), AuthCommand::SetupKsp));
+            commands = commands.item(AuthCommand::SetupKsp, "Setup KSP user", "");
         }
     }
-    commands.push(("Exit".to_string(), AuthCommand::Exit));
+    commands = commands.item(AuthCommand::Exit, "Exit", "");
+    Ok(commands.interact()?)
+}
 
-    Ok(get_menu_option(&commands))
+fn get_all_auth_keys(session: &Session) -> Result<Vec<ObjectHandle>, MgmError> {
+    Ok(session.list_objects_with_filter(
+        0,
+        ObjectType::AuthenticationKey,
+        "",
+        ObjectAlgorithm::ANY,
+        &Vec::new())?)
 }
 
 fn auth_list_keys(session: &Session) -> Result<(), MgmError> {
-    let key_handles: Vec<ObjectHandle> = session.list_objects_with_filter(0, ObjectType::AuthenticationKey, "", ObjectAlgorithm::ANY, &Vec::new())?;
-    println!("\nFound {} objects", key_handles.len());
-    for object in key_handles {
-        println!("  {}", BasicDescriptor::from(session.get_object_info(object.object_id, object.object_type)?));
-    }
-    Ok(())
+    list_objects(session, &get_all_auth_keys(session)?)
 }
 
 fn auth_get_key_properties(session: &Session) -> Result<(), MgmError> {
-    println!();
-    print_object_properties(session, ObjectType::AuthenticationKey);
-    Ok(())
+    print_object_properties(session, get_all_auth_keys(session)?)
 }
 
 fn auth_delete_user(session: &Session) -> Result<(), MgmError> {
-    let keys = get_filtered_objects(session, ObjectType::AuthenticationKey, false)?;
-    delete_objects(session, keys)
+    delete_objects(session, get_all_auth_keys(session)?)
+}
+
+fn get_password(prompt: &str) -> Result<String, MgmError> {
+    let pwd = cliclack::password(prompt)
+        .mask('*')
+        .interact()?;
+
+    let pwd_clone = pwd.clone();
+    cliclack::password("Re-enter password")
+        .mask('*')
+        .validate(move |input: &String| {
+            if input != &pwd_clone {
+                Err("The passwords do not match!")
+            } else {
+                Ok(())
+            }
+        })
+        .interact()?;
+    Ok(pwd)
 }
 
 fn create_user(
     session: &Session,
-    mut capabilities: Vec<ObjectCapability>,
-    delegated_capabilities: Vec<ObjectCapability>,
-    exportable: bool,
+    capabilities: Vec<ObjectCapability>,
+    delegated_capabilities: Vec<ObjectCapability>
 ) -> Result<(), MgmError> {
-    println!();
     let (key_id, label, domains) = get_common_properties();
-    let derivation_pwd = get_string("Enter user password: ");
-    if exportable &&
-        bool::from(get_boolean_answer("Should key be exportable under wrap? ")) {
-        capabilities.push(ObjectCapability::ExportableUnderWrap);
-    }
+    let pwd = get_password("Enter user password:")?;
 
-    println!("\n  Creating authentication key with:");
-    println!("    Label: {}", label);
-    println!("    Key ID: {}", key_id);
-    print!("    Domains: ");
-    domains.iter().for_each(|domain| print!("{}, ", domain));
-    println!();
-    print!("    Capabilities: ");
-    capabilities.iter().for_each(|cap| print!("{:?}, ", cap));
-    println!();
-    print!("    Delegated capabilities: ");
-    delegated_capabilities.iter().for_each(|cap| print!("{:?}, ", cap));
-    println!();
+    let mut key_str = get_object_properties_str(
+        &ObjectAlgorithm::Aes128YubicoAuthentication, &label, key_id, &domains, &capabilities);
+    key_str.push_str("    Delegated capabilities: ");
+    delegated_capabilities.iter().for_each(|cap| key_str.push_str(format!("{:?}, ", cap).as_str()));
+    key_str.push('\n');
 
-    if bool::from(get_boolean_answer("Execute? ")) {
-        let id = session.import_authentication_key(key_id, &label, &domains, &capabilities, &delegated_capabilities, derivation_pwd.as_bytes())?;
-        println!("Created new authentication key with ID 0x{id:04x}");
+    cliclack::note("Creating authentication key with:", key_str)?;
+
+    if cliclack::confirm("Execute?").interact()? {
+        let id = session.import_authentication_key(
+            key_id, &label, &domains, &capabilities, &delegated_capabilities, pwd.as_bytes())?;
+        cliclack::log::success(format!("Created new authentication key with ID 0x{id:04x}"))?;
     }
     Ok(())
 }
 
 fn auth_setup_user(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
-    let permissible_capabilities: HashSet<ObjectCapability> =
-        session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?
-            .delegated_capabilities.unwrap().into_iter().collect();
+    let permissible_capabilities = get_permissible_capabilities(session, current_authkey)?;
 
     let selected_capabilities =
-        select_object_capabilities(&HashSet::from(ALL_USER_CAPABILITIES), &permissible_capabilities);
-    create_user(session, selected_capabilities, Vec::new(), permissible_capabilities.contains(&ObjectCapability::ExportableUnderWrap))
+        select_object_capabilities(
+            "Select key capabilities",
+            false,
+            true,
+            &ALL_USER_CAPABILITIES.to_vec(),
+            &permissible_capabilities);
+    create_user(session, selected_capabilities, Vec::new())
 }
 
 fn auth_setup_admin(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
-    let permissible_capabilities: HashSet<ObjectCapability> =
-        session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?
-            .delegated_capabilities.expect("Cannot read current authentication key's delegated capabilities")
-            .into_iter().collect();
+    let permissible_capabilities = get_permissible_capabilities(session, current_authkey)?;
 
-    print!("\nChoose admin user capabilities. ");
-    let selected_capabilities =
-        select_object_capabilities(&HashSet::from(ALL_ADMIN_CAPABILITIES), &permissible_capabilities);
+    let capabilities =
+        select_object_capabilities(
+            "Select key capabilities",
+            false,
+            true,
+            &ALL_ADMIN_CAPABILITIES.to_vec(),
+            &permissible_capabilities);
 
-    print!("\nChoose admin user delegated capabilities. ");
-    let mut delegated_caps: Vec<ObjectCapability> = Vec::new();
-    ALL_USER_CAPABILITIES.map(|c| delegated_caps.push(c));
-    delegated_caps.push(ObjectCapability::ExportableUnderWrap);
-    let selected_delegated_capabilities =
-        select_object_capabilities(&delegated_caps.into_iter().collect(), &permissible_capabilities);
+    let delegated_capabilities =
+        select_object_capabilities(
+            "Select key capabilities",
+            false,
+            true,
+            &ALL_USER_CAPABILITIES.to_vec(),
+            &permissible_capabilities);
 
-    create_user(session, selected_capabilities, selected_delegated_capabilities, permissible_capabilities.contains(&ObjectCapability::ExportableUnderWrap))
+    create_user(session, capabilities, delegated_capabilities)
 }
 
 fn auth_setup_auditor(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
@@ -208,12 +227,18 @@ fn auth_setup_auditor(session: &Session, current_authkey: u16) -> Result<(), Mgm
         expect("Cannot read current authentication key's delegated capabilities");
 
     if !permissible_capabilities.contains(&ObjectCapability::GetLogEntries) {
-        return Err(MgmError::Error("Current user does not have permission to create auditor".to_string()));
+        cliclack::log::error("Current user does not have permission to create auditor")?;
+        return Ok(());
     }
 
-    let capabilities = vec![ObjectCapability::GetLogEntries];
+    let mut capabilities = vec![ObjectCapability::GetLogEntries];
 
-    create_user(session, capabilities, Vec::new(), permissible_capabilities.contains(&ObjectCapability::ExportableUnderWrap))
+    if permissible_capabilities.contains(&ObjectCapability::ExportableUnderWrap) &&
+        cliclack::confirm("Is key exportable under wrap?").interact()? {
+        capabilities.push(ObjectCapability::ExportableUnderWrap);
+    }
+
+    create_user(session, capabilities, Vec::new())
 }
 
 fn auth_setup_backupadmin(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
@@ -221,26 +246,25 @@ fn auth_setup_backupadmin(session: &Session, current_authkey: u16) -> Result<(),
         current_authkey, ObjectType::AuthenticationKey)?.delegated_capabilities.
         expect("Cannot read current authentication key's delegated capabilities");
 
-    println!("\n  Current user delegated capabilities:");
+    let mut capabilities = cliclack::multiselect(
+        "Select key capabilities. Press the space button to select and unselect item. Press 'Enter' when done.");
+    capabilities = capabilities.required(false);
+    capabilities = capabilities.initial_values(permissible_capabilities.clone());
     for c in &permissible_capabilities {
-        println!("  {c}");
+        capabilities = capabilities.item(c.clone(), c.to_string(), "");
     }
-    println!();
+    let capabilities = capabilities.interact()?;
 
-    let mut capabilities = permissible_capabilities.clone();
-    if !bool::from(get_boolean_answer("Use all current user delegated capabilities as new user capabilities? ")) {
-        capabilities = get_selected_items(&mut get_selection_items_from_vec(&permissible_capabilities));
+    let mut delegated_capabilities = cliclack::multiselect(
+        "Select key capabilities. Press the space button to select and unselect item. Press 'Enter' when done.");
+    delegated_capabilities = delegated_capabilities.required(false);
+    delegated_capabilities = delegated_capabilities.initial_values(permissible_capabilities.clone());
+    for c in &permissible_capabilities {
+        delegated_capabilities = delegated_capabilities.item(c.clone(), c.to_string(), "");
     }
-    println!();
+    let delegated_capabilities = delegated_capabilities.interact()?;
 
-    let mut delegated_capabilities = permissible_capabilities.clone();
-    if !bool::from(get_boolean_answer("Use all current user delegated capabilities as new user delegated capabilities? ")) {
-        delegated_capabilities = get_selected_items(&mut get_selection_items_from_vec(&permissible_capabilities));
-    }
-    println!();
-
-    // exportable_underwrap does not need to be added explicitly because it should already be there
-    create_user(session, capabilities, delegated_capabilities, false)
+    create_user(session, capabilities, delegated_capabilities)
 }
 
 
@@ -279,9 +303,7 @@ fn setup_ksp(session: &Session, current_authkey: u16) -> Result<(), MgmError>{
         ObjectCapability::ExportableUnderWrap,
     ];
 
-    if Into::<bool>::into(get_boolean_answer(
-        "Would you like to add RSA decryption capabilities?",
-    )) {
+    if cliclack::confirm("Would you like to add RSA decryption capabilities?").interact()? {
         wrapkey_delegated.extend_from_slice(capabilities_rsa_decrypt);
         authkey_capabilities.extend_from_slice(capabilities_rsa_decrypt);
         authkey_delegated.extend_from_slice(capabilities_rsa_decrypt);
@@ -292,29 +314,26 @@ fn setup_ksp(session: &Session, current_authkey: u16) -> Result<(), MgmError>{
         ObjectCapability::ExportWrapped,
     ];
 
-    let wrapkey = session.get_random(KSP_WRAPKEY_LEN).unwrap_or_else(|err| {
-        println!("Unable to generate random data: {}", err);
-        std::process::exit(1);
-    });
+    let wrapkey = session.get_random(KSP_WRAPKEY_LEN)?;
 
-    let domains = get_domains("Enter domains:");
+    let domains = get_domains();
 
     // Create a wrapping key for importing application authentication keys and secrets
-    let wrap_id = get_integer_or_default("Enter wrap key ID (0 to choose automatically):", 0);
+    let wrap_id = get_id("Enter wrap key ID [Default 0 for device generated ID]:", "0");
     let wrap_id = session
         .import_wrap_key(
             wrap_id,
-            "Wrap key",
+            "KSP Wrap key",
             &domains,
             &wrapkey_capabilities,
             ObjectAlgorithm::Aes256CcmWrap,
             &wrapkey_delegated,
             &wrapkey,
         )?;
-    println!("Stored wrap key with ID 0x{:04x} on the device\n", wrap_id);
+    cliclack::log::success(format!("Stored wrap key with ID 0x{:04x} on the device\n", wrap_id))?;
 
     // Split the wrap key
-    let (threshold, shares) = get_threshold_and_shares();
+    let (threshold, shares) = get_threshold_and_shares()?;
     split_wrapkey(
         wrap_id,
         &domains,
@@ -323,13 +342,12 @@ fn setup_ksp(session: &Session, current_authkey: u16) -> Result<(), MgmError>{
         &wrapkey,
         threshold,
         shares,
-    );
+    )?;
 
     // Create an authentication key for usage with the above wrap key
-    let auth_id = get_integer_or_default(
-        "Enter application authentication key ID (0 to choose automatically):",
-        0);
-    let application_password = get_string("Enter application authentication key password:");
+    let auth_id = get_id("Enter application authentication key ID [Default 0 for device generated ID]:", "0");
+    let application_password = get_password("Enter application authentication key password:")?;
+
     let auth_id = session
         .import_authentication_key(
             auth_id,
@@ -339,31 +357,31 @@ fn setup_ksp(session: &Session, current_authkey: u16) -> Result<(), MgmError>{
             &authkey_delegated,
             application_password.as_bytes(),
         )?;
-    println!(
+    cliclack::log::success(format!(
         "Stored application authentication key with ID 0x{:04x} on the device",
         auth_id
-    );
+    ))?;
 
     let mut export = false;
-    if bool::from(get_boolean_answer("Export Authentication key? ")) {
+    if cliclack::confirm("Export Authentication key? ").interact()? {
         export = true;
         let auth_wrapped = session
             .export_wrapped(wrap_id, ObjectType::AuthenticationKey, auth_id)?;
 
         let auth_file = object_to_file(auth_id, ObjectType::AuthenticationKey, &auth_wrapped)?;
 
-        println!(
+        cliclack::log::success(format!(
             "Saved wrapped application authentication key to {}\n",
             auth_file
-        );
+        ))?;
     }
 
-    if bool::from(get_boolean_answer("Would you like to create an audit key?")) {
+    if cliclack::confirm("Would you like to create an audit key?").interact()? {
         add_audit_key(session, wrap_id, &domains, export)?;
     }
 
-    if bool::from(get_boolean_answer("Delete previous authentication key (strongly recommended)?")) {
-        delete_objects(session, vec![ObjectHandle{object_type:ObjectType::AuthenticationKey, object_id:current_authkey}].to_vec())?;
+    if cliclack::confirm("Delete previous authentication key (strongly recommended)?").interact()? {
+        session.delete_object(current_authkey, ObjectType::AuthenticationKey)?;
     }
 
     Ok(())
@@ -375,8 +393,8 @@ fn add_audit_key(
     domains: &[ObjectDomain],
     export: bool,
 ) -> Result<(), MgmError> {
-    let audit_id = get_integer_or_default("Enter audit key ID (0 to choose automatically):", 0);
-    let audit_password = get_string("Enter audit authentication key password:");
+    let audit_id = get_id("Enter audit key ID (0 to choose automatically):", "0");
+    let audit_password = get_password("Enter audit authentication key password:")?;
 
     // Create audit auth key
     let audit_id = session
@@ -391,10 +409,10 @@ fn add_audit_key(
             &[],
             audit_password.as_bytes(),
         )?;
-    println!(
+    cliclack::log::success(format!(
         "Stored audit authentication key with ID 0x{:04x} on the device",
         audit_id
-    );
+    ))?;
 
     if export {
         let audit_wrapped = session
@@ -402,7 +420,7 @@ fn add_audit_key(
 
         let audit_file =
             object_to_file(audit_id, ObjectType::AuthenticationKey, &audit_wrapped)?;
-        println!("Saved wrapped audit authentication key to {}\n", audit_file);
+        cliclack::log::success(format!("Saved wrapped audit authentication key to {}\n", audit_file))?;
     }
 
     Ok(())

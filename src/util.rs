@@ -1,33 +1,18 @@
 extern crate yubihsmrs;
 
 use std::fmt::Display;
-use std::{fmt, fs, process};
+use std::{fmt, fs};
 use std::collections::HashSet;
-use std::convert::TryFrom;
 use std::fs::File;
-use std::io::{stdin, stdout, Write};
-use std::num::IntErrorKind;
+use std::io::{Write};
 use std::ops::Deref;
+use std::str::FromStr;
+use cliclack::MultiSelect;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
-use crossterm::{execute, cursor::{MoveTo}, cursor, event};
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size};
 use yubihsmrs::{Session};
 use error::MgmError;
 
-#[derive(Debug, Clone, Copy)]
-enum IdLabelOption {
-    ALL,
-    ByID,
-    ByLabel,
-}
-
-pub struct MultiSelectItem<T:Display> {
-    pub item: T,
-    pub selected:bool,
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BasicDescriptor {
     pub object_id: u16,
     pub object_label:String,
@@ -46,344 +31,152 @@ impl From<ObjectDescriptor> for BasicDescriptor {
     }
 }
 
-#[derive(Debug)]
-pub enum BooleanAnswer {
-    Yes,
-    No,
-}
-
-impl BooleanAnswer {
-    fn from_str(value: &str) -> Result<BooleanAnswer, MgmError> {
-        let lowercase = value.to_lowercase();
-        match lowercase.as_ref() {
-            "y" | "yes" => Ok(BooleanAnswer::Yes),
-            "n" | "no" => Ok(BooleanAnswer::No),
-            _ => Err(MgmError::InvalidInput(value.to_string()))
-        }
-    }
-}
-
-impl From<BooleanAnswer> for bool {
-    fn from(ba: BooleanAnswer) -> bool {
-        match ba {
-            BooleanAnswer::Yes => true,
-            BooleanAnswer::No => false,
-        }
-    }
-}
-
-fn read_line_or_die() -> String {
-    let mut line = String::new();
-    match stdin().read_line(&mut line) {
-        Ok(_) => line.trim().to_owned(),
-        Err(err) => panic!("Unable to read from stdin: {}", err),
-    }
-}
-
-pub fn get_string(prompt: &str) -> String {
-    print!("  {}", prompt);
-    stdout().flush().expect("Unable to flush stdout");
-    read_line_or_die()
-}
-
-pub fn get_string_or_default(prompt: &str, default_value: &str) -> String {
-    let line = get_string(prompt);
-    if line == *"" {
-        default_value.to_string()
-    } else {
-        line
-    }
-}
-
-
-pub fn get_integer<T>(prompt: &str) -> T
-    where
-        T: std::str::FromStr,
-        T: From<u16>, // NOTE(adma): a FromStrRadix trait would be better
-{
-    loop {
-        print!("  {} ", prompt);
-        stdout().flush().expect("Unable to flush stdout");
-        let line = read_line_or_die();
-
-        let parsed = if line.starts_with("0x") {
-            u16::from_str_radix(&line[2..], 16)
-        } else {
-            line.parse()
-        };
-
-        match parsed {
-            Ok(a) => break a.into(),
-            Err(err) => {
-                match err.kind() {
-                    IntErrorKind::Empty => break 0.into(),
-                    _ => continue,
+pub fn get_id(prompt: &str, default_id:&str) -> u16 {
+    let keyid_str: String = cliclack::input(prompt)
+        .default_input(default_id)
+        .placeholder("Default 0 for device generated ID")
+        .validate(|input: &String| {
+            if input.starts_with("0x") {
+                if u16::from_str_radix(&input[2..], 16).is_err() {
+                    Err("Key ID must be a 2 bytes long number")
+                } else {
+                    Ok(())
                 }
-            },
-        }
-    }
-}
-
-pub fn get_integer_or_default<T:std::str::FromStr+From<u16>>(prompt: &str, default_value:T) -> T {
-    let integer:u16 = get_integer(prompt);
-    if integer == 0 {
-        default_value
-    } else {
-        integer.into()
-    }
-}
-
-pub fn parse_id(value: &str) -> Result<u16, String> {
-    let id = if value.starts_with("0x") {
-        u16::from_str_radix(&value[2..], 16)
-    } else {
-        value.parse()
-    };
-
-    match id {
-        Ok(id) => Ok(id),
-        Err(err) => Err("ID must be a number in [1, 65535]".to_string()),
-    }
-}
-
-pub fn get_boolean_answer(prompt: &str) -> BooleanAnswer {
-    loop {
-        print!("  {} (y/n) ", prompt);
-        stdout().flush().expect("Unable to flush stdout");
-        match BooleanAnswer::from_str(&read_line_or_die()) {
-            Ok(a) => break a,
-            _ => continue,
-        }
-    }
-}
-
-pub fn get_domains(prompt: &str) -> Vec<ObjectDomain> {
-    loop {
-        print!("  {} ", prompt);
-        stdout().flush().expect("Unable to flush stdout");
-        match ObjectDomain::vec_from_str(&read_line_or_die()) {
-            Ok(a) => {
-                if a.is_empty() {
-                    println!("You must select at least one domain");
-                    continue;
-                }
-                break a;
+            } else if u16::from_str(input).is_err() {
+                Err("Key ID must be a 2-bytes long number")
+            } else {
+                Ok(())
             }
-            _ => {
-                println!("Domains format is \"all\" or 1:2:3:...");
-                continue;
-            }
-        }
+        })
+        .interact().unwrap();
+
+    if keyid_str.starts_with("0x") {
+        u16::from_str_radix(&keyid_str[2..], 16).unwrap()
+    } else {
+        u16::from_str(&keyid_str).unwrap()
     }
+}
+
+pub fn get_label() -> String {
+    cliclack::input("Enter key label: ")
+        .default_input("")
+        .placeholder("Default empty")
+        .validate(|input: &String| {
+            if input.len() > 40 {
+                Err("Label must be maximum of 40 characters")
+            } else {
+                Ok(())
+            }
+        })
+        .interact().unwrap()
+}
+
+pub fn get_domains() -> Vec<ObjectDomain> {
+    let mut domains_select: MultiSelect<String> = cliclack::multiselect(
+        "Select domain(s). Press the space button to select and unselect item. Press 'Enter' when done.");
+    for d in 1..16 {
+        domains_select = domains_select.item(d.to_string(), d, "");
+    }
+    let mut domains_str = "".to_string();
+    domains_select.interact().unwrap().iter()
+        .for_each(|domain| domains_str.push_str(format!("{},", domain).as_str()));
+    ObjectDomain::vec_from_str(domains_str.as_str()).unwrap()
 }
 
 pub fn get_common_properties() -> (u16, String, Vec<ObjectDomain>) {
-    let mut key_id: u16 = get_integer_or_default("Enter key ID [Default 0 for device generated ID]: ", 0);
-    let label = get_string_or_default("Enter key label [Default empty]: ", "");
-    let domains = get_domains("Enter domain(s), multiple domains are separated by ',' [1-16]: ");
-    (key_id, label, domains)
+    let id = get_id("Enter key ID [Default 0 for device generated ID]:", "0");
+    (id , get_label(), get_domains())
 }
 
-pub fn get_menu_option<T:Clone>(items: &Vec<(String, T)>) -> T {
-    for item in items.into_iter().enumerate() {
-        let (i, x): (usize, &(String, T)) = item;
-        println!("  ({}) {}", i+1, x.0);
+pub fn select_one_objects(session: &Session, all_objects:Vec<ObjectHandle>, prompt:&str) -> Result<ObjectDescriptor, MgmError> {
+    if all_objects.is_empty() {
+        cliclack::log::info("No objects available")?;
+        return Err(MgmError::Error("No objects to select from".to_string()));
     }
 
-    let mut choice: u16 = 0;
-    while choice < 1 || choice > u16::try_from(items.len()).unwrap() {
-        choice = get_integer("Your choice: ");
+    let mut selected_object = cliclack::select(prompt);
+    for object in all_objects {
+        let desc = session.get_object_info(object.object_id, object.object_type)?;
+        selected_object = selected_object.item(desc.clone(), BasicDescriptor::from(desc), "");
     }
-    items[usize::try_from(choice-1).unwrap()].1.clone()
+    Ok(selected_object.interact()?)
 }
 
-pub fn get_selected_items<T:Display+Clone>(items: &mut Vec<MultiSelectItem<T>>) -> Vec<T>{
-    // Get the number of items
-    let items_len = u16::try_from(items.len()).unwrap();
-    let item_str_length = usize::try_from(size().expect("Unable to read terminal size").0).unwrap()-40;
-
-    // Print out the options
-    println!("\n  Press the space button to select and unselect item. Press 'Enter' when done.");
-    for item in &mut *items {
-        if item.item.to_string().len() > item_str_length {
-            println!("  [ ] {}...", item.item.to_string().split_at(item_str_length).0);
-        } else {
-            println!("  [ ] {}", item.item);
-        }
+pub fn select_multiple_objects(
+    session: &Session,
+    all_objects:Vec<ObjectHandle>,
+    prompt:&str,
+    default_select_all:bool) -> Result<Vec<ObjectDescriptor>, MgmError> {
+    if all_objects.is_empty() {
+        cliclack::log::info("No objects available")?;
+        return Err(MgmError::Error("No objects to select from".to_string()));
     }
 
-    // Use these coordinates to restore position afterwards instead of the restore function because
-    // Powershell calculates these positions differently from POSIX terminals
-    let (current_x, current_y) = cursor::position().expect("Unable to read cursor position");
-
-    let x = 3;
-    let mut y = current_y - items_len;
-    let y_offset = y;
-
-    enable_raw_mode().expect("Unable to run in raw mode");
-
-    loop {
-
-        execute!(stdout(), MoveTo(x, y)).expect("Unable to move cursor");
-
-        if let Ok(Event::Key(key_event)) = event::read() {
-            match key_event {
-                KeyEvent {
-                    code: KeyCode::Char(c),
-                    kind: KeyEventKind::Press,
-                    modifiers: KeyModifiers::NONE,
-                    state: _,
-                } => {
-                    match c {
-                        ' ' => {
-                            let index = usize::try_from(y - y_offset).unwrap();
-                            if items[index].selected {
-                                print!(" ");
-                            } else {
-                                print!("*");
-                            }
-                            items[index].selected = !items[index].selected;
-                        },
-                        'q' => break,
-                        _ => {},
-                    }
-                },
-                KeyEvent {
-                    code: KeyCode::Char('c'),
-                    kind: KeyEventKind::Press,
-                    modifiers: KeyModifiers::CONTROL,
-                    state: _,
-                } => {
-                    execute!(stdout(), MoveTo(current_x, current_y)).expect("Unable to restore cursor");
-                    disable_raw_mode().unwrap();
-                    process::exit(1)
-                },
-                KeyEvent {
-                    code: KeyCode::Enter,
-                    kind: KeyEventKind::Press,
-                    modifiers: _,
-                    state: _,
-                } => break,
-                KeyEvent {
-                    code: KeyCode::Up,
-                    kind: KeyEventKind::Press,
-                    modifiers: _,
-                    state: _,
-                } => {
-                    y -= 1;
-                    if y < y_offset {
-                        y += items_len;
-                    }
-                },
-                KeyEvent {
-                    code: KeyCode::Down,
-                    kind: KeyEventKind::Press,
-                    modifiers: _,
-                    state: _,
-                } => {
-                    y += 1;
-                    if y >= y_offset + items_len {
-                        y = y_offset;
-                    }
-                },
-                _ => {}, // Do nothing
-            }
-        }
+    let mut all_descriptors: Vec<ObjectDescriptor> = Vec::new();
+    for object in all_objects {
+        all_descriptors.push(session.get_object_info(object.object_id, object.object_type)?);
     }
 
-    //execute!(stdout(), RestorePosition).unwrap();
-    execute!(stdout(), MoveTo(current_x, current_y)).expect("Unable to restore cursor");
-    disable_raw_mode().expect("Unable to exit raw mode");
-
-    let mut selected_items: Vec<T> = Vec::new();
-    for c in items {
-        if c.selected {
-            selected_items.push(c.item.clone());
-        }
+    let mut selected_objects = cliclack::multiselect(
+        String::from(prompt) + ". Press the space button to select and unselect item. Press 'Enter' when done.");
+    selected_objects = selected_objects.required(false);
+    if default_select_all {
+        selected_objects = selected_objects.initial_values(all_descriptors.clone());
     }
-    selected_items
-}
 
-pub fn get_objects_list(session:&Session, object_type:ObjectType, id:u16, label:String, include_certs:bool) -> Result<Vec<ObjectHandle>, MgmError> {
-    let mut found_objects = session.list_objects_with_filter(id, object_type, &label, ObjectAlgorithm::ANY, &Vec::new())?;
-    if include_certs {
-        found_objects.extend(session.list_objects_with_filter(id, ObjectType::Opaque, &label, ObjectAlgorithm::OpaqueX509Certificate, &Vec::new())?);
+    for desc in all_descriptors {
+        selected_objects = selected_objects.item(desc.clone(),BasicDescriptor::from(desc), "");
     }
-    Ok(found_objects)
-}
 
-pub fn get_filtered_objects(session: &Session, object_type:ObjectType, include_certs:bool) -> Result<Vec<ObjectHandle>, MgmError> {
-    let mut key_handles:Vec<ObjectHandle> = Vec::new();
-    println!("\n  List key by:");
-    let criterias: [(String, IdLabelOption); 3] = [
-        (String::from("All"), IdLabelOption::ALL),
-        (String::from("Filter by object ID"), IdLabelOption::ByID),
-        (String::from("Filter by object Label"), IdLabelOption::ByLabel)];
-    let criteria = get_menu_option(&criterias.to_vec());
-    println!();
-
-    match criteria {
-        IdLabelOption::ALL => key_handles = get_objects_list(session, object_type, 0, "".to_string(), include_certs)?,
-        IdLabelOption::ByID => {
-            let key_id: u16 = get_integer_or_default("Enter key ID [Default 0]: ", 0);
-            key_handles = get_objects_list(session, object_type, key_id, "".to_string(), include_certs)?;
-        },
-        IdLabelOption::ByLabel => {
-            let label = get_string_or_default("Enter key label [Default empty]: ", "");
-            key_handles = get_objects_list(session, object_type, 0, label, include_certs)?;
-        },
-    }
-    Ok(key_handles)
+    Ok(selected_objects.interact()?)
 }
 
 pub fn delete_objects(session: &Session, object_handles: Vec<ObjectHandle>) -> Result<(), MgmError> {
-    if object_handles.len() == 1 {
-        session.delete_object(object_handles[0].object_id, object_handles[0].object_type)?;
-        println!("Deleted {} with ID 0x{:x}", object_handles[0].object_type, object_handles[0].object_id);
-    } else {
-        let mut objects_options: Vec<MultiSelectItem<ObjectDescriptor>> = Vec::new();
-        for h in object_handles {
-            objects_options.push(MultiSelectItem { item: session.get_object_info(h.object_id, h.object_type)?, selected: false });
-        }
-
-        let delete_objects = get_selected_items(&mut objects_options);
-        for object in delete_objects {
-            session.delete_object(object.id, object.object_type)?;
-            println!("Deleted {} with id 0x{:04x}", object.object_type, object.id);
+    let objects = select_multiple_objects(
+        session, object_handles, "Select key(s) to delete", false);
+    if let Ok(..) = objects {
+        let objects = objects.unwrap();
+        if !objects.is_empty() && cliclack::confirm("Selected object(s) will be deleted and cannot be recovered. Execute?").interact().unwrap() {
+            for object in objects {
+                session.delete_object(object.id, object.object_type)?;
+                cliclack::log::success(format!("Deleted {} with id 0x{:04x}", object.object_type, object.id)).unwrap();
+            }
         }
     }
     Ok(())
 }
 
 pub fn read_file(prompt:&str) -> String {
-    let mut file_path = "".to_string();
-    while file_path.is_empty() {
-        file_path = get_string(prompt);
-    }
-    match fs::read_to_string(file_path) {
-        Ok(content) => content,
-        Err(error) => {
-            println!("Failed to read file: {}", error);
-            read_file(prompt)
-        }
-    }
+    let file_path: String = cliclack::input(prompt)
+        .validate(|input: &String| {
+            if input.is_empty() {
+                Err("Value is required!")
+            } else if fs::read_to_string(input).is_err() {
+                Err("File unreadable")
+            } else {
+                Ok(())
+            }
+        })
+        .interact().unwrap();
+    fs::read_to_string(file_path).unwrap()
 }
 
 pub fn read_file_bytes(prompt:&str) -> Vec<u8> {
-    let mut file_path = "".to_string();
-    while file_path.is_empty() {
-        file_path = get_string(prompt);
-    }
-    match fs::read(file_path) {
-        Ok(content) => content,
-        Err(error) => {
-            println!("Failed to read file: {}", error);
-            read_file_bytes(prompt)
-        }
-    }
+    let file_path: String = cliclack::input(prompt)
+        .validate(|input: &String| {
+            if input.is_empty() {
+                Err("Value is required!")
+            } else if fs::read(input).is_err() {
+                Err("File unreadable")
+            } else {
+                Ok(())
+            }
+        })
+        .interact().unwrap();
+    fs::read(file_path).unwrap()
 }
 
-pub fn write_file(content: Vec<u8>, filename:String) -> Result<(), MgmError> {
+pub fn write_file(content: Vec<u8>, filename:&String) -> Result<(), MgmError> {
     let mut file = match File::options().append(true).open(filename.clone()) {
         Ok(f) => f,
         Err(error) => {
@@ -400,36 +193,101 @@ pub fn write_file(content: Vec<u8>, filename:String) -> Result<(), MgmError> {
     Ok(())
 }
 
-pub fn print_object_properties(session: &Session, object_type:ObjectType) {
-    let key_id: u16 = get_integer("Enter key ID: ");
-    let object = session.get_object_info(key_id, object_type);
-    match object {
-        Ok(obj) => println!("{}", obj.to_string().replacen('\t', "\n", 10)),
-        Err(err) => println!("{}", err),
+pub fn print_object_properties(session: &Session, all_objects:Vec<ObjectHandle>) -> Result<(), MgmError> {
+    if all_objects.is_empty() {
+        cliclack::log::info("No objects to display")?;
+        return Ok(());
     }
+    let result = select_one_objects(session, all_objects, "");
+    if result.is_ok() {
+        cliclack::log::success(result?.to_string().replacen('\t', "\n", 10))?;
+    }
+    Ok(())
 }
 
-pub fn get_selection_items_from_vec<T:Display+Clone>(items:&Vec<T>) -> Vec<MultiSelectItem<T>> {
-    let mut select_items:Vec<MultiSelectItem<T>> = Vec::new();
-    for item in items {
-        select_items.push(MultiSelectItem{item:item.clone(), selected:false});
+pub fn get_object_properties_str(
+    algo: &ObjectAlgorithm,
+    label: &String,
+    id: u16,
+    domains: &[ObjectDomain],
+    capabilities: &[ObjectCapability]) -> String {
+    let mut str = String::new();
+    str.push_str(format!("    Key algorithm: {}\n", algo).as_str());
+    str.push_str(format!("    Label: {}\n", label).as_str());
+    if id == 0 {
+        str.push_str("    Key ID: Device generated\n");
+    } else {
+        str.push_str(format!("    Key ID: 0x{:04x}\n", id).as_str());
     }
-    select_items
+    str.push_str("    Domains: ");
+    domains.iter().for_each(|domain| str.push_str(format!("{}, ", domain).as_str()));
+    str.push('\n');
+    str.push_str("    Capabilities: ");
+    capabilities.iter().for_each(|cap| str.push_str(format!("{:?}, ", cap).as_str()));
+    str.push('\n');
+    str
 }
 
-pub fn get_selection_items_from_hashset<T:Display+Clone>(items:HashSet<&T>) -> Vec<MultiSelectItem<T>> {
-    let mut select_items:Vec<MultiSelectItem<T>> = Vec::new();
-    for item in items {
-        select_items.push(MultiSelectItem{item:item.clone(), selected:false});
-    }
-    select_items
+pub fn get_object_properties_str_with_delegated(
+    algo: &ObjectAlgorithm,
+    label: &String,
+    id: u16,
+    domains: &[ObjectDomain],
+    capabilities: &[ObjectCapability],
+    delegated_capabilities: &[ObjectCapability]) -> String {
+    let mut str = get_object_properties_str(algo, label, id, domains, capabilities);
+    str.push_str("    Delegated Capabilities: ");
+    delegated_capabilities.iter().for_each(|cap| str.push_str(format!("{:?}, ", cap).as_str()));
+    str.push('\n');
+    str
 }
 
-pub fn select_object_capabilities(object_capabilities:&HashSet<ObjectCapability>, permissible_capabilities:&HashSet<ObjectCapability>) -> Vec<ObjectCapability> {
-    let selectable_capabilities:HashSet<&ObjectCapability> =
-        permissible_capabilities.intersection(object_capabilities).collect();
+pub fn list_objects(session: &Session, objects: &Vec<ObjectHandle>) -> Result<(), MgmError> {
+    cliclack::log::remark(format!("Found {} objects", objects.len()))?;
+    for object in objects {
+        println!("  {}", BasicDescriptor::from(session.get_object_info(object.object_id, object.object_type)?));
+    }
+    Ok(())
+}
 
-    let mut capability_options:Vec<MultiSelectItem<ObjectCapability>> =
-        get_selection_items_from_hashset(selectable_capabilities);
-    get_selected_items(&mut capability_options)
+pub fn select_object_capabilities(
+    prompt: &str,
+    default_select_all: bool,
+    calculate_intersection: bool,
+    type_capabilities:&Vec<ObjectCapability>,
+    permissible_capabilities:&Vec<ObjectCapability>) -> Vec<ObjectCapability> {
+
+    let selectable_capabilities: Vec<ObjectCapability> =
+        if calculate_intersection {
+        let tcaps: HashSet<ObjectCapability> = type_capabilities.clone().into_iter().collect();
+        let pcaps: HashSet<ObjectCapability> = permissible_capabilities.clone().into_iter().collect();
+        tcaps.intersection(&pcaps).copied()
+                .collect::<Vec<ObjectCapability>>()
+        } else {
+            type_capabilities.clone()
+        };
+
+    let mut capabilities = cliclack::multiselect(
+        prompt.to_string() + ". Press the space button to select and unselect item. Press 'Enter' when done.");
+
+    if default_select_all {
+        capabilities = capabilities.initial_values(selectable_capabilities.clone());
+    }
+
+    capabilities = capabilities.required(false);
+    for c in selectable_capabilities {
+        capabilities = capabilities.item(c, c.to_string(), "");
+    }
+    capabilities.interact().unwrap()
+}
+
+pub fn get_permissible_capabilities(session: &Session, current_authkey: u16) -> Result<Vec<ObjectCapability>, MgmError> {
+    let delegated_capabilities: Option<Vec<ObjectCapability>> =
+        session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?
+            .delegated_capabilities;
+    let delegated_capabilities = match delegated_capabilities {
+        Some(caps) => caps,
+        None => return Err(MgmError::Error("Failed to read current authkey delegated capabilities".to_string())),
+    };
+    Ok(delegated_capabilities)
 }

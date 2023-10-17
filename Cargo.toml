@@ -24,14 +24,9 @@ license = "Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-crossterm = "0.27.0"
-strum = "0.24"
-strum_macros = "0.24"
-tui = { version = "0.14", default-features = false, features = ['crossterm'] }
 clap = "2.34.0"
 serde = "1.0.164"
 pem = "2.0.1"
-rustls-pemfile = "1.0.2"
 openssl = "0.10.54"
 lazy_static = "1.4.0"
 regex = "1.8.4"
@@ -40,6 +35,8 @@ hex = "0.4.3"
 base64 = "0.21.2"
 scan_dir = "0.3.3"
 #openssl-sys = "0.9.88"
+cliclack = "0.1.9"
+console = "0.15.7"
 
 
 [dependencies.yubihsmrs]
