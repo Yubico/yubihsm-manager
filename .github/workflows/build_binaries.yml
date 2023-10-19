@@ -86,7 +86,9 @@ jobs:
         run: |
           set -e -o pipefail
           set -x
-
+          
+          brew install cmake pkg-config gengetopt help2man openssl
+          
           cd ..
           git clone https://github.com/Yubico/yubihsm-shell.git
           cd yubihsm-shell
