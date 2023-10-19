@@ -127,8 +127,8 @@ jobs:
 
           otool -L target/debug/yubihsm-manager
 
-#          LD_LIBRARY_PATH=$GITHUB_WORKSPACE/../yubihsm-shell/build/lib ./target/debug/yubihsm-manager --version
-#          LD_LIBRARY_PATH=$GITHUB_WORKSPACE/../yubihsm-shell/build/lib ./target/debug/yubihsm-manager --help
+          DYLD_LIBRARY_PATH=$GITHUB_WORKSPACE/../yubihsm-shell/build/lib ./target/debug/yubihsm-manager --version
+          DYLD_LIBRARY_PATH=$GITHUB_WORKSPACE/../yubihsm-shell/build/lib ./target/debug/yubihsm-manager --help
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
