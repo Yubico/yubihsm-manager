@@ -114,8 +114,7 @@ jobs:
           fi
 
           cd yubihsm-manager
-          RUSTFLAGS="-C link-args=-Wl,-rpath,\$ORIGIN/../lib"  YUBIHSM_LIB_DIR=/usr/local/lib cargo build --release
-          strip -u -r target/release/yubihsm-manager
+          cargo build --release
           install target/release/yubihsm-manager artifact
 
           otool -L target/release/yubihsm-manager
