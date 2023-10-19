@@ -117,10 +117,10 @@ jobs:
           YUBIHSM_LIB_DIR=/usr/local/lib cargo build
           install target/debug/yubihsm-manager artifact
 
-          otool -L target/release/yubihsm-manager
+          otool -L target/debug/yubihsm-manager
 
-          ./target/release/yubihsm-manager --version
-          ./target/release/yubihsm-manager --help
+          ./target/debug/yubihsm-manager --version
+          ./target/debug/yubihsm-manager --help
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
