@@ -114,7 +114,7 @@ jobs:
           fi
 
           cd yubihsm-manager
-          YUBIHSM_LIB_DIR=/usr/local/lib cargo build --release
+          YUBIHSM_LIB_DIR=/usr/local/lib cargo build
           install target/release/yubihsm-manager artifact
 
           otool -L target/release/yubihsm-manager
