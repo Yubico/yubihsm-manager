@@ -88,8 +88,14 @@ jobs:
           set -x
 
           cd ..
-          curl -L --max-redirs 2 -o yubihsm-sdk-installer.pkg https://developers.yubico.com/YubiHSM2/Releases/yubihsm2-sdk-$YUBIHSMSDK_VERSION-darwin-universal.pkg
-          sudo installer -verbose -store -pkg yubihsm-sdk-installer.pkg -target /
+          git clone https://github.com/Yubico/yubihsm-shell.git
+          cd yubihsm-shell
+          mkdir build
+          cd build
+          cmake ..
+          make
+          pwd
+          
 
       - name: clone yubihsmrs
         run: |
