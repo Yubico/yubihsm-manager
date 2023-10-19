@@ -97,7 +97,7 @@ jobs:
           cmake ..
           make
           pwd
-          ls $GITHUB_WORKSPACE/yubihsm-shell/build/lib
+          ls $GITHUB_WORKSPACE/../yubihsm-shell/build/lib
 
       - name: clone yubihsmrs
         run: |
@@ -122,7 +122,7 @@ jobs:
           fi
 
           cd yubihsm-manager
-          YUBIHSM_LIB_DIR=$GITHUB_WORKSPACE/yubihsm-shell/build/lib cargo build
+          YUBIHSM_LIB_DIR=$GITHUB_WORKSPACE/../yubihsm-shell/build/lib cargo build
           install target/debug/yubihsm-manager artifact
 
           otool -L target/debug/yubihsm-manager
