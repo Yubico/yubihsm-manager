@@ -1,5 +1,4 @@
 use std::{error, fmt};
-use std::fmt::Pointer;
 
 /// Enum listing possible errors from `YubiHSM`.
 #[derive(Debug)]
@@ -32,6 +31,7 @@ impl fmt::Display for MgmError {
 }
 
 impl error::Error for MgmError {
+    /*
     fn description(&self) -> &str {
         match *self {
             MgmError::LibYubiHsm(ref err) => err.description(),
@@ -42,7 +42,7 @@ impl error::Error for MgmError {
             MgmError::Error(_) => "Unspecified error clarified by an error message",
         }
     }
-
+    */
     fn cause(&self) -> Option<&dyn error::Error> {
         match *self {
             MgmError::LibYubiHsm(ref err) => Some(err),

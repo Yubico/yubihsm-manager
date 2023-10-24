@@ -66,7 +66,7 @@ enum AsymCommand {
     DeriveEcdh,
     SignAttestationCert,
     ManageJavaKeys,
-    Exit,
+    ReturnToMainMenu,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -77,7 +77,6 @@ enum AsymJavaCommand {
     ImportKey,
     DeleteKey,
     ReturnToMenu,
-    Exit,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -147,7 +146,7 @@ pub fn exec_asym_command(session: &Session, current_authkey: u16) -> Result<(), 
             AsymCommand::DeriveEcdh => asym_derive_ecdh(session),
             AsymCommand::SignAttestationCert => Err(MgmError::Error("Not implemented yet".to_string())),
             AsymCommand::ManageJavaKeys => asym_java_manage(session, current_authkey),
-            AsymCommand::Exit => std::process::exit(0),
+            AsymCommand::ReturnToMainMenu => return Ok(()),
         };
 
         result.unwrap_or_else(|err| {
@@ -205,7 +204,7 @@ fn get_asym_command(session: &Session, current_authkey: u16) -> Result<AsymComma
                       "Usable with SunPKCS11 provider. A JAVA key is a pair of an asymmetric key and an \
                       X509Certificate, both stored on the YubiHSM using the same ObjectID");
     }
-    commands = commands.item(AsymCommand::Exit, "Exit", "");
+    commands = commands.item(AsymCommand::ReturnToMainMenu, "Return to main menu", "");
     Ok(commands.interact()?)
 }
 
@@ -283,7 +282,7 @@ fn get_rsa_keylen() -> u32 {
     cliclack::select("Enter key length:")
         .item(2048, "2048", "")
         .item(3072, "3072", "")
-        .item(4096, "4096", "oh no")
+        .item(4096, "4096", "")
         .interact().unwrap()
 }
 
@@ -305,7 +304,7 @@ fn asym_gen_key(session: &Session, current_authkey: u16) -> Result<(), MgmError>
     let permissible_capabilities = get_permissible_capabilities(session, current_authkey)?;
 
     let key_algorithm: ObjectAlgorithm;
-    let mut capabilities: Vec<ObjectCapability> = Vec::new();
+    let capabilities: Vec<ObjectCapability>;
 
     match get_asym_keytype() {
         AsymKeyTypes::RSA => {
@@ -506,7 +505,7 @@ fn asym_delete_key(session: &Session) -> Result<(), MgmError> {
     let key_handles: Vec<ObjectHandle> = get_all_asym_objects(session)?;
     delete_objects(session, key_handles)
 }
-
+/*
 fn print_pem_string(pem_bytes: Vec<u8>) {
     let pem_str = String::from_utf8(pem_bytes).unwrap();
     let chars: Vec<char> = pem_str.chars().collect();
@@ -518,7 +517,7 @@ fn print_pem_string(pem_bytes: Vec<u8>) {
         }
     }
 }
-
+*/
 fn asym_get_public_key(session: &Session) -> Result<(), MgmError> {
     let keys = session.
         list_objects_with_filter(0, ObjectType::AsymmetricKey, "", ObjectAlgorithm::ANY, &Vec::new())?;
@@ -616,17 +615,15 @@ fn get_operation_key(session: &Session, capability: ObjectCapability) -> Result<
 
 fn asym_sign(session: &Session) -> Result<(), MgmError> {
 
-    let mut input_str = "".to_string();
-
-    match get_format(&vec![InputOutputFormat::STDIN, InputOutputFormat::BINARY])? {
+    let input_str = match get_format(&vec![InputOutputFormat::STDIN, InputOutputFormat::BINARY])? {
         InputOutputFormat::STDIN => {
-            input_str = cliclack::input("Data to sign: ").interact()?;
+            cliclack::input("Data to sign: ").interact()?
         }
         InputOutputFormat::BINARY => {
-            input_str = read_file("Absolute path to file containing data to sign: ");
+            read_file("Absolute path to file containing data to sign: ")
         }
         _ => unreachable!()
-    }
+    };
 
     let signed_data = match get_sign_algo() {
         SignAlgorithm::PKCS1 => {
@@ -763,7 +760,6 @@ fn get_asym_java_command(session: &Session, current_authkey: u16) -> Result<Asym
         commands = commands.item(AsymJavaCommand::DeleteKey, "Delete JAVA key", "");
     }
     commands = commands.item(AsymJavaCommand::ReturnToMenu, "Return to main menu", "");
-    commands = commands.item(AsymJavaCommand::Exit, "Exit", "");
     Ok(commands.interact().unwrap())
 }
 
@@ -779,7 +775,6 @@ fn asym_java_manage(session: &Session, current_authkey: u16) -> Result<(), MgmEr
             AsymJavaCommand::ImportKey => java_import_key(session)?,
             AsymJavaCommand::DeleteKey => java_delete_keys(session)?,
             AsymJavaCommand::ReturnToMenu => break,
-            AsymJavaCommand::Exit => std::process::exit(0),
         }
     }
     Ok(())

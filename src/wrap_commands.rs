@@ -20,7 +20,7 @@ enum WrapCommand {
     DeleteKey,
     PerformBackup,
     PerformRestore,
-    Exit,
+    ReturnToMainMenu,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -55,12 +55,12 @@ pub fn exec_wrap_command(session: &Session, current_authkey: u16) -> Result<(), 
             WrapCommand::DeleteKey => wrap_delete_key(session),
             WrapCommand::PerformBackup => backup_device(session),
             WrapCommand::PerformRestore => restore_device(session),
-            WrapCommand::Exit => std::process::exit(0),
+            WrapCommand::ReturnToMainMenu => return Ok(()),
         };
 
         result.unwrap_or_else(|err| {
             cliclack::log::error(format!("ERROR! {}", err)).unwrap_or_else(
-                |error| println!("ERROR! {}", err)
+                |error| println!("ERROR! {}", error)
             );
             std::process::exit(1);
         });
@@ -91,7 +91,7 @@ fn get_wrap_command(session: &Session, current_authkey: u16) -> Result<WrapComma
         commands = commands.item(WrapCommand::PerformRestore, "Restore YubiHSM content",
                                  "Reads files ending with .yhw from currant directory");
     }
-    commands = commands.item(WrapCommand::Exit, "Exit", "");
+    commands = commands.item(WrapCommand::ReturnToMainMenu, "Return to main menu", "");
     Ok(commands.interact()?)
 }
 
@@ -134,7 +134,7 @@ fn get_key_capabilities(session: &Session, current_authkey:u16)
     let capability_options = session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?
         .delegated_capabilities.expect("Cannot read current authentication key's delegated capabilities");
     let capabilities = select_object_capabilities(
-        "Select wrap key capabilities:",
+        "Select wrap key capabilities",
         true,
         false,
         &capability_options,
@@ -539,7 +539,7 @@ pub fn split_wrapkey(
         * the wrap key for this device in the future                *\n\
         *************************************************************")?;
 
-    let str: String = cliclack::input("Press Enter to start recording key shares").required(false).interact()?;
+    let _str: String = cliclack::input("Press Enter to start recording key shares").required(false).interact()?;
 
     let shares = rusty_secrets::generate_shares(threshold as u8, shares as u8, &data)?;
 
@@ -548,7 +548,7 @@ pub fn split_wrapkey(
         cliclack::note("", share)?;
         if cliclack::confirm("Have you recorded the key share?").interact()? {
             cliclack::clear_screen()?;
-            let str: String = cliclack::input(
+            let _str: String = cliclack::input(
                 "Press any key to display next key share or to return to menu").required(false).interact()?;
         }
     }

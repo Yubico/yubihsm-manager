@@ -56,7 +56,7 @@ enum AuthCommand {
     SetupAuditor,
     SetupBackupAdmin,
     SetupKsp,
-    Exit,
+    ReturnToMainMenu,
 }
 
 pub fn exec_auth_command(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
@@ -71,7 +71,7 @@ pub fn exec_auth_command(session: &Session, current_authkey: u16) -> Result<(), 
             AuthCommand::SetupAuditor => auth_setup_auditor(session, current_authkey),
             AuthCommand::SetupBackupAdmin => auth_setup_backupadmin(session, current_authkey),
             AuthCommand::SetupKsp => setup_ksp(session, current_authkey),
-            AuthCommand::Exit => std::process::exit(0),
+            AuthCommand::ReturnToMainMenu => return Ok(()),
         };
 
         result.unwrap_or_else(|err| {
@@ -118,7 +118,7 @@ fn get_auth_command(session: &Session, current_authkey: u16) -> Result<AuthComma
             commands = commands.item(AuthCommand::SetupKsp, "Setup KSP user", "");
         }
     }
-    commands = commands.item(AuthCommand::Exit, "Exit", "");
+    commands = commands.item(AuthCommand::ReturnToMainMenu, "Return to main menu", "");
     Ok(commands.interact()?)
 }
 
