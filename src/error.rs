@@ -9,6 +9,8 @@ pub enum MgmError {
     OpenSSLError(openssl::error::ErrorStack),
     /// An error from std::io
     StdIoError(std::io::Error),
+    /// An error from pem::PemError
+    PemError(pem::PemError),
     /// Hex parsing error
     HexError(hex::FromHexError),
     /// Unexpected or unsupported parameter
@@ -23,6 +25,7 @@ impl fmt::Display for MgmError {
             MgmError::LibYubiHsm(ref err) => err.fmt(f),
             MgmError::OpenSSLError(ref err) => err.fmt(f),
             MgmError::StdIoError(ref err) => err.fmt(f),
+            MgmError::PemError(ref err) => err.fmt(f),
             MgmError::HexError(ref err) => err.fmt(f),
             MgmError::InvalidInput(ref param) => write!(f, "Unsupported or unrecognized value: {}", param),
             MgmError::Error(ref param) => write!(f, "{}", param),
@@ -48,6 +51,7 @@ impl error::Error for MgmError {
             MgmError::LibYubiHsm(ref err) => Some(err),
             MgmError::OpenSSLError(ref err) => Some(err),
             MgmError::StdIoError(ref err) => Some(err),
+            MgmError::PemError(ref err) => Some(err),
             MgmError::HexError(ref err) => Some(err),
             MgmError::InvalidInput(_) => None,
             MgmError::Error(_) => None,
@@ -70,6 +74,12 @@ impl From<openssl::error::ErrorStack> for MgmError {
 impl From<std::io::Error> for MgmError {
     fn from(error: std::io::Error) -> Self {
         MgmError::StdIoError(error)
+    }
+}
+
+impl From<pem::PemError> for MgmError {
+    fn from(error: pem::PemError) -> Self {
+        MgmError::PemError(error)
     }
 }
 

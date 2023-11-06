@@ -3,6 +3,7 @@ extern crate yubihsmrs;
 use std::fmt::Display;
 use std::{fmt, fs};
 use std::collections::HashSet;
+use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{Write};
 use std::ops::Deref;
@@ -31,9 +32,9 @@ impl From<ObjectDescriptor> for BasicDescriptor {
     }
 }
 
-pub fn get_id(prompt: &str, default_id:&str) -> u16 {
-    let keyid_str: String = cliclack::input(prompt)
-        .default_input(default_id)
+pub fn get_id() -> Result<u16, MgmError> {
+    let keyid_str: String = cliclack::input("Enter key ID:")
+        .default_input("0")
         .placeholder("Default 0 for device generated ID")
         .validate(|input: &String| {
             if input.starts_with("0x") {
@@ -48,17 +49,17 @@ pub fn get_id(prompt: &str, default_id:&str) -> u16 {
                 Ok(())
             }
         })
-        .interact().unwrap();
+        .interact()?;
 
     if keyid_str.starts_with("0x") {
-        u16::from_str_radix(&keyid_str[2..], 16).unwrap()
+        Ok(u16::from_str_radix(&keyid_str[2..], 16).unwrap())
     } else {
-        u16::from_str(&keyid_str).unwrap()
+        Ok(u16::from_str(&keyid_str).unwrap())
     }
 }
 
-pub fn get_label() -> String {
-    cliclack::input("Enter key label: ")
+pub fn get_label() -> Result<String, MgmError> {
+    Ok(cliclack::input("Enter key label: ")
         .default_input("")
         .placeholder("Default empty")
         .validate(|input: &String| {
@@ -68,27 +69,19 @@ pub fn get_label() -> String {
                 Ok(())
             }
         })
-        .interact().unwrap()
+        .interact()?)
 }
 
-pub fn get_domains() -> Vec<ObjectDomain> {
-    let mut domains_select: MultiSelect<String> = cliclack::multiselect(
+pub fn get_domains() -> Result<Vec<ObjectDomain>, MgmError> {
+    let mut domains: MultiSelect<ObjectDomain> = cliclack::multiselect(
         "Select domain(s). Press the space button to select and unselect item. Press 'Enter' when done.");
     for d in 1..16 {
-        domains_select = domains_select.item(d.to_string(), d, "");
+        domains = domains.item(ObjectDomain::try_from(d).unwrap(), d, "");
     }
-    let mut domains_str = "".to_string();
-    domains_select.interact().unwrap().iter()
-        .for_each(|domain| domains_str.push_str(format!("{},", domain).as_str()));
-    ObjectDomain::vec_from_str(domains_str.as_str()).unwrap()
+    Ok(domains.interact()?)
 }
 
-pub fn get_common_properties() -> (u16, String, Vec<ObjectDomain>) {
-    let id = get_id("Enter key ID [Default 0 for device generated ID]:", "0");
-    (id , get_label(), get_domains())
-}
-
-pub fn select_one_objects(session: &Session, all_objects:Vec<ObjectHandle>, prompt:&str) -> Result<ObjectDescriptor, MgmError> {
+pub fn select_one_object(session: &Session, all_objects:Vec<ObjectHandle>, prompt:&str) -> Result<ObjectDescriptor, MgmError> {
     if all_objects.is_empty() {
         cliclack::log::info("No objects available")?;
         return Err(MgmError::Error("No objects to select from".to_string()));
@@ -109,7 +102,7 @@ pub fn select_multiple_objects(
     default_select_all:bool) -> Result<Vec<ObjectDescriptor>, MgmError> {
     if all_objects.is_empty() {
         cliclack::log::info("No objects available")?;
-        return Err(MgmError::Error("No objects to select from".to_string()));
+        return Ok(Vec::new());
     }
 
     let mut all_descriptors: Vec<ObjectDescriptor> = Vec::new();
@@ -135,18 +128,21 @@ pub fn delete_objects(session: &Session, object_handles: Vec<ObjectHandle>) -> R
     let objects = select_multiple_objects(
         session, object_handles, "Select key(s) to delete", false);
     if let Ok(..) = objects {
-        let objects = objects.unwrap();
-        if !objects.is_empty() && cliclack::confirm("Selected object(s) will be deleted and cannot be recovered. Execute?").interact().unwrap() {
-            for object in objects {
-                session.delete_object(object.id, object.object_type)?;
-                cliclack::log::success(format!("Deleted {} with id 0x{:04x}", object.object_type, object.id)).unwrap();
+        let objects = objects?;
+        if !objects.is_empty() {
+            cliclack::log::warning("Selected object(s) will be deleted and cannot be recovered")?;
+            if cliclack::confirm("Delete objects?").interact()? {
+                for object in objects {
+                    session.delete_object(object.id, object.object_type)?;
+                    cliclack::log::success(format!("Deleted {} with id 0x{:04x}", object.object_type, object.id))?;
+                }
             }
         }
     }
     Ok(())
 }
 
-pub fn read_file(prompt:&str) -> String {
+pub fn read_file(prompt:&str) -> Result<String, MgmError> {
     let file_path: String = cliclack::input(prompt)
         .validate(|input: &String| {
             if input.is_empty() {
@@ -157,11 +153,11 @@ pub fn read_file(prompt:&str) -> String {
                 Ok(())
             }
         })
-        .interact().unwrap();
-    fs::read_to_string(file_path).unwrap()
+        .interact()?;
+    Ok(fs::read_to_string(file_path)?)
 }
 
-pub fn read_file_bytes(prompt:&str) -> Vec<u8> {
+pub fn read_file_bytes(prompt:&str) -> Result<Vec<u8>, MgmError> {
     let file_path: String = cliclack::input(prompt)
         .validate(|input: &String| {
             if input.is_empty() {
@@ -172,24 +168,30 @@ pub fn read_file_bytes(prompt:&str) -> Vec<u8> {
                 Ok(())
             }
         })
-        .interact().unwrap();
-    fs::read(file_path).unwrap()
+        .interact()?;
+    Ok(fs::read(file_path)?)
 }
 
 pub fn write_file(content: Vec<u8>, filename:&String) -> Result<(), MgmError> {
-    let mut file = match File::options().append(true).open(filename.clone()) {
+    let mut file = match File::options().create_new(true).write(true).open(filename) {
         Ok(f) => f,
         Err(error) => {
-            if error.kind() == std::io::ErrorKind::NotFound {
-                File::create(filename)?
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                if cliclack::confirm("File already exist. Overwrite it?").interact()? {
+                    fs::remove_file(filename)?;
+                    File::options().create_new(true).write(true).open(filename)?
+                } else {
+                    return Ok(())
+                }
             } else {
                 return Err(MgmError::StdIoError(error))
             }
         }
     };
-
-    file.write_all(content.deref())?;
-
+    match file.write_all(content.deref()) {
+        Ok(_) => cliclack::log::success(format!("Wrote file ./{}", filename))?,
+        Err(err) => return Err(MgmError::StdIoError(err)),
+    }
     Ok(())
 }
 
@@ -198,9 +200,10 @@ pub fn print_object_properties(session: &Session, all_objects:Vec<ObjectHandle>)
         cliclack::log::info("No objects to display")?;
         return Ok(());
     }
-    let result = select_one_objects(session, all_objects, "");
+
+    let result = select_one_object(session, all_objects, "");
     if result.is_ok() {
-        cliclack::log::success(result?.to_string().replacen('\t', "\n", 10))?;
+        cliclack::log::success(result.unwrap().to_string().replacen('\t', "\n", 10))?;
     }
     Ok(())
 }
@@ -211,6 +214,7 @@ pub fn get_object_properties_str(
     id: u16,
     domains: &[ObjectDomain],
     capabilities: &[ObjectCapability]) -> String {
+
     let mut str = String::new();
     str.push_str(format!("    Key algorithm: {}\n", algo).as_str());
     str.push_str(format!("    Label: {}\n", label).as_str());
@@ -235,6 +239,7 @@ pub fn get_object_properties_str_with_delegated(
     domains: &[ObjectDomain],
     capabilities: &[ObjectCapability],
     delegated_capabilities: &[ObjectCapability]) -> String {
+
     let mut str = get_object_properties_str(algo, label, id, domains, capabilities);
     str.push_str("    Delegated Capabilities: ");
     delegated_capabilities.iter().for_each(|cap| str.push_str(format!("{:?}, ", cap).as_str()));
@@ -255,14 +260,13 @@ pub fn select_object_capabilities(
     default_select_all: bool,
     calculate_intersection: bool,
     type_capabilities:&Vec<ObjectCapability>,
-    permissible_capabilities:&Vec<ObjectCapability>) -> Vec<ObjectCapability> {
+    permissible_capabilities:&Vec<ObjectCapability>) -> Result<Vec<ObjectCapability>, MgmError> {
 
     let selectable_capabilities: Vec<ObjectCapability> =
         if calculate_intersection {
-        let tcaps: HashSet<ObjectCapability> = type_capabilities.clone().into_iter().collect();
-        let pcaps: HashSet<ObjectCapability> = permissible_capabilities.clone().into_iter().collect();
-        tcaps.intersection(&pcaps).copied()
-                .collect::<Vec<ObjectCapability>>()
+            let tcaps: HashSet<ObjectCapability> = type_capabilities.clone().into_iter().collect();
+            let pcaps: HashSet<ObjectCapability> = permissible_capabilities.clone().into_iter().collect();
+            tcaps.intersection(&pcaps).copied().collect::<Vec<ObjectCapability>>()
         } else {
             type_capabilities.clone()
         };
@@ -278,7 +282,7 @@ pub fn select_object_capabilities(
     for c in selectable_capabilities {
         capabilities = capabilities.item(c, c.to_string(), "");
     }
-    capabilities.interact().unwrap()
+    Ok(capabilities.interact()?)
 }
 
 pub fn get_permissible_capabilities(session: &Session, current_authkey: u16) -> Result<Vec<ObjectCapability>, MgmError> {
@@ -287,7 +291,10 @@ pub fn get_permissible_capabilities(session: &Session, current_authkey: u16) -> 
             .delegated_capabilities;
     let delegated_capabilities = match delegated_capabilities {
         Some(caps) => caps,
-        None => return Err(MgmError::Error("Failed to read current authkey delegated capabilities".to_string())),
+        None => {
+            cliclack::log::info("Current authkey has no delegated capabilities".to_string())?;
+            Vec::new()
+        },
     };
     Ok(delegated_capabilities)
 }

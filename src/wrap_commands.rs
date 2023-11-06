@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{Read};
 use openssl::base64;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{delete_objects, get_common_properties, get_label, get_object_properties_str_with_delegated, list_objects, print_object_properties, select_multiple_objects, select_object_capabilities, select_one_objects};
+use util::{delete_objects, get_domains, get_id, get_label, get_object_properties_str_with_delegated, list_objects, print_object_properties, select_multiple_objects, select_object_capabilities, select_one_object, write_file};
 use regex::Regex;
 use rusty_secrets::recover_secret;
 
@@ -30,7 +30,6 @@ enum WrapImportKeyCommand {
     DeviceGenerated,
     ImportFromShares,
     ReturnToMenu,
-    Exit,
 }
 
 const ACCEPTED_WRAP_KEY_LEN: [u32;3] = [128, 192, 256];
@@ -58,12 +57,9 @@ pub fn exec_wrap_command(session: &Session, current_authkey: u16) -> Result<(), 
             WrapCommand::ReturnToMainMenu => return Ok(()),
         };
 
-        result.unwrap_or_else(|err| {
-            cliclack::log::error(format!("ERROR! {}", err)).unwrap_or_else(
-                |error| println!("ERROR! {}", error)
-            );
-            std::process::exit(1);
-        });
+        if let Err(err) = result {
+            cliclack::log::error(err)?;
+        }
     }
 }
 
@@ -112,12 +108,12 @@ fn wrap_delete_key(session: &Session) -> Result<(), MgmError> {
     delete_objects(session, get_all_wrap_key(session)?)
 }
 
-fn get_key_len() -> u32 {
+fn get_key_len() -> Result<u32, MgmError> {
     let mut key_len = cliclack::select("Select key length");
     for l in ACCEPTED_WRAP_KEY_LEN {
         key_len = key_len.item(l, l, "");
     }
-    key_len.interact().unwrap()
+    Ok(key_len.interact()?)
 }
 
 fn get_key_algo(key_len:u32) -> ObjectAlgorithm {
@@ -131,15 +127,17 @@ fn get_key_algo(key_len:u32) -> ObjectAlgorithm {
 
 fn get_key_capabilities(session: &Session, current_authkey:u16)
     -> Result<(Vec<ObjectCapability>, Vec<ObjectCapability>), MgmError> {
-    let capability_options = session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?
-        .delegated_capabilities.expect("Cannot read current authentication key's delegated capabilities");
+    let Some(capability_options) = session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?
+        .delegated_capabilities else {
+        return Err(MgmError::Error("Cannot read current authentication key's delegated capabilities".to_string()))
+    };
     let capabilities = select_object_capabilities(
         "Select wrap key capabilities",
         true,
         false,
         &capability_options,
         &capability_options
-    );
+    )?;
 
     let delegated_capabilities = select_object_capabilities(
         "Select wrap key delegated capabilities:",
@@ -147,14 +145,16 @@ fn get_key_capabilities(session: &Session, current_authkey:u16)
         false,
         &capability_options,
         &capability_options
-    );
+    )?;
     Ok((capabilities, delegated_capabilities))
 }
 
 
 fn wrap_gen_key(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
-    let (key_id, label, domains) = get_common_properties();
-    let key_algorithm = get_key_algo(get_key_len());
+    let key_id = get_id()?;
+    let label = get_label()?;
+    let domains = get_domains()?;
+    let key_algorithm = get_key_algo(get_key_len()?);
     let (capabilities, delegated_capabilities) = get_key_capabilities(session, current_authkey)?;
 
     cliclack::note("Generating wrap key with:",
@@ -164,14 +164,14 @@ fn wrap_gen_key(session: &Session, current_authkey: u16) -> Result<(), MgmError>
                        key_id,
                        &domains,
                        &capabilities,
-                       &delegated_capabilities)).unwrap();
+                       &delegated_capabilities))?;
 
-    if cliclack::confirm("Execute?").interact().unwrap() {
+    if cliclack::confirm("Execute?").interact()? {
         let key_id = session
             .generate_wrap_key(key_id, &label,  &domains, &capabilities, key_algorithm, &delegated_capabilities)?;
 
         cliclack::log::success(
-            format!("Generated wrap key with ID 0x{:04x} on the device", key_id)).unwrap();
+            format!("Generated wrap key with ID 0x{:04x} on the device", key_id))?;
     }
     Ok(())
 }
@@ -179,12 +179,13 @@ fn wrap_gen_key(session: &Session, current_authkey: u16) -> Result<(), MgmError>
 fn wrap_import_key(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
     loop {
         let cmd = get_import_key_subcommand()?;
-        match cmd {
-            WrapImportKeyCommand::UserGenerated => import_user_generated(session, current_authkey)?,
-            WrapImportKeyCommand::DeviceGenerated => import_device_generated(session, current_authkey)?,
-            WrapImportKeyCommand::ImportFromShares => import_from_shares(session)?,
+        if let Err(err) = match cmd {
+            WrapImportKeyCommand::UserGenerated => import_user_generated(session, current_authkey),
+            WrapImportKeyCommand::DeviceGenerated => import_device_generated(session, current_authkey),
+            WrapImportKeyCommand::ImportFromShares => import_from_shares(session),
             WrapImportKeyCommand::ReturnToMenu => break,
-            WrapImportKeyCommand::Exit => std::process::exit(0),
+        } {
+            cliclack::log::error(err)?;
         }
     }
     Ok(())
@@ -198,7 +199,6 @@ fn get_import_key_subcommand() -> Result<WrapImportKeyCommand, MgmError> {
               the wrap key to import")
         .item(WrapImportKeyCommand::ImportFromShares, "Import key from shares", "")
         .item(WrapImportKeyCommand::ReturnToMenu, "Return to main menu", "")
-        .item(WrapImportKeyCommand::Exit, "Exit", "")
         .interact()?)
 }
 
@@ -220,19 +220,21 @@ fn perform_key_import(
                        key_id,
                        &domains,
                        &capabilities,
-                       &delegated_capabilities)).unwrap();
+                       &delegated_capabilities))?;
 
-    if cliclack::confirm("Execute?").interact()? {
+    if cliclack::confirm("Import wrap key?").interact()? {
         let key_id = session
             .import_wrap_key(key_id, &label, &domains, &capabilities, key_algorithm, &delegated_capabilities, &wrap_key)?;
 
         cliclack::log::success(
-            format!("Imported wrap key with ID 0x{:04x} on the device", key_id)).unwrap();
+            format!("Imported wrap key with ID 0x{:04x} on the device", key_id))?;
     }
 
     if cliclack::confirm("Split wrap key? ").interact()? {
         // Split the wrap key
-        let (threshold, shares) = get_threshold_and_shares()?;
+        let shares = get_shares()?;
+        let threshold = get_threshold(shares)?;
+
         split_wrapkey(
             key_id,
             &domains,
@@ -248,7 +250,9 @@ fn perform_key_import(
 }
 
 fn import_user_generated(session:&Session, current_authkey:u16) -> Result<(), MgmError> {
-    let (key_id, label, domains) = get_common_properties();
+    let key_id = get_id()?;
+    let label = get_label()?;
+    let domains = get_domains()?;
     let key_str:String = cliclack::input("Enter wrap key in hex:")
         .validate(|input: &String| {
             if hex::decode(input).is_err() {
@@ -263,15 +267,17 @@ fn import_user_generated(session:&Session, current_authkey:u16) -> Result<(), Mg
         32 => ObjectAlgorithm::Aes256CcmWrap,
         24 => ObjectAlgorithm::Aes192CcmWrap,
         16 => ObjectAlgorithm::Aes128CcmWrap,
-        _ => return Err(MgmError::InvalidInput("Wrap key length".parse().unwrap()))
+        _ => return Err(MgmError::InvalidInput("Wrap key length".to_string()))
     };
 
     perform_key_import(session, current_authkey, key_id, label, domains,  key_algo, wrap_key)
 }
 
 fn import_device_generated(session:&Session, current_authkey:u16) ->  Result<(), MgmError> {
-    let (key_id, label, domains) = get_common_properties();
-    let key_len = get_key_len();
+    let key_id = get_id()?;
+    let label = get_label()?;
+    let domains = get_domains()?;
+    let key_len = get_key_len()?;
     let key_algo = get_key_algo(key_len);
     let wrap_key = session.get_random((key_len/8) as usize)?;
 
@@ -279,20 +285,14 @@ fn import_device_generated(session:&Session, current_authkey:u16) ->  Result<(),
 }
 
 fn import_from_shares(session:&Session) -> Result<(), MgmError> {
-    let label = get_label();
-
-    let recovery_result = recover_wrapkey();
-    if recovery_result.is_err() {
-        cliclack::log::error(format!("Failed to recover key from shares. {}", recovery_result.err().unwrap()))?;
-        return Ok(())
-    }
+    let label = get_label()?;
 
     let (key_id,
         key_algorithm,
         domains,
         capabilities,
         delegated_capabilities,
-        key) = recovery_result.unwrap();
+        key) = recover_wrapkey()?;
 
     cliclack::note("Import wrap key with:",
                    get_object_properties_str_with_delegated(
@@ -301,7 +301,7 @@ fn import_from_shares(session:&Session) -> Result<(), MgmError> {
                        key_id,
                        &domains,
                        &capabilities,
-                       &delegated_capabilities)).unwrap();
+                       &delegated_capabilities))?;
 
     if cliclack::confirm("Execute?").interact()? {
         let key_id = session
@@ -315,7 +315,7 @@ fn import_from_shares(session:&Session) -> Result<(), MgmError> {
                 &key,
             )?;
         cliclack::log::success(
-            format!("Imported wrap key with ID 0x{:04x} on the device", key_id)).unwrap();
+            format!("Imported wrap key with ID 0x{:04x} on the device", key_id))?;
     }
     Ok(())
 }
@@ -327,15 +327,10 @@ fn backup_device(session: &Session) -> Result<(), MgmError> {
         "",
         ObjectAlgorithm::ANY,
         &[ObjectCapability::ExportWrapped])?;
-    let wrapping_key = select_one_objects(
+    let wrapping_key = select_one_object(
         session,
         available_wrap_keys,
-        "Select the wrapping key to use for exporting objects:");
-    if wrapping_key.is_err() {
-        cliclack::log::info("No keys available for wrapping")?;
-        return Ok(());
-    }
-    let wrapping_key = wrapping_key.unwrap();
+        "Select the wrapping key to use for exporting objects:")?;
 
     let exportable_objects = session.list_objects_with_filter(
         0,
@@ -346,18 +341,10 @@ fn backup_device(session: &Session) -> Result<(), MgmError> {
     cliclack::log::info(format!("Found {} objects marked as exportable-under-wrap", exportable_objects.len()))?;
     let export_objects = select_multiple_objects(
         session, exportable_objects,
-        "Select objects to export (Only objects with the capability exportable-under-wrap are listed)", true);
-    if export_objects.is_err() {
-        cliclack::log::info("No objects were selected for export")?;
-        return Ok(());
-    }
-    let export_objects = export_objects.unwrap();
+        "Select objects to export (Only objects with the capability exportable-under-wrap are listed)", true)?;
 
     for object in export_objects {
-        let wrap_result =
-            session.export_wrapped(wrapping_key.id, object.object_type, object.id);
-
-        match wrap_result {
+        match session.export_wrapped(wrapping_key.id, object.object_type, object.id) {
             Ok(bytes) => {
                 let filename = object_to_file(object.id, object.object_type, &bytes)?;
                 cliclack::log::success(format!(
@@ -365,7 +352,7 @@ fn backup_device(session: &Session) -> Result<(), MgmError> {
                     object.object_type, object.id, filename))?;
             }
             Err(err) => cliclack::log::warning(format!(
-                "Unable to export object {} with ID 0x{:04x} wrapped under key ID 0x{:04x}: {}. Skipping over ...",
+                "Unable to export {} object with ID 0x{:04x} wrapped under key ID 0x{:04x}: {}. Skipping over ...",
                 object.object_type, object.id, wrapping_key.id, err))?
         }
     }
@@ -373,17 +360,14 @@ fn backup_device(session: &Session) -> Result<(), MgmError> {
 }
 
 pub fn object_to_file(id: u16, object_type: ObjectType, data: &[u8]) -> Result<String, MgmError> {
-    let path_string = format!("./0x{:04x}-{}.yhw", id, object_type);
-    let path = std::path::Path::new(&path_string);
+    let filename = format!("./0x{:04x}-{}.yhw", id, object_type);
+    write_file(data.to_vec(), &filename)?;
+    Ok(filename)
 
-    let mut file = match File::create(path) {
-        Err(why) => return Err(MgmError::Error(format!("couldn't create {}: {}", path.display(), why))),
-        Ok(file) => file,
-    };
-
+    /*let path = std::path::Path::new(&path_string);
+    let mut file = File::create(path)?;
     file.write_all(base64::encode_block(data).as_bytes())?;
-
-    Ok(path_string.to_owned())
+    Ok(path_string.to_owned())*/
 }
 
 fn restore_device(session: &Session) -> Result<(), MgmError> {
@@ -393,24 +377,23 @@ fn restore_device(session: &Session) -> Result<(), MgmError> {
         "",
         ObjectAlgorithm::ANY,
         &[ObjectCapability::ImportWrapped])?;
-    let wrapping_key = select_one_objects(
+    let wrapping_key = select_one_object(
         session,
         available_wrap_keys,
-        "Select the wrapping key to use for importing objects:");
-    if wrapping_key.is_err() {
-        cliclack::log::info("No keys available for unwrapping")?;
-        return Ok(());
-    }
-    let wrapping_key = wrapping_key.unwrap();
+        "Select the wrapping key to use for importing objects:")?;
 
-
-    let files: Vec<_> = scan_dir::ScanDir::files()
+    let files: Vec<_> = match scan_dir::ScanDir::files()
         .read(".", |iter| {
             iter.filter(|(_, name)| name.ends_with(".yhw"))
                 .map(|(entry, _)| entry.path())
                 .collect()
-        })
-        .unwrap();
+        }) {
+        Ok(f) => f,
+        Err(err) => {
+            cliclack::log::error(err)?;
+            return Err(MgmError::Error("Failed to read files".to_string()))
+        }
+    };
 
     for f in files {
         cliclack::log::info(format!("reading {}", &f.display()))?;
@@ -461,9 +444,8 @@ fn restore_device(session: &Session) -> Result<(), MgmError> {
 
 
 
-pub fn get_threshold_and_shares() -> Result<(u16, u16), MgmError> {
-
-    let shares: String = cliclack::input("Enter the number of shares:")
+pub fn get_shares() -> Result<u16, MgmError> {
+    let n: String = cliclack::input("Enter the number of shares:")
         .placeholder("Must be greater than 0")
         .validate(|input: &String| {
             if input.parse::<u16>().is_err() {
@@ -475,33 +457,48 @@ pub fn get_threshold_and_shares() -> Result<(u16, u16), MgmError> {
             }
         })
         .interact()?;
-    let shares = shares.parse::<u16>().unwrap();
+    let n = match n.parse::<u16>() {
+        Ok(s) => s,
+        Err(err) => {
+            cliclack::log::error(err)?;
+            return Err(MgmError::Error("Failed to parse number of shares".to_string()))
+        }
+    };
+    Ok(n)
+}
 
-    let shares_clone = shares;
-    let threshold: String = cliclack::input("Enter the privacy threshold:")
+pub fn get_threshold(shares:u16) -> Result<u16, MgmError> {
+    //let shares_clone = shares;
+    let t: String = cliclack::input("Enter the privacy threshold:")
         .placeholder("Must be greater than 0 and less than the number of shares")
         .validate(move |input: &String| {
             if input.parse::<u16>().is_err() {
                 Err("Must be a number")
-            } else if input.parse::<u16>().unwrap() == 0 || input.parse::<u16>().unwrap() > shares_clone {
+            } else if input.parse::<u16>().unwrap() == 0 || input.parse::<u16>().unwrap() > shares {
                 Err("Must be greater than zero and less than the number of shares")
             } else {
                 Ok(())
             }
         })
         .interact()?;
-    let threshold = threshold.parse::<u16>().unwrap();
+    let t = match t.parse::<u16>() {
+        Ok(t) => t,
+        Err(err) => {
+            cliclack::log::error(err)?;
+            return Err(MgmError::Error("Failed to parse threshold number".to_string()))
+        }
+    };
 
-    if threshold == 1 {
+    if t == 1 {
         cliclack::log::warning("You have chosen a privacy threshold of one.\n\
                  The resulting share(s) will contain the unmodified raw wrap key in plain text.\n\
                  Make sure you understand the implications.")?;
         if !cliclack::confirm("Continue anyway?").interact()? {
-            return get_threshold_and_shares();
+            return  get_threshold(shares);
         }
     }
 
-    Ok((threshold, shares))
+    Ok(t)
 }
 
 pub fn split_wrapkey(
@@ -566,19 +563,7 @@ fn recover_wrapkey() -> Result<(
     Vec<u8>,
 ), MgmError> {
 
-    let shares: String = cliclack::input("Enter the number of shares:")
-        .placeholder("Must be greater than 0")
-        .validate(|input: &String| {
-            if input.parse::<u16>().is_err() {
-                Err("Must be a number")
-            } else if input.parse::<u16>().unwrap() == 0 {
-                Err("Must be greater than zero")
-            } else {
-                Ok(())
-            }
-        })
-        .interact()?;
-    let shares = shares.parse::<u16>().unwrap();
+    let shares = get_shares()?;
 
     let mut shares_vec = Vec::new();
 
