@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use std::fs::File;
 use std::io::{Read};
+use std::path::Path;
 use openssl::base64;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
@@ -360,14 +361,10 @@ fn backup_device(session: &Session) -> Result<(), MgmError> {
 }
 
 pub fn object_to_file(id: u16, object_type: ObjectType, data: &[u8]) -> Result<String, MgmError> {
-    let filename = format!("./0x{:04x}-{}.yhw", id, object_type);
-    write_file(data.to_vec(), &filename)?;
+    let dir: String = get_backup_directory()?;
+    let filename = format!("{}/0x{:04x}-{}.yhw", dir, id, object_type);
+    write_file(base64::encode_block(data).as_bytes().to_vec(), &filename)?;
     Ok(filename)
-
-    /*let path = std::path::Path::new(&path_string);
-    let mut file = File::create(path)?;
-    file.write_all(base64::encode_block(data).as_bytes())?;
-    Ok(path_string.to_owned())*/
 }
 
 fn restore_device(session: &Session) -> Result<(), MgmError> {
@@ -382,8 +379,9 @@ fn restore_device(session: &Session) -> Result<(), MgmError> {
         available_wrap_keys,
         "Select the wrapping key to use for importing objects:")?;
 
+    let dir = get_backup_directory()?;
     let files: Vec<_> = match scan_dir::ScanDir::files()
-        .read(".", |iter| {
+        .read(dir.clone(), |iter| {
             iter.filter(|(_, name)| name.ends_with(".yhw"))
                 .map(|(entry, _)| entry.path())
                 .collect()
@@ -394,6 +392,11 @@ fn restore_device(session: &Session) -> Result<(), MgmError> {
             return Err(MgmError::Error("Failed to read files".to_string()))
         }
     };
+
+    if files.is_empty() {
+        cliclack::log::info(format!("No backup files were found in {}", dir))?;
+        return Ok(())
+    }
 
     for f in files {
         cliclack::log::info(format!("reading {}", &f.display()))?;
@@ -433,6 +436,21 @@ fn restore_device(session: &Session) -> Result<(), MgmError> {
     }
 
     Ok(())
+}
+
+fn get_backup_directory() -> Result<String, MgmError> {
+    let dir: String = cliclack::input("Enter backup directory?")
+        .placeholder("Default is current directory")
+        .default_input(".")
+        .validate(|input: &String| {
+            if !Path::new(input).exists() {
+                Err("No such directory. Please enter an existing path.")
+            } else {
+                Ok(())
+            }
+        })
+        .interact()?;
+    Ok(dir)
 }
 
 

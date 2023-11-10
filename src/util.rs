@@ -177,7 +177,7 @@ pub fn write_file(content: Vec<u8>, filename:&String) -> Result<(), MgmError> {
         Ok(f) => f,
         Err(error) => {
             if error.kind() == std::io::ErrorKind::AlreadyExists {
-                if cliclack::confirm("File already exist. Overwrite it?").interact()? {
+                if cliclack::confirm(format!("File {} already exist. Overwrite it?", filename)).interact()? {
                     fs::remove_file(filename)?;
                     File::options().create_new(true).write(true).open(filename)?
                 } else {
@@ -189,7 +189,7 @@ pub fn write_file(content: Vec<u8>, filename:&String) -> Result<(), MgmError> {
         }
     };
     match file.write_all(content.deref()) {
-        Ok(_) => cliclack::log::success(format!("Wrote file ./{}", filename))?,
+        Ok(_) => cliclack::log::success(format!("Wrote file {}", filename))?,
         Err(err) => return Err(MgmError::StdIoError(err)),
     }
     Ok(())
