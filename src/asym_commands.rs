@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::fmt;
 use std::fmt::{Display};
+use std::path::Path;
 
 use openssl::{base64, pkey};
 use openssl::bn::{BigNum, BigNumContext};
@@ -352,6 +353,8 @@ fn read_pem_file(prompt:&str) -> Result<pem::Pem, MgmError> {
         .validate(|input: &String| {
             if input.is_empty() {
                 Err("Value is required!")
+            } else if !Path::new(input).exists() {
+                Err("File does not exist")
             } else if std::fs::read_to_string(input).is_err() {
                 Err("File unreadable")
             } else if pem::parse(std::fs::read_to_string(input).unwrap()).is_err() {
@@ -369,7 +372,7 @@ fn asym_import_key(session: &Session, current_authkey: u16) -> Result<(), MgmErr
     let label = get_label()?;
     let domains = get_domains()?;
 
-    let pem = read_pem_file("Enter absolute path to PEM file: ")?;
+    let pem = read_pem_file("Enter path to PEM file: ")?;
     let key_bytes = pem.contents();
 
     let permissible_capabilities = get_permissible_capabilities(session, current_authkey)?;
