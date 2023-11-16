@@ -13,7 +13,7 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, Obj
 use yubihsmrs::Session;
 
 use error::MgmError;
-use util::{BasicDescriptor, get_domains, get_id, get_label, get_object_properties_str, get_permissible_capabilities, list_objects, print_object_properties, read_file_bytes, select_multiple_objects, select_object_capabilities, select_one_object, write_file};
+use util::{BasicDescriptor, get_domains, get_id, get_intesected_capabilities, get_label, get_object_properties_str, get_permissible_capabilities, list_objects, print_object_properties, read_file_bytes, select_multiple_objects, select_object_capabilities, select_one_object, write_file};
 
 use crate::util::{delete_objects, read_file};
 
@@ -113,6 +113,18 @@ enum HashAlgorithm {
     SHA512,
 }
 
+impl Display for HashAlgorithm {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            HashAlgorithm::SHA1 => write!(f, "SHA1"),
+            HashAlgorithm::SHA256 => write!(f, "SHA256"),
+            HashAlgorithm::SHA384 => write!(f, "SHA384"),
+            HashAlgorithm::SHA512 => write!(f, "SHA512"),
+
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum InputOutputFormat {
     #[default]
@@ -159,7 +171,7 @@ pub fn exec_asym_command(session: &Session, current_authkey: u16) -> Result<(), 
             AsymCommand::ImportKey => asym_import_key(session, current_authkey),
             AsymCommand::DeleteKey => asym_delete_key(session),
             AsymCommand::GetPublicKey => asym_get_public_key(session),
-            AsymCommand::PerformSignature => asym_sign(session),
+            AsymCommand::PerformSignature => asym_sign(session, current_authkey),
             AsymCommand::PerformRsaDecryption => asym_decrypt(session),
             AsymCommand::DeriveEcdh => asym_derive_ecdh(session),
             AsymCommand::SignAttestationCert => Err(MgmError::Error("Not implemented yet".to_string())),
@@ -707,8 +719,28 @@ fn get_operation_key(session: &Session, capability: ObjectCapability) -> Result<
     select_one_object(session, key_handles, "Choose signing or decryption key: ")
 }
 
+fn get_signing_key(session:&Session, authkey_capabilities: &Vec<ObjectCapability>) -> Result<ObjectDescriptor, MgmError> {
+    let key_capabilities = get_intesected_capabilities(
+        authkey_capabilities,
+        [ObjectCapability::SignPkcs, ObjectCapability::SignPss, ObjectCapability::SignEcdsa, ObjectCapability::SignEddsa].to_vec().as_ref()
+    );
+    let keys = session.list_objects_with_filter(
+        0,
+        ObjectType::AsymmetricKey,
+        "",
+        ObjectAlgorithm::ANY,
+        &key_capabilities)?;
+    match keys.len() {
+        0 => Err(MgmError::Error("No signing keys were found".to_string())),
+        1 => Ok(session.get_object_info(keys[0].object_id, keys[0].object_type)?),
+        _ => {
+            select_one_object(session, keys, "Select signing key")
+        }
+    }
+}
 
-fn asym_sign(session: &Session) -> Result<(), MgmError> {
+
+fn asym_sign(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
 
     let input_str = match get_format(&vec![InputOutputFormat::STDIN, InputOutputFormat::BINARY])? {
         InputOutputFormat::STDIN => {
@@ -720,38 +752,70 @@ fn asym_sign(session: &Session) -> Result<(), MgmError> {
         _ => unreachable!()
     };
 
-    let sign_algorithm = cliclack::select("Select signing algorithm:")
-        .item(SignAlgorithm::PKCS1, "RSA-PKCS#1v1.5", "")
-        .item(SignAlgorithm::PSS, "RSA-PSS", "")
-        .item(SignAlgorithm::ECDSA, "ECDSA", "")
-        .item(SignAlgorithm::EDDSA, "EDSA", "")
-        .interact()?;
+    let authkey_capabilities = session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?.capabilities;
+    let signing_key = get_signing_key(session, &authkey_capabilities)?;
 
-    let signed_data = match sign_algorithm {
-        SignAlgorithm::PKCS1 => {
+    let signed_data;
+    if is_rsa_algorithm(signing_key.algorithm) {
+        let mut sign_capabiliy = Vec::new();
+        if signing_key.capabilities.contains(&ObjectCapability::SignPkcs) &&
+            authkey_capabilities.contains(&ObjectCapability::SignPkcs) {
+            sign_capabiliy.push(ObjectCapability::SignPkcs);
+        }
+        if signing_key.capabilities.contains(&ObjectCapability::SignPss) &&
+            authkey_capabilities.contains(&ObjectCapability::SignPss) {
+            sign_capabiliy.push(ObjectCapability::SignPss);
+        }
+        let sign_capabiliy =
+            if sign_capabiliy.len() == 0 {
+                return Err(MgmError::Error("Selected RSA key has no signing capabilities".to_string()))
+            } else if sign_capabiliy.len() == 1 {
+                sign_capabiliy[0]
+            } else if sign_capabiliy.len() == 2 {
+                cliclack::select("Select RSA signing algorithm")
+                    .item(ObjectCapability::SignPkcs, "RSA-PKCS#1v1.5", "")
+                    .item(ObjectCapability::SignPss, "RSA-PSS", "")
+                    .interact()?
+            } else {
+                unreachable!()
+            };
+        match sign_capabiliy {
+            ObjectCapability::SignPkcs => {
+                let hash_algo = get_hash_algorithm()?;
+                let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
+                signed_data = session.sign_pkcs1v1_5(signing_key.id, true, hashed_bytes.as_slice())?;
+                cliclack::log::success(format!("Signed data with RSA-PKCS#1v1.5 and {}", hash_algo))?;
+            }
+            ObjectCapability::SignPss => {
+                let hash_algo = get_hash_algorithm()?;
+                let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
+                let mgf1_algo = get_mgf1_algorithm(hash_algo);
+                signed_data = session.sign_pss(signing_key.id, hashed_bytes.len(), mgf1_algo, hashed_bytes.as_slice())?;
+                cliclack::log::success(format!("Signed data with RSA-PSS and {}", hash_algo))?;
+            }
+            _ => unreachable!()
+        }
+    } else if is_ec_algorithm(signing_key.algorithm) {
+        if signing_key.capabilities.contains(&ObjectCapability::SignEcdsa) &&
+            authkey_capabilities.contains(&ObjectCapability::SignEcdsa) {
             let hash_algo = get_hash_algorithm()?;
             let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
-            let signing_key = get_operation_key(session, ObjectCapability::SignPkcs)?;
-            session.sign_pkcs1v1_5(signing_key.id, true, hashed_bytes.as_slice())
+            signed_data = session.sign_ecdsa(signing_key.id, hashed_bytes.as_slice())?;
+            cliclack::log::success(format!("Signed data with ECDSA and {}", hash_algo))?;
+        } else {
+            return Err(MgmError::Error("Selected key has no ECDSA signing capabilities".to_string()))
         }
-        SignAlgorithm::PSS => {
-            let hash_algo = get_hash_algorithm()?;
-            let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
-            let mgf1_algo = get_mgf1_algorithm(hash_algo);
-            let signing_key = get_operation_key(session, ObjectCapability::SignPss)?;
-            session.sign_pss(signing_key.id, hashed_bytes.len(), mgf1_algo, hashed_bytes.as_slice())
+    } else if signing_key.algorithm == ObjectAlgorithm::Ed25519 {
+        if signing_key.capabilities.contains(&ObjectCapability::SignEddsa) &&
+            authkey_capabilities.contains(&ObjectCapability::SignEddsa) {
+            signed_data = session.sign_eddsa(signing_key.id, input_str.as_bytes())?;
+            cliclack::log::success("Signed data with EDDSA and")?;
+        } else {
+            return Err(MgmError::Error("Selected key has no EDDSA signin capabilities".to_string()))
         }
-        SignAlgorithm::ECDSA => {
-            let hash_algo = get_hash_algorithm()?;
-            let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
-            let signing_key = get_operation_key(session, ObjectCapability::SignEcdsa)?;
-            session.sign_ecdsa(signing_key.id, hashed_bytes.as_slice())
-        }
-        SignAlgorithm::EDDSA => {
-            let signing_key = get_operation_key(session, ObjectCapability::SignEddsa)?;
-            session.sign_eddsa(signing_key.id, input_str.as_bytes())
-        }
-    }?;
+    } else {
+        return Err(MgmError::Error("Selected key has no asymmetric signing capabilities".to_string()))
+    };
 
     write_file(signed_data, &"data.sig".to_string())
 }

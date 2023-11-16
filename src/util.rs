@@ -255,6 +255,12 @@ pub fn list_objects(session: &Session, objects: &Vec<ObjectHandle>) -> Result<()
     Ok(())
 }
 
+pub fn get_intesected_capabilities(vec1: &Vec<ObjectCapability>, vec2: &Vec<ObjectCapability>) -> Vec<ObjectCapability> {
+    let caps1: HashSet<ObjectCapability> = vec1.clone().into_iter().collect();
+    let caps2: HashSet<ObjectCapability> = vec2.clone().into_iter().collect();
+    caps1.intersection(&caps2).copied().collect::<Vec<ObjectCapability>>()
+}
+
 pub fn select_object_capabilities(
     prompt: &str,
     default_select_all: bool,
@@ -264,9 +270,7 @@ pub fn select_object_capabilities(
 
     let selectable_capabilities: Vec<ObjectCapability> =
         if calculate_intersection {
-            let tcaps: HashSet<ObjectCapability> = type_capabilities.clone().into_iter().collect();
-            let pcaps: HashSet<ObjectCapability> = permissible_capabilities.clone().into_iter().collect();
-            tcaps.intersection(&pcaps).copied().collect::<Vec<ObjectCapability>>()
+            get_intesected_capabilities(type_capabilities, permissible_capabilities)
         } else {
             type_capabilities.clone()
         };
