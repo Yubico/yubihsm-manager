@@ -331,8 +331,11 @@ fn asym_gen_key(session: &Session, current_authkey: u16) -> Result<(), MgmError>
                    get_object_properties_str(&key_algorithm, &label, key_id, &domains, &capabilities))?;
 
     if cliclack::confirm("Generate key?").interact()? {
+        let mut spinner = cliclack::spinner();
+        spinner.start("Generating key...");
         let key = session
             .generate_asymmetric_key_with_keyid(key_id, &label, &capabilities, &*domains, key_algorithm)?;
+        spinner.stop("");
         cliclack::log::success(
             format!("Generated asymmetric keypair with ID 0x{:04x} on the device", key.get_key_id()))?;
     }
@@ -1020,8 +1023,11 @@ fn java_gen_key(session: &Session) -> Result<(), MgmError> {
                    get_object_properties_str(&key_algorithm, &label, key_id, &domains, &capabilities))?;
 
     if cliclack::confirm("Generate asymmetric key?").interact()? {
+        let mut spinner = cliclack::spinner();
+        spinner.start("Generating key...");
         let key = session
             .generate_asymmetric_key_with_keyid(key_id, &label, &capabilities, &*domains, key_algorithm)?;
+        spinner.stop("");
         cliclack::log::step(
             format!("Stored asymmetric key with ID 0x{:04x} on the device", key.get_key_id()))?;
 
