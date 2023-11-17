@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::fmt;
 use std::fmt::{Display};
-use std::path::Path;
 
 use openssl::{base64, pkey};
 use openssl::bn::{BigNum, BigNumContext};
@@ -13,9 +12,9 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, Obj
 use yubihsmrs::Session;
 
 use error::MgmError;
-use util::{BasicDescriptor, get_domains, get_id, get_intesected_capabilities, get_label, get_object_properties_str, get_permissible_capabilities, list_objects, print_object_properties, read_file_bytes, select_multiple_objects, select_object_capabilities, select_one_object, write_file};
+use util::{BasicDescriptor, get_domains, get_id, get_intesected_capabilities, get_label, get_object_properties_str, get_permissible_capabilities, list_objects, print_object_properties, read_file_bytes, read_file_string, select_multiple_objects, select_object_capabilities, select_one_object, write_file};
 
-use crate::util::{delete_objects, read_file};
+use crate::util::{delete_objects};
 
 
 const ATTESTATION_CERT_TEMPLATE: &str =
@@ -52,6 +51,20 @@ const ED_KEY_CAPABILITIES: [ObjectCapability; 2] = [
     ObjectCapability::SignEddsa,
     ObjectCapability::ExportableUnderWrap];
 
+const RSA_KEY_ALGORITHM: [ObjectAlgorithm; 3] = [
+    ObjectAlgorithm::Rsa2048,
+    ObjectAlgorithm::Rsa3072,
+    ObjectAlgorithm::Rsa4096];
+
+const EC_KEY_ALGORITHM: [ObjectAlgorithm; 8] = [
+    ObjectAlgorithm::EcP224,
+    ObjectAlgorithm::EcP256,
+    ObjectAlgorithm::EcP384,
+    ObjectAlgorithm::EcP521,
+    ObjectAlgorithm::EcK256,
+    ObjectAlgorithm::EcBp256,
+    ObjectAlgorithm::EcBp384,
+    ObjectAlgorithm::EcBp512];
 
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
 enum AsymCommand {
@@ -86,22 +99,6 @@ enum AsymKeyTypes {
     RSA,
     EC,
     ED,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum SignAlgorithm {
-    #[default]
-    PKCS1,
-    PSS,
-    ECDSA,
-    EDDSA,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum DecryptAlgorithm {
-    #[default]
-    PKCS1,
-    OAEP,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -143,24 +140,6 @@ impl Display for InputOutputFormat {
     }
 }
 
-fn is_rsa_algorithm(algo: ObjectAlgorithm) -> bool {
-    [ObjectAlgorithm::Rsa2048,
-        ObjectAlgorithm::Rsa3072,
-        ObjectAlgorithm::Rsa4096].contains(&algo)
-}
-
-fn is_ec_algorithm(algo: ObjectAlgorithm) -> bool {
-    [ObjectAlgorithm::EcP224,
-        ObjectAlgorithm::EcP256,
-        ObjectAlgorithm::EcP384,
-        ObjectAlgorithm::EcP521,
-        ObjectAlgorithm::EcK256,
-        ObjectAlgorithm::EcBp256,
-        ObjectAlgorithm::EcBp384,
-        ObjectAlgorithm::EcBp512].contains(&algo)
-}
-
-
 pub fn exec_asym_command(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
     loop {
         let cmd = get_asym_command(session, current_authkey)?;
@@ -172,8 +151,8 @@ pub fn exec_asym_command(session: &Session, current_authkey: u16) -> Result<(), 
             AsymCommand::DeleteKey => asym_delete_key(session),
             AsymCommand::GetPublicKey => asym_get_public_key(session),
             AsymCommand::PerformSignature => asym_sign(session, current_authkey),
-            AsymCommand::PerformRsaDecryption => asym_decrypt(session),
-            AsymCommand::DeriveEcdh => asym_derive_ecdh(session),
+            AsymCommand::PerformRsaDecryption => asym_decrypt(session, current_authkey),
+            AsymCommand::DeriveEcdh => asym_derive_ecdh(session, current_authkey),
             AsymCommand::SignAttestationCert => Err(MgmError::Error("Not implemented yet".to_string())),
             AsymCommand::ManageJavaKeys => asym_java_manage(session, current_authkey),
             AsymCommand::ReturnToMainMenu => return Ok(()),
@@ -361,22 +340,18 @@ fn asym_gen_key(session: &Session, current_authkey: u16) -> Result<(), MgmError>
 }
 
 fn read_pem_file(prompt:&str) -> Result<pem::Pem, MgmError> {
-    let path: String = cliclack::input(prompt)
-        .validate(|input: &String| {
-            if input.is_empty() {
-                Err("Value is required!")
-            } else if !Path::new(input).exists() {
-                Err("File does not exist")
-            } else if std::fs::read_to_string(input).is_err() {
-                Err("File unreadable")
-            } else if pem::parse(std::fs::read_to_string(input).unwrap()).is_err() {
-                Err("Not PEM file")
+    let content = read_file_string(prompt)?;
+    match pem::parse(content) {
+        Ok(pem) => Ok(pem),
+        Err(err) => {
+            cliclack::log::error("Failed to parse file content as PEM")?;
+            if cliclack::confirm("Try again?").interact()? {
+                read_pem_file(prompt)
             } else {
-                Ok(())
+                Err(MgmError::PemError(err))
             }
-        })
-        .interact()?;
-    Ok(pem::parse(std::fs::read_to_string(path)?)?)
+        }
+    }
 }
 
 fn asym_import_key(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
@@ -568,7 +543,7 @@ fn asym_get_public_key(session: &Session) -> Result<(), MgmError> {
         let filename = format!("0x{:04x}.pubkey.pem", key.id).to_string();
         let pem_pubkey;
         let key_algo = pubkey.1;
-        if is_rsa_algorithm(key_algo) {
+        if RSA_KEY_ALGORITHM.contains(&key_algo) {
             let e = match BigNum::from_slice(&[0x01, 0x00, 0x01]) {
                 Ok(bn) => bn,
                 Err(err) => {
@@ -601,7 +576,7 @@ fn asym_get_public_key(session: &Session) -> Result<(), MgmError> {
                 }
             };
 
-        } else if is_ec_algorithm(key_algo) {
+        } else if EC_KEY_ALGORITHM.contains(&key_algo) {
             let nid = match key_algo {
                 ObjectAlgorithm::EcP256 => Nid::X9_62_PRIME256V1,
                 ObjectAlgorithm::EcK256 => Nid::SECP256K1,
@@ -707,35 +682,40 @@ fn get_mgf1_algorithm(hash_algo: HashAlgorithm) -> ObjectAlgorithm {
     }
 }
 
-
-fn get_operation_key(session: &Session, capability: ObjectCapability) -> Result<ObjectDescriptor, MgmError> {
-    let key_handles = session.list_objects_with_filter(
-        0,
-        ObjectType::AsymmetricKey,
-        "",
-        ObjectAlgorithm::ANY,
-        [capability].as_ref())?;
-
-    select_one_object(session, key_handles, "Choose signing or decryption key: ")
-}
-
-fn get_signing_key(session:&Session, authkey_capabilities: &Vec<ObjectCapability>) -> Result<ObjectDescriptor, MgmError> {
+fn get_operation_key(session:&Session, authkey_capabilities: &Vec<ObjectCapability>,
+                     op_capabilities: &Vec<ObjectCapability>, key_algo: &[ObjectAlgorithm]) -> Result<ObjectDescriptor, MgmError> {
     let key_capabilities = get_intesected_capabilities(
-        authkey_capabilities,
-        [ObjectCapability::SignPkcs, ObjectCapability::SignPss, ObjectCapability::SignEcdsa, ObjectCapability::SignEddsa].to_vec().as_ref()
-    );
+        authkey_capabilities, op_capabilities);
+    if key_capabilities.is_empty() {
+        return Err(MgmError::Error("Current user does not have the right capabilities".to_string()))
+    }
     let keys = session.list_objects_with_filter(
         0,
         ObjectType::AsymmetricKey,
         "",
         ObjectAlgorithm::ANY,
         &key_capabilities)?;
-    match keys.len() {
-        0 => Err(MgmError::Error("No signing keys were found".to_string())),
-        1 => Ok(session.get_object_info(keys[0].object_id, keys[0].object_type)?),
-        _ => {
-            select_one_object(session, keys, "Select signing key")
+
+    if key_algo.is_empty() {
+        select_one_object(session, keys, "Select signing key")
+    } else {
+        let mut descs = Vec::new();
+        for k in keys {
+            let desc = session.get_object_info(k.object_id, k.object_type)?;
+            if key_algo.contains(&desc.algorithm) {
+                descs.push(desc);
+            }
         }
+
+        if descs.is_empty() {
+            return Err(MgmError::Error("No asymmetric keys were found for operation".to_string()));
+        }
+
+        let mut key = cliclack::select("Select operational key");
+        for desc in descs {
+            key = key.item(desc.clone(), BasicDescriptor::from(desc), "");
+        }
+        Ok(key.interact()?)
     }
 }
 
@@ -747,16 +727,18 @@ fn asym_sign(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
             cliclack::input("Data to sign: ").interact()?
         }
         InputOutputFormat::BINARY => {
-            read_file("Absolute path to file containing data to sign: ")?
+            read_file_string("Absolute path to file containing data to sign: ")?
         }
         _ => unreachable!()
     };
 
     let authkey_capabilities = session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?.capabilities;
-    let signing_key = get_signing_key(session, &authkey_capabilities)?;
+    let signing_key = get_operation_key(session, &authkey_capabilities,
+                                        [ObjectCapability::SignPkcs, ObjectCapability::SignPss, ObjectCapability::SignEcdsa, ObjectCapability::SignEddsa].to_vec().as_ref(),
+                                        &[])?;
 
     let signed_data;
-    if is_rsa_algorithm(signing_key.algorithm) {
+    if RSA_KEY_ALGORITHM.contains(&signing_key.algorithm) {
         let mut sign_capabiliy = Vec::new();
         if signing_key.capabilities.contains(&ObjectCapability::SignPkcs) &&
             authkey_capabilities.contains(&ObjectCapability::SignPkcs) {
@@ -791,11 +773,11 @@ fn asym_sign(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
                 let hashed_bytes = get_hashed_bytes(hash_algo, input_str.as_bytes())?;
                 let mgf1_algo = get_mgf1_algorithm(hash_algo);
                 signed_data = session.sign_pss(signing_key.id, hashed_bytes.len(), mgf1_algo, hashed_bytes.as_slice())?;
-                cliclack::log::success(format!("Signed data with RSA-PSS and {}", hash_algo))?;
+                cliclack::log::success(format!("Signed data with RSA-PSS and {}", mgf1_algo))?;
             }
             _ => unreachable!()
         }
-    } else if is_ec_algorithm(signing_key.algorithm) {
+    } else if EC_KEY_ALGORITHM.contains(&signing_key.algorithm) {
         if signing_key.capabilities.contains(&ObjectCapability::SignEcdsa) &&
             authkey_capabilities.contains(&ObjectCapability::SignEcdsa) {
             let hash_algo = get_hash_algorithm()?;
@@ -820,41 +802,66 @@ fn asym_sign(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
     write_file(signed_data, &"data.sig".to_string())
 }
 
-fn asym_decrypt(session: &Session) -> Result<(), MgmError> {
-    let input_bytes = read_file_bytes("Absolute path to file containing encrypted data: ")?;
+fn asym_decrypt(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
+    let input_bytes = read_file_bytes("Enter path to file containing encrypted data: ")?;
 
-    let decrypt_algorithm = cliclack::select("Select decryption algorithm")
-        .item(DecryptAlgorithm::PKCS1, "RSA-PKCS#1v1.5", "")
-        .item(DecryptAlgorithm::OAEP, "RSA-OAEP", "")
-        .interact()?;
+    let authkey_capabilities = session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?.capabilities;
+    let decrypt_key = get_operation_key(session, &authkey_capabilities,
+                                        [ObjectCapability::DecryptPkcs, ObjectCapability::DecryptOaep].to_vec().as_ref(),
+                                        &RSA_KEY_ALGORITHM)?;
 
-    let decrypted_data = match decrypt_algorithm {
-        DecryptAlgorithm::PKCS1 => {
-            let decryption_key = get_operation_key(session, ObjectCapability::DecryptPkcs)?;
-            session.decrypt_pkcs1v1_5(decryption_key.id, input_bytes.as_slice())
+    let dec_data;
+    let mut decrypt_capabiliy = Vec::new();
+    if decrypt_key.capabilities.contains(&ObjectCapability::DecryptPkcs) &&
+        authkey_capabilities.contains(&ObjectCapability::DecryptPkcs) {
+        decrypt_capabiliy.push(ObjectCapability::DecryptPkcs);
+    }
+    if decrypt_key.capabilities.contains(&ObjectCapability::DecryptOaep) &&
+        authkey_capabilities.contains(&ObjectCapability::DecryptOaep) {
+        decrypt_capabiliy.push(ObjectCapability::DecryptOaep);
+    }
+    let decrypt_capabiliy =
+        if decrypt_capabiliy.len() == 0 {
+            return Err(MgmError::Error("Selected RSA key has no decryption capabilities".to_string()))
+        } else if decrypt_capabiliy.len() == 1 {
+            decrypt_capabiliy[0]
+        } else if decrypt_capabiliy.len() == 2 {
+            cliclack::select("Select RSA decryption algorithm")
+                .item(ObjectCapability::DecryptPkcs, "RSA-PKCS#1v1.5", "")
+                .item(ObjectCapability::DecryptOaep, "RSA-OAEP", "")
+                .interact()?
+        } else {
+            unreachable!()
+        };
+    match decrypt_capabiliy {
+        ObjectCapability::DecryptPkcs => {
+            dec_data = session.decrypt_pkcs1v1_5(decrypt_key.id, input_bytes.as_slice())?;
+            cliclack::log::success("Decrypted data with RSA-PKCS#1v1.5")?;
         }
-        DecryptAlgorithm::OAEP => {
+        ObjectCapability::DecryptOaep => {
             let hash_algo = get_hash_algorithm()?;
             let label = get_hashed_bytes(hash_algo, input_bytes.as_slice())?;
             let mgf1_algo = get_mgf1_algorithm(hash_algo);
-            let decryption_key = get_operation_key(session, ObjectCapability::DecryptOaep)?;
-            session.decrypt_oaep(decryption_key.id, input_bytes.as_slice(), label.as_slice(), mgf1_algo)
+            dec_data = session.decrypt_oaep(decrypt_key.id, input_bytes.as_slice(), label.as_slice(), mgf1_algo)?;
+            cliclack::log::success(format!("Decrypted data with RSA-OAEP and {}", mgf1_algo))?;
         }
-    }?;
+        _ => unreachable!()
+    }
 
-    write_file(decrypted_data, &"data.dec".to_string())
+    write_file(dec_data, &"data.dec".to_string())
 }
 
-fn asym_derive_ecdh(session: &Session) -> Result<(), MgmError> {
-    let pubkey = openssl::ec::EcKey::public_key_from_pem(read_file("Enter absolute path to EC public key PEM file: ")?.as_bytes())?;
+fn asym_derive_ecdh(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
+    let authkey_capabilities = session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?.capabilities;
+    let hsm_key = get_operation_key(session, &authkey_capabilities, [ObjectCapability::DeriveEcdh].to_vec().as_ref(), &EC_KEY_ALGORITHM)?;
+
+    let pubkey = openssl::ec::EcKey::public_key_from_pem(read_file_string("Enter path to EC public key PEM file: ")?.as_bytes())?;
     let mut ctx = BigNumContext::new()?;
     let ec_point_ref = pubkey.public_key();
     let ec_group_ref = pubkey.group();
     let ext_key = ec_point_ref.to_bytes(ec_group_ref, PointConversionForm::UNCOMPRESSED, &mut ctx)?;
     let nid = ec_group_ref.curve_name().ok_or(MgmError::Error(String::from("Failed to find EC curve name")))?;
     let ext_key_algo = get_algo_from_nid(nid)?;
-
-    let hsm_key = get_operation_key(session, ObjectCapability::DeriveEcdh)?;
 
     if hsm_key.algorithm != ext_key_algo {
         return Err(MgmError::Error("External EC public key has a different algorithm from the YubiHSM key".to_string()));

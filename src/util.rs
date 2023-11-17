@@ -7,6 +7,7 @@ use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{Write};
 use std::ops::Deref;
+use std::path::Path;
 use std::str::FromStr;
 use cliclack::MultiSelect;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
@@ -142,34 +143,50 @@ pub fn delete_objects(session: &Session, object_handles: Vec<ObjectHandle>) -> R
     Ok(())
 }
 
-pub fn read_file(prompt:&str) -> Result<String, MgmError> {
+fn get_file_path(prompt:&str) -> Result<String, MgmError> {
     let file_path: String = cliclack::input(prompt)
         .validate(|input: &String| {
             if input.is_empty() {
                 Err("Value is required!")
-            } else if fs::read_to_string(input).is_err() {
-                Err("File unreadable")
+            } else if !Path::new(input).exists() {
+                Err("File does not exist")
             } else {
                 Ok(())
             }
         })
         .interact()?;
-    Ok(fs::read_to_string(file_path)?)
+    Ok(file_path)
+}
+
+
+pub fn read_file_string(prompt:&str) -> Result<String, MgmError> {
+    let file_path = get_file_path(prompt)?;
+    match fs::read_to_string(file_path) {
+        Ok(content) => Ok(content),
+        Err(err) => {
+            cliclack::log::error("Failed to read file to string")?;
+            if cliclack::confirm("Try again?").interact()? {
+                read_file_string(prompt)
+            } else {
+                Err(MgmError::StdIoError(err))
+            }
+        }
+    }
 }
 
 pub fn read_file_bytes(prompt:&str) -> Result<Vec<u8>, MgmError> {
-    let file_path: String = cliclack::input(prompt)
-        .validate(|input: &String| {
-            if input.is_empty() {
-                Err("Value is required!")
-            } else if fs::read(input).is_err() {
-                Err("File unreadable")
+    let file_path = get_file_path(prompt)?;
+    match fs::read(file_path) {
+        Ok(content) => Ok(content),
+        Err(err) => {
+            cliclack::log::error("Failed to read file to bytes")?;
+            if cliclack::confirm("Try again?").interact()? {
+                read_file_bytes(prompt)
             } else {
-                Ok(())
+                Err(MgmError::StdIoError(err))
             }
-        })
-        .interact()?;
-    Ok(fs::read(file_path)?)
+        }
+    }
 }
 
 pub fn write_file(content: Vec<u8>, filename:&String) -> Result<(), MgmError> {
