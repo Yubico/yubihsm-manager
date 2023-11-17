@@ -177,7 +177,7 @@ fn create_user(
 
     cliclack::note("Creating authentication key with:", key_str)?;
 
-    if cliclack::confirm("Execute?").interact()? {
+    if cliclack::confirm("Create authentication key?").interact()? {
         let id = session.import_authentication_key(
             key_id, &label, &domains, &capabilities, &delegated_capabilities, pwd.as_bytes())?;
         cliclack::log::success(format!("Created new authentication key with ID 0x{id:04x}"))?;

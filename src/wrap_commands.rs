@@ -167,7 +167,7 @@ fn wrap_gen_key(session: &Session, current_authkey: u16) -> Result<(), MgmError>
                        &capabilities,
                        &delegated_capabilities))?;
 
-    if cliclack::confirm("Execute?").interact()? {
+    if cliclack::confirm("Generate wrap key?").interact()? {
         let key_id = session
             .generate_wrap_key(key_id, &label,  &domains, &capabilities, key_algorithm, &delegated_capabilities)?;
 
@@ -304,7 +304,7 @@ fn import_from_shares(session:&Session) -> Result<(), MgmError> {
                        &capabilities,
                        &delegated_capabilities))?;
 
-    if cliclack::confirm("Execute?").interact()? {
+    if cliclack::confirm("Import wrap key?").interact()? {
         let key_id = session
             .import_wrap_key(
                 key_id,

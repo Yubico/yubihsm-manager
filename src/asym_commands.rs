@@ -958,7 +958,7 @@ fn java_delete_keys(session: &Session) -> Result<(), MgmError> {
         selected_keys = selected_keys.item(key.clone(), BasicDescriptor::from(key), "");
     }
     let selected_keys = selected_keys.interact()?;
-    if !selected_keys.is_empty() && cliclack::confirm("Selected key(s) will be deleted and cannot be recovered. Execute?").interact()? {
+    if !selected_keys.is_empty() && cliclack::confirm("Selected key(s) will be deleted and cannot be recovered. Delete anyway?").interact()? {
         for key in selected_keys {
             if let Err(err) = delete_java_key(session, key.id, key.id) {
                 cliclack::log::error(format!("Failed to delete object with ID 0x{:04x}. {}", key.id, err))?;
@@ -1019,7 +1019,7 @@ fn java_gen_key(session: &Session) -> Result<(), MgmError> {
     cliclack::note("Generating asymmetric key with:",
                    get_object_properties_str(&key_algorithm, &label, key_id, &domains, &capabilities))?;
 
-    if cliclack::confirm("Execute?").interact()? {
+    if cliclack::confirm("Generate asymmetric key?").interact()? {
         let key = session
             .generate_asymmetric_key_with_keyid(key_id, &label, &capabilities, &*domains, key_algorithm)?;
         cliclack::log::step(
