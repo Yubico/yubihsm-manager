@@ -74,12 +74,24 @@ pub fn get_label() -> Result<String, MgmError> {
 }
 
 pub fn get_domains() -> Result<Vec<ObjectDomain>, MgmError> {
-    let mut domains: MultiSelect<ObjectDomain> = cliclack::multiselect(
+    let mut domains: MultiSelect<u16> = cliclack::multiselect(
         "Select domain(s). Press the space button to select and unselect item. Press 'Enter' when done.");
+    domains = domains.initial_values(vec![u16::try_from(0).unwrap()]);
+    domains = domains.item(0, "All Domains", "Select all domains");
     for d in 1..16 {
-        domains = domains.item(ObjectDomain::try_from(d).unwrap(), d, "");
+        domains = domains.item(d, d, "");
     }
-    Ok(domains.interact()?)
+    let domains = domains.interact()?;
+
+    if domains.contains(&u16::try_from(0).unwrap()) {
+        Ok(ObjectDomain::from_primitive(0xffff))
+    } else {
+        let mut ds = Vec::new();
+        for d in domains {
+            ds.push(ObjectDomain::try_from(d)?)
+        }
+        Ok(ds)
+    }
 }
 
 pub fn select_one_object(session: &Session, all_objects:Vec<ObjectHandle>, prompt:&str) -> Result<ObjectDescriptor, MgmError> {
