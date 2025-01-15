@@ -10,15 +10,15 @@ extern crate scan_dir;
 #[macro_use]
 extern crate lazy_static;
 
-#[macro_use]
 extern crate clap;
 extern crate cliclack;
 extern crate console;
 
 
 use std::str::FromStr;
-use clap::{App, Arg, SubCommand};
+use clap::Arg;
 use yubihsmrs::{Session, YubiHsm};
+use util::{get_ec_privkey_from_pemfile};
 
 use error::MgmError;
 use util::{list_objects};
@@ -40,6 +40,9 @@ macro_rules! unwrap_or_exit1 {
         }
     }
 }
+
+const YH_EC_P256_PUBKEY_LEN: usize = 65;
+const YH_EC_P256_PRIVKEY_LEN: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
 enum MainCommand {
@@ -64,15 +67,6 @@ fn parse_id(value: &str) -> Result<u16, String> {
         Ok(id) => Ok(id),
         Err(_) => Err("ID must be a number in [1, 65535]".to_string()),
     }
-}
-
-fn is_valid_id(value: String) -> Result<(), String> {
-    // NOTE(adma): dropping value just to keep the linter quiet, the
-    // prototype is dictated by Clap
-    // TODO (aveen): Check if this is still necessary
-    parse_id(&value).map(|_| {
-        drop(value);
-    })
 }
 
 fn get_random_number(session: &Session) -> Result<(), MgmError> {
@@ -110,42 +104,38 @@ fn reset_device(session: &Session) -> Result<(), MgmError> {
 }
 
 fn main() -> Result<(), MgmError>{
-    let matches = App::new(env!("CARGO_PKG_NAME"))
-        .version(crate_version!())
+    let matches = clap::Command::new(env!("CARGO_PKG_NAME"))
+        .version(env!("CARGO_PKG_VERSION"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
-        .subcommands(vec![
-            SubCommand::with_name("get-device-info").about("Display YubiHSM device info"),
-        ]).arg(
-        Arg::with_name("authkey")
+        .subcommand(clap::Command::new("get-device-info").about("Display YubiHSM device info"))
+        .arg(Arg::new("authkey")
             .long("authkey")
-            .short("k")
+            .short('k')
             .help("Authentication key to open a session with the device")
             .default_value("1")
-            .takes_value(true)
-            .hide_default_value(false)
-            .validator(is_valid_id),
-    ).arg(
-        Arg::with_name("password")
+            .hide_default_value(false))
+        .arg(Arg::new("privkey")
+            .long("privkey")
+            .short('d')
+            .help("Path to PEM file containing ECP256 private key used to open an asymmetric session"))
+        .arg(Arg::new("password")
             .long("password")
-            .short("p")
-            .help("Password to open a session with the device")
-            .takes_value(true),
-    ).arg(
-        Arg::with_name("connector")
+            .short('p')
+            .help("Password to open a session with the device"))
+        .arg(Arg::new("connector")
             .long("connector")
-            .short("c")
+            .short('c')
             .help("Connector URL")
             .default_value("http://127.0.0.1:12345")
-            .takes_value(true)
-            .hide_default_value(false),
-    ).arg(
-        Arg::with_name("verbose")
+            .hide_default_value(false))
+        .arg(Arg::new("verbose")
             .long("verbose")
-            .short("v")
-            .help("Produce more debug output"),
-    ).get_matches();
+            .short('v')
+            .help("Produce more debug output")
+            .num_args(0))
+        .get_matches();
 
-    let Some(connector) = matches.value_of("connector") else {
+    let Some(connector) = matches.get_one::<String>("connector") else {
         cliclack::log::error("Failed to read connector value")?;
         std::process::exit(1);
     };
@@ -157,7 +147,7 @@ fn main() -> Result<(), MgmError>{
 
     let h = unwrap_or_exit1!(YubiHsm::new(connector), "Unable to create HSM object");
 
-    if let Err(err) = h.set_verbosity(matches.is_present("verbose")) {
+    if let Err(err) = h.set_verbosity(matches.contains_id("verbose")) {
         cliclack::log::error(format!("Unable to set verbosity: {}", err))?;
         std::process::exit(1);
     };
@@ -168,7 +158,7 @@ fn main() -> Result<(), MgmError>{
         return Ok(());
     };
 
-    let authkey = match matches.value_of("authkey") {
+    let authkey = match matches.get_one::<String>("authkey") {
         Some(auth_key) => {
             parse_id(auth_key).unwrap_or_else(|err| {
                 cliclack::log::error(format!("Unable to parse authentication key ID: {}", err)).unwrap();
@@ -177,17 +167,41 @@ fn main() -> Result<(), MgmError>{
         },
         None => 1,
     };
-    let password = match matches.value_of("password") {
-        Some(password) => password.to_owned(),
-        None => {
-            cliclack::password("Enter authentication password:")
-                .mask('*')
-                .interact()?
-        },
-    };
+
     cliclack::log::info(format!("Using authentication key 0x{:04x}", authkey))?;
 
-    let session = unwrap_or_exit1!(h.establish_session(authkey, &password, true), "Unable to open session");
+    let session =
+    if matches.contains_id("privkey") {
+        let filename = match matches.get_one::<String>("privkey") {
+            Some(filename) => filename.to_owned(),
+            None => {
+                cliclack::log::error("Unable to read private key file name").unwrap();
+                std::process::exit(1);
+            },
+        };
+        let privkey = get_ec_privkey_from_pemfile(filename)?;
+        if privkey.len() != YH_EC_P256_PRIVKEY_LEN {
+            cliclack::log::error("Wrong length of private key").unwrap();
+            std::process::exit(1);
+        }
+        let device_pubkey = h.get_device_pubkey()?;
+        if device_pubkey.len() != YH_EC_P256_PUBKEY_LEN {
+            cliclack::log::error("Wrong length of device public key").unwrap();
+            std::process::exit(1);
+        }
+        unwrap_or_exit1!(h.establish_session_asym(authkey, privkey.as_slice(), device_pubkey.as_slice()), "Unable to open asymmetric session")
+    } else {
+        let password = match matches.get_one::<String>("password") {
+            Some(password) => password.to_owned(),
+            None => {
+                cliclack::password("Enter authentication password:")
+                    .mask('*')
+                    .interact()?
+            },
+        };
+        unwrap_or_exit1!(h.establish_session(authkey, &password, true), "Unable to open session")
+    };
+
 
     loop {
         let command = cliclack::select("")

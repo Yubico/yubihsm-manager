@@ -12,7 +12,7 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, Obj
 use yubihsmrs::Session;
 
 use error::MgmError;
-use util::{BasicDescriptor, get_domains, get_id, get_intesected_capabilities, get_label, get_object_properties_str, get_permissible_capabilities, list_objects, print_object_properties, read_file_bytes, read_file_string, select_multiple_objects, select_object_capabilities, select_one_object, write_file};
+use util::{BasicDescriptor, get_domains, get_file_path, get_id, get_intesected_capabilities, get_label, get_object_properties_str, get_permissible_capabilities, InputOutputFormat, list_objects, print_object_properties, read_file_bytes, read_file_string, select_multiple_objects, select_object_capabilities, select_one_object, write_file};
 
 use crate::util::{delete_objects};
 
@@ -118,24 +118,6 @@ impl Display for HashAlgorithm {
             HashAlgorithm::SHA384 => write!(f, "SHA384"),
             HashAlgorithm::SHA512 => write!(f, "SHA512"),
 
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum InputOutputFormat {
-    #[default]
-    STDIN,
-    BINARY,
-    PEM,
-}
-
-impl Display for InputOutputFormat {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            InputOutputFormat::STDIN => write!(f, "Stdin"),
-            InputOutputFormat::BINARY => write!(f, "Binary file"),
-            InputOutputFormat::PEM => write!(f, "PEM file"),
         }
     }
 }
@@ -342,14 +324,14 @@ fn asym_gen_key(session: &Session, current_authkey: u16) -> Result<(), MgmError>
     Ok(())
 }
 
-fn read_pem_file(prompt:&str) -> Result<pem::Pem, MgmError> {
-    let content = read_file_string(prompt)?;
+fn read_pem_file(file_path:String) -> Result<pem::Pem, MgmError> {
+    let content = read_file_string(file_path)?;
     match pem::parse(content) {
         Ok(pem) => Ok(pem),
         Err(err) => {
             cliclack::log::error("Failed to parse file content as PEM")?;
             if cliclack::confirm("Try again?").interact()? {
-                read_pem_file(prompt)
+                read_pem_file(get_file_path("")?)
             } else {
                 Err(MgmError::PemError(err))
             }
@@ -362,7 +344,7 @@ fn asym_import_key(session: &Session, current_authkey: u16) -> Result<(), MgmErr
     let label = get_label()?;
     let domains = get_domains()?;
 
-    let pem = read_pem_file("Enter path to PEM file: ")?;
+    let pem = read_pem_file(get_file_path("Enter path to PEM file: ")?)?;
     let key_bytes = pem.contents();
 
     let permissible_capabilities = get_permissible_capabilities(session, current_authkey)?;
@@ -730,7 +712,7 @@ fn asym_sign(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
             cliclack::input("Data to sign: ").interact()?
         }
         InputOutputFormat::BINARY => {
-            read_file_string("Absolute path to file containing data to sign: ")?
+            read_file_string(get_file_path("Absolute path to file containing data to sign: ")?)?
         }
         _ => unreachable!()
     };
@@ -858,7 +840,7 @@ fn asym_derive_ecdh(session: &Session, current_authkey: u16) -> Result<(), MgmEr
     let authkey_capabilities = session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?.capabilities;
     let hsm_key = get_operation_key(session, &authkey_capabilities, [ObjectCapability::DeriveEcdh].to_vec().as_ref(), &EC_KEY_ALGORITHM)?;
 
-    let pubkey = openssl::ec::EcKey::public_key_from_pem(read_file_string("Enter path to EC public key PEM file: ")?.as_bytes())?;
+    let pubkey = openssl::ec::EcKey::public_key_from_pem(read_file_string(get_file_path("Enter path to EC public key PEM file: ")?)?.as_bytes())?;
     let mut ctx = BigNumContext::new()?;
     let ec_point_ref = pubkey.public_key();
     let ec_group_ref = pubkey.group();
@@ -1099,7 +1081,7 @@ fn java_import_key(session: &Session ) -> Result<(), MgmError> {
     let label = get_label()?;
     let domains = get_domains()?;
 
-    let pem = read_pem_file("Enter absolute path to PEM file containing private key: ")?;
+    let pem = read_pem_file(get_file_path("Enter absolute path to PEM file containing private key: ")?)?;
     let key_bytes = pem.contents();
 
     let mut capabilities: Vec<ObjectCapability> = Vec::new();
@@ -1149,7 +1131,7 @@ fn java_import_key(session: &Session ) -> Result<(), MgmError> {
         format!("Imported asymmetric private key with ID 0x{:04x} on the device", key_id))?;
 
 
-    let pem = read_pem_file("Enter absolute path to PEM file containing X509Certificate:")?;
+    let pem = read_pem_file(get_file_path("Enter absolute path to PEM file containing X509Certificate:")?)?;
     let cert_bytes = pem.contents();
 
     match openssl::x509::X509::from_der(cert_bytes) {

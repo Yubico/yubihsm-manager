@@ -4,8 +4,9 @@ use crate::util::{delete_objects};
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{get_domains, get_id, get_label, get_object_properties_str, get_permissible_capabilities, list_objects, print_object_properties, select_object_capabilities};
+use util::{get_domains, get_ec_pubkey_from_pemfile, get_file_path, get_id, get_label, get_object_properties_str, get_permissible_capabilities, InputOutputFormat, list_objects, print_object_properties, read_file_bytes, select_object_capabilities};
 use wrap_commands::{get_shares, get_threshold, object_to_file, split_wrapkey};
+use YH_EC_P256_PUBKEY_LEN;
 
 const KSP_WRAPKEY_LEN: usize = 32;
 
@@ -167,7 +168,6 @@ fn create_user(
     let key_id = get_id()?;
     let label = get_label()?;
     let domains = get_domains()?;
-    let pwd = get_password("Enter user password:")?;
 
     let mut key_str = get_object_properties_str(
         &ObjectAlgorithm::Aes128YubicoAuthentication, &label, key_id, &domains, &capabilities);
@@ -176,10 +176,44 @@ fn create_user(
     key_str.push('\n');
 
     cliclack::note("Creating authentication key with:", key_str)?;
+    if !cliclack::confirm("Create authentication key?").interact()? {
+        return Ok(())
+    }
 
-    if cliclack::confirm("Create authentication key?").interact()? {
+    let asymauth = cliclack::select("Select authentication key type:")
+        .item(false, "Password derived", "Session keys are derived from a password")
+        .item(true, "Asymmetric", "Using ECP256 curve")
+        .interact()?;
+
+    if !asymauth {
+        let pwd = get_password("Enter user password:")?;
+
         let id = session.import_authentication_key(
             key_id, &label, &domains, &capabilities, &delegated_capabilities, pwd.as_bytes())?;
+        cliclack::log::success(format!("Created new authentication key with ID 0x{id:04x}"))?;
+
+    } else {
+        let format = cliclack::select("Select public key format:")
+            .initial_value(InputOutputFormat::PEM)
+            .item(InputOutputFormat::PEM, InputOutputFormat::PEM, "")
+            .item(InputOutputFormat::BINARY, InputOutputFormat::BINARY, "")
+            .interact()?;
+
+        let pubkey = match format {
+            InputOutputFormat::PEM => {
+                get_ec_pubkey_from_pemfile(get_file_path("Enter path to ECP256 public key PEM file: ")?)?
+            }
+            InputOutputFormat::BINARY => {
+                read_file_bytes("Enter path to ECP256 public key binary file: ")?
+            }
+            _ => unreachable!()
+        };
+
+        if pubkey.len() != YH_EC_P256_PUBKEY_LEN {
+            return Err(MgmError::Error("Invalid public key".to_string()))
+        }
+        let id = session.import_authentication_publickey(
+            key_id, &label, &domains, &capabilities, &delegated_capabilities, &pubkey)?;
         cliclack::log::success(format!("Created new authentication key with ID 0x{id:04x}"))?;
     }
     Ok(())

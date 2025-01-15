@@ -1,6 +1,6 @@
 extern crate yubihsmrs;
 
-use std::fmt::Display;
+use std::fmt::{Display};
 use std::{fmt, fs};
 use std::collections::HashSet;
 use std::convert::TryFrom;
@@ -10,9 +10,31 @@ use std::ops::Deref;
 use std::path::Path;
 use std::str::FromStr;
 use cliclack::MultiSelect;
+use openssl::bn::BigNumContext;
+use openssl::ec::PointConversionForm;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::{Session};
 use error::MgmError;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InputOutputFormat {
+    #[default]
+    STDIN,
+    BINARY,
+    PEM,
+    PASSWORD,
+}
+
+impl Display for InputOutputFormat {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            InputOutputFormat::STDIN => write!(f, "Stdin"),
+            InputOutputFormat::BINARY => write!(f, "Binary file"),
+            InputOutputFormat::PEM => write!(f, "PEM file"),
+            InputOutputFormat::PASSWORD => write!(f, "Password"),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BasicDescriptor {
@@ -155,7 +177,7 @@ pub fn delete_objects(session: &Session, object_handles: Vec<ObjectHandle>) -> R
     Ok(())
 }
 
-fn get_file_path(prompt:&str) -> Result<String, MgmError> {
+pub fn get_file_path(prompt:&str) -> Result<String, MgmError> {
     let file_path: String = cliclack::input(prompt)
         .validate(|input: &String| {
             if input.is_empty() {
@@ -170,15 +192,13 @@ fn get_file_path(prompt:&str) -> Result<String, MgmError> {
     Ok(file_path)
 }
 
-
-pub fn read_file_string(prompt:&str) -> Result<String, MgmError> {
-    let file_path = get_file_path(prompt)?;
+pub fn read_file_string(file_path:String) -> Result<String, MgmError> {
     match fs::read_to_string(file_path) {
         Ok(content) => Ok(content),
         Err(err) => {
             cliclack::log::error("Failed to read file to string")?;
             if cliclack::confirm("Try again?").interact()? {
-                read_file_string(prompt)
+                read_file_string(get_file_path("")?)
             } else {
                 Err(MgmError::StdIoError(err))
             }
@@ -199,6 +219,20 @@ pub fn read_file_bytes(prompt:&str) -> Result<Vec<u8>, MgmError> {
             }
         }
     }
+}
+
+pub fn get_ec_pubkey_from_pemfile(file_path:String) -> Result<Vec<u8>, MgmError> {
+    let pubkey = openssl::ec::EcKey::public_key_from_pem(read_file_string(file_path)?.as_bytes())?;
+    let mut ctx = BigNumContext::new()?;
+    let ec_point_ref = pubkey.public_key();
+    let ec_group_ref = pubkey.group();
+    Ok(ec_point_ref.to_bytes(ec_group_ref, PointConversionForm::UNCOMPRESSED, &mut ctx)?)
+}
+
+pub fn get_ec_privkey_from_pemfile(file_path:String) -> Result<Vec<u8>, MgmError> {
+    let privkey = openssl::ec::EcKey::private_key_from_pem(read_file_string(file_path)?.as_bytes())?;
+    let s = privkey.private_key();
+    Ok(s.to_vec())
 }
 
 pub fn write_file(content: Vec<u8>, filename:&String) -> Result<(), MgmError> {
