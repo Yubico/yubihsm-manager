@@ -1,27 +1,27 @@
-extern crate yubihsmrs;
-extern crate openssl;
-extern crate pem;
-extern crate serde;
-extern crate hex;
 extern crate base64;
-extern crate rusty_secrets;
-extern crate regex;
-extern crate scan_dir;
-#[macro_use]
-extern crate lazy_static;
-
 extern crate clap;
 extern crate cliclack;
 extern crate console;
+extern crate hex;
+#[macro_use]
+extern crate lazy_static;
+extern crate openssl;
+extern crate pem;
+extern crate regex;
+extern crate rusty_secrets;
+extern crate scan_dir;
+extern crate serde;
+extern crate yubihsmrs;
 
 
 use std::str::FromStr;
+
 use clap::Arg;
 use yubihsmrs::{Session, YubiHsm};
-use util::{get_ec_privkey_from_pemfile};
 
 use error::MgmError;
-use util::{list_objects};
+use util::get_ec_privkey_from_pemfile;
+use util::list_objects;
 
 pub mod error;
 pub mod util;
@@ -132,7 +132,9 @@ fn main() -> Result<(), MgmError>{
             .long("verbose")
             .short('v')
             .help("Produce more debug output")
-            .num_args(0))
+            .num_args(0)
+            .default_value("false")
+            .action(clap::ArgAction::SetTrue))
         .get_matches();
 
     let Some(connector) = matches.get_one::<String>("connector") else {
@@ -147,7 +149,7 @@ fn main() -> Result<(), MgmError>{
 
     let h = unwrap_or_exit1!(YubiHsm::new(connector), "Unable to create HSM object");
 
-    if let Err(err) = h.set_verbosity(matches.contains_id("verbose")) {
+    if let Err(err) = h.set_verbosity(matches.get_flag("verbose")) {
         cliclack::log::error(format!("Unable to set verbosity: {}", err))?;
         std::process::exit(1);
     };
@@ -232,5 +234,24 @@ fn main() -> Result<(), MgmError>{
         if let Err(err) = result {
             cliclack::log::error(err)?;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn id_test() {
+        let id = parse_id("0");
+        assert_eq!(id, Ok(0));
+        let id = parse_id("100");
+        assert_eq!(id, Ok(100));
+        let id = parse_id("0x64");
+        assert_eq!(id, Ok(100));
+        let id = parse_id("6553564");
+        assert!(id.is_err());
+        let id = parse_id("ID");
+        assert!(id.is_err());
     }
 }
