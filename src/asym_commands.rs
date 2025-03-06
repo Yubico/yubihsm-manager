@@ -667,43 +667,6 @@ fn get_mgf1_algorithm(hash_algo: HashAlgorithm) -> ObjectAlgorithm {
     }
 }
 
-// fn get_operation_key(session:&Session, authkey_capabilities: &Vec<ObjectCapability>,
-//                      op_capabilities: &Vec<ObjectCapability>, key_algo: &[ObjectAlgorithm]) -> Result<ObjectDescriptor, MgmError> {
-//     let key_capabilities = get_intersected_capabilities(
-//         authkey_capabilities, op_capabilities);
-//     if key_capabilities.is_empty() {
-//         return Err(MgmError::Error("Current user does not have the right capabilities".to_string()))
-//     }
-//     let keys = session.list_objects_with_filter(
-//         0,
-//         ObjectType::AsymmetricKey,
-//         "",
-//         ObjectAlgorithm::ANY,
-//         &key_capabilities)?;
-//
-//     if key_algo.is_empty() {
-//         select_one_object(session, keys, "Select signing key")
-//     } else {
-//         let mut descs = Vec::new();
-//         for k in keys {
-//             let desc = session.get_object_info(k.object_id, k.object_type)?;
-//             if key_algo.contains(&desc.algorithm) {
-//                 descs.push(desc);
-//             }
-//         }
-//
-//         if descs.is_empty() {
-//             return Err(MgmError::Error("No asymmetric keys were found for operation".to_string()));
-//         }
-//
-//         let mut key = cliclack::select("Select operational key");
-//         for desc in descs {
-//             key = key.item(desc.clone(), BasicDescriptor::from(desc), "");
-//         }
-//         Ok(key.interact()?)
-//     }
-// }
-
 
 fn asym_sign(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
 

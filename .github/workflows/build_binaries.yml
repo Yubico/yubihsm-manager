@@ -8,11 +8,11 @@ jobs:
     name: Ubuntu
     runs-on: ubuntu-latest
     env:
-      YUBIHSMSDK_VERSION: 2023-08
+      YUBIHSMSDK_VERSION: 2024-09
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # download yubihsm-sdk installer from dev.y.c and install it
       - name: install yubihsm-shell
@@ -58,7 +58,7 @@ jobs:
           ./target/release/yubihsm-manager --help
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: yubihsm-manager-deb
           path: artifact
@@ -75,11 +75,11 @@ jobs:
           - os: macos-latest-xlarge
             arch: arm
     env:
-      YUBIHSMSDK_VERSION: 2023-08
+      YUBIHSMSDK_VERSION: 2024-09
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # download yubihsm-sdk installer from dev.y.c and install it
       - name: install yubihsm-shell
@@ -103,7 +103,7 @@ jobs:
         run: |
           set -e -o pipefail
           set -x
-          mkdir artifact
+          mkdir -p artifact
 
           cd ..
           brew install libusb
@@ -113,18 +113,32 @@ jobs:
             bash ./rustup.sh -y
           fi
 
+          ls -l /usr/local/lib
+          
+
           cd yubihsm-manager
-          RUSTFLAGS="-C link-args=-Wl,-rpath,\$ORIGIN/../lib"  YUBIHSM_LIB_DIR=/usr/local/lib cargo build --release
+          RUSTFLAGS="-C link-args=-Wl,-rpath,../lib"  YUBIHSM_LIB_DIR=/usr/local/lib cargo build --release
           strip -u -r target/release/yubihsm-manager
+          
           install target/release/yubihsm-manager artifact
+          
+          cd artifact
+          
+          install_name_tool -change "/opt/homebrew/opt/openssl@3/lib/libcrypto.3.dylib" "/usr/local/lib/libcrypto.3.dylib" "yubihsm-manager"
+          #install_name_tool -change "/opt/homebrew/opt/openssl@3/lib/libssl.3.dylib" "../lib/libssl.3.dylib" "yubihsm-manager"
+          install_name_tool -change "@rpath/libyubihsm.2.dylib" "/usr/local/lib/libyubihsm.2.6.0.dylib" "yubihsm-manager"
 
-          otool -L target/release/yubihsm-manager
+          otool -L yubihsm-manager
+          #otool -l yubihsm-manager
+          
+          ./yubihsm-manager --version
+          ./yubihsm-manager --help
 
-          ./target/release/yubihsm-manager --version
-          ./target/release/yubihsm-manager --help
+
+          
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: yubihsm-manager-macos-${{ matrix.arch }}
           path: artifact
@@ -133,11 +147,11 @@ jobs:
     name: Windows
     runs-on: windows-latest
     env:
-      LIBYUBIHSM_VERSION: 2.4.1
+      LIBYUBIHSM_VERSION: 2.6.0
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # downloads and build yubihsm-shell from source release on dev.y.c
       - name: install yubihsm-shell
@@ -164,6 +178,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           Set-PSDebug -Trace 1
+                  
           mkdir artifact
           
           $env:OPENSSL_LIB_DIR="C:\Strawberry\c\lib"
@@ -175,12 +190,13 @@ jobs:
 
           $env:RUST_BACKTRACE=1
           $env:YUBIHSM_LIB_DIR="C:\Program Files\Yubico\YubiHSM Shell\bin"
-          #$env:PATH+=";C:\Program Files\Yubico\YubiHSM Shell\bin;C:\rtools43\x86_64-w64-mingw32.static.posix\bin"
+          #$env:PATH+=";C:\Program Files\Yubico\YubiHSM Shell\bin;C:\rtools44\x86_64-w64-mingw32.static.posix\bin"
+          cargo.exe update
           cargo.exe build --release 
           install target/release/yubihsm-manager $env:GITHUB_WORKSPACE/artifact/yubihsm-manager
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: yubihsm-manager-windows
           path: artifact
