@@ -26,6 +26,7 @@ use util::list_objects;
 pub mod error;
 pub mod util;
 pub mod asym_commands;
+pub mod sym_commands;
 pub mod auth_commands;
 pub mod wrap_commands;
 
@@ -50,6 +51,7 @@ enum MainCommand {
     ListObjects,
     AuthMgm,
     AsymMgm,
+    SymMgm,
     WrapMgm,
     Random,
     Reset,
@@ -209,6 +211,7 @@ fn main() -> Result<(), MgmError>{
         let command = cliclack::select("")
             .item(MainCommand::ListObjects, "List all objects", "")
             .item(MainCommand::AsymMgm, "Manage asymmetric keys", "")
+            .item(MainCommand::SymMgm, "Manage symmetric keys", "Available with firmware version 2.3.1 or later")
             .item(MainCommand::AuthMgm, "Manage authentication keys", "")
             .item(MainCommand::WrapMgm, "Manage wrap keys", "")
             .item(MainCommand::Random, "Generate pseudo random number", "")
@@ -224,6 +227,7 @@ fn main() -> Result<(), MgmError>{
                 }
             },
             MainCommand::AsymMgm => asym_commands::exec_asym_command(&session, authkey),
+            MainCommand::SymMgm => sym_commands::exec_sym_command(&session, authkey),
             MainCommand::AuthMgm => auth_commands::exec_auth_command(&session, authkey),
             MainCommand::WrapMgm => wrap_commands::exec_wrap_command(&session, authkey),
             MainCommand::Random => get_random_number(&session),

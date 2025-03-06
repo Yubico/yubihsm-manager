@@ -21,6 +21,7 @@ pub enum InputOutputFormat {
     #[default]
     STDIN,
     BINARY,
+    HEX,
     PEM,
     PASSWORD,
 }
@@ -30,7 +31,8 @@ impl Display for InputOutputFormat {
         match self {
             InputOutputFormat::STDIN => write!(f, "Stdin"),
             InputOutputFormat::BINARY => write!(f, "Binary file"),
-            InputOutputFormat::PEM => write!(f, "PEM file"),
+            InputOutputFormat::HEX => write!(f, "Hex format"),
+            InputOutputFormat::PEM => write!(f, "PEM format"),
             InputOutputFormat::PASSWORD => write!(f, "Password"),
         }
     }
@@ -318,7 +320,7 @@ pub fn list_objects(session: &Session, objects: &Vec<ObjectHandle>) -> Result<()
     Ok(())
 }
 
-pub fn get_intesected_capabilities(vec1: &Vec<ObjectCapability>, vec2: &Vec<ObjectCapability>) -> Vec<ObjectCapability> {
+pub fn get_intersected_capabilities(vec1: &Vec<ObjectCapability>, vec2: &Vec<ObjectCapability>) -> Vec<ObjectCapability> {
     let caps1: HashSet<ObjectCapability> = vec1.clone().into_iter().collect();
     let caps2: HashSet<ObjectCapability> = vec2.clone().into_iter().collect();
     caps1.intersection(&caps2).copied().collect::<Vec<ObjectCapability>>()
@@ -333,7 +335,7 @@ pub fn select_object_capabilities(
 
     let selectable_capabilities: Vec<ObjectCapability> =
         if calculate_intersection {
-            get_intesected_capabilities(type_capabilities, permissible_capabilities)
+            get_intersected_capabilities(type_capabilities, permissible_capabilities)
         } else {
             type_capabilities.clone()
         };
@@ -364,4 +366,47 @@ pub fn get_permissible_capabilities(session: &Session, current_authkey: u16) -> 
         },
     };
     Ok(delegated_capabilities)
+}
+
+pub fn get_operation_key(
+    session:&Session,
+    authkey_capabilities: &Vec<ObjectCapability>,
+    op_capabilities: &Vec<ObjectCapability>,
+    object_type: ObjectType,
+    key_algo: &[ObjectAlgorithm]) -> Result<ObjectDescriptor, MgmError> {
+
+    let key_capabilities = get_intersected_capabilities(
+        authkey_capabilities, op_capabilities);
+    if key_capabilities.is_empty() {
+        return Err(MgmError::Error("Current user does not have the right capabilities".to_string()))
+    }
+
+    let keys = session.list_objects_with_filter(
+        0,
+        object_type,
+        "",
+        ObjectAlgorithm::ANY,
+        &key_capabilities)?;
+
+    if key_algo.is_empty() {
+        select_one_object(session, keys, "Select operation key")
+    } else {
+        let mut descs = Vec::new();
+        for k in keys {
+            let desc = session.get_object_info(k.object_id, k.object_type)?;
+            if key_algo.contains(&desc.algorithm) {
+                descs.push(desc);
+            }
+        }
+
+        if descs.is_empty() {
+            return Err(MgmError::Error("No keys were found for operation".to_string()));
+        }
+
+        let mut key = cliclack::select("Select operation key");
+        for desc in descs {
+            key = key.item(desc.clone(), BasicDescriptor::from(desc), "");
+        }
+        Ok(key.interact()?)
+    }
 }

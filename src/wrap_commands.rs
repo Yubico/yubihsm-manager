@@ -258,6 +258,8 @@ fn import_user_generated(session:&Session, current_authkey:u16) -> Result<(), Mg
         .validate(|input: &String| {
             if hex::decode(input).is_err() {
                 Err("Input must be in hex format")
+            } else if input.len() != 32 && input.len() != 48 && input.len() != 64 {
+                Err("Input must be 32, 48 or 64 characters long")
             } else {
                 Ok(())
             }
@@ -268,7 +270,7 @@ fn import_user_generated(session:&Session, current_authkey:u16) -> Result<(), Mg
         32 => ObjectAlgorithm::Aes256CcmWrap,
         24 => ObjectAlgorithm::Aes192CcmWrap,
         16 => ObjectAlgorithm::Aes128CcmWrap,
-        _ => return Err(MgmError::InvalidInput("Wrap key length".to_string()))
+        _ => unreachable!()
     };
 
     perform_key_import(session, current_authkey, key_id, label, domains,  key_algo, wrap_key)
