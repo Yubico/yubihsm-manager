@@ -175,11 +175,6 @@ fn create_user(
     delegated_capabilities.iter().for_each(|cap| key_str.push_str(format!("{:?}, ", cap).as_str()));
     key_str.push('\n');
 
-    cliclack::note("Creating authentication key with:", key_str)?;
-    if !cliclack::confirm("Create authentication key?").interact()? {
-        return Ok(())
-    }
-
     let asymauth = cliclack::select("Select authentication key type:")
         .item(false, "Password derived", "Session keys are derived from a password")
         .item(true, "Asymmetric", "Using ECP256 curve")
@@ -215,6 +210,11 @@ fn create_user(
         let id = session.import_authentication_publickey(
             key_id, &label, &domains, &capabilities, &delegated_capabilities, &pubkey)?;
         cliclack::log::success(format!("Created new authentication key with ID 0x{id:04x}"))?;
+    }
+
+    cliclack::note("Creating authentication key with:", key_str)?;
+    if !cliclack::confirm("Create authentication key?").interact()? {
+        return Ok(())
     }
     Ok(())
 }
@@ -298,7 +298,7 @@ fn auth_setup_backupadmin(session: &Session, current_authkey: u16) -> Result<(),
 }
 
 
-fn setup_ksp(session: &Session, current_authkey: u16) -> Result<(), MgmError>{
+pub fn setup_ksp(session: &Session, current_authkey: u16) -> Result<(), MgmError>{
     let capabilities_rsa_decrypt = &[ObjectCapability::DecryptPkcs, ObjectCapability::DecryptOaep];
 
     let mut wrapkey_delegated = vec![

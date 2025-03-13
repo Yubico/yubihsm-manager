@@ -45,14 +45,19 @@ macro_rules! unwrap_or_exit1 {
 const YH_EC_P256_PUBKEY_LEN: usize = 65;
 const YH_EC_P256_PRIVKEY_LEN: usize = 32;
 
+const MENU_STRING: &str = "YubiHSM Manager";
+
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
 enum MainCommand {
     #[default]
+    GetDeviceInfo,
     ListObjects,
     AuthMgm,
     AsymMgm,
     SymMgm,
     WrapMgm,
+    Ksp,
+    Java,
     Random,
     Reset,
     Exit,
@@ -87,8 +92,9 @@ fn get_random_number(session: &Session) -> Result<(), MgmError> {
         })
         .interact()?;
     match session.get_random(nr_of_bytes) {
-        Ok(random) => cliclack::log::success(hex::encode(random))?,
-        Err(err) => {
+        //Ok(random) => cliclack::log::success(hex::encode(random))?,
+            Ok(random) => println!("{}", hex::encode(random)),
+            Err(err) => {
             cliclack::log::error(format!("Failed to get pseudo random number from device. {}", err))?;
         }
     }
@@ -206,20 +212,28 @@ fn main() -> Result<(), MgmError>{
         unwrap_or_exit1!(h.establish_session(authkey, &password, true), "Unable to open session")
     };
 
-
     loop {
+        println!("\n{}", MENU_STRING);
+
         let command = cliclack::select("")
+            .item(MainCommand::GetDeviceInfo, "Get device info", "")
             .item(MainCommand::ListObjects, "List all objects", "")
-            .item(MainCommand::AsymMgm, "Manage asymmetric keys", "")
-            .item(MainCommand::SymMgm, "Manage symmetric keys", "Available with firmware version 2.3.1 or later")
-            .item(MainCommand::AuthMgm, "Manage authentication keys", "")
-            .item(MainCommand::WrapMgm, "Manage wrap keys", "")
+            .item(MainCommand::AsymMgm, "Asymmetric keys", "")
+            .item(MainCommand::SymMgm, "Symmetric keys", "Available with firmware version 2.3.1 or later")
+            .item(MainCommand::AuthMgm, "Authentication keys", "")
+            .item(MainCommand::WrapMgm, "Wrap keys", "")
+            .item(MainCommand::Ksp, "Special usecase: KSP", "")
+            .item(MainCommand::Java, "Special usecase: JAVA", "")
             .item(MainCommand::Random, "Generate pseudo random number", "")
             .item(MainCommand::Reset, "Reset device", "")
             .item(MainCommand::Exit, "Exit", "")
             .interact()?;
 
         let result = match command {
+            MainCommand::GetDeviceInfo => {
+                cliclack::log::success(h.get_device_info()?)?;
+                Ok(())
+            },
             MainCommand::ListObjects => {
                 match session.list_objects() {
                     Ok(objects ) => list_objects(&session, &objects),
@@ -230,6 +244,8 @@ fn main() -> Result<(), MgmError>{
             MainCommand::SymMgm => sym_commands::exec_sym_command(&session, authkey),
             MainCommand::AuthMgm => auth_commands::exec_auth_command(&session, authkey),
             MainCommand::WrapMgm => wrap_commands::exec_wrap_command(&session, authkey),
+            MainCommand::Ksp => auth_commands::setup_ksp(&session, authkey),
+            MainCommand::Java => asym_commands::asym_java_manage(&session, authkey),
             MainCommand::Random => get_random_number(&session),
             MainCommand::Reset => reset_device(&session),
             MainCommand::Exit => std::process::exit(0),

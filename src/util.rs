@@ -29,7 +29,7 @@ pub enum InputOutputFormat {
 impl Display for InputOutputFormat {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            InputOutputFormat::STDIN => write!(f, "Stdin"),
+            InputOutputFormat::STDIN => write!(f, "Keybord input"),
             InputOutputFormat::BINARY => write!(f, "Binary file"),
             InputOutputFormat::HEX => write!(f, "Hex format"),
             InputOutputFormat::PEM => write!(f, "PEM format"),
@@ -109,6 +109,27 @@ pub fn get_domains() -> Result<Vec<ObjectDomain>, MgmError> {
 
     if domains.contains(&u16::try_from(0).unwrap()) {
         Ok(ObjectDomain::from_primitive(0xffff))
+    } else {
+        let mut ds = Vec::new();
+        for d in domains {
+            ds.push(ObjectDomain::try_from(d)?)
+        }
+        Ok(ds)
+    }
+}
+
+pub fn select_domains(selection: &Vec<ObjectDomain>) -> Result<Vec<ObjectDomain>, MgmError> {
+    let mut domains: MultiSelect<u16> = cliclack::multiselect(
+        "Select domain(s). Press the space button to select and unselect item. Press 'Enter' when done.");
+    domains = domains.initial_values(vec![u16::try_from(0xffff).unwrap()]);
+    domains = domains.item(0xffff, "All Domains", "Select all domains");
+    for d in selection {
+        domains = domains.item((u16::from(d.clone()).trailing_zeros() + 1) as u16, d, "");
+    }
+    let domains = domains.interact()?;
+
+    if domains.contains(&u16::try_from(0xffff).unwrap()) {
+        Ok(selection.clone())
     } else {
         let mut ds = Vec::new();
         for d in domains {
@@ -313,9 +334,9 @@ pub fn get_object_properties_str_with_delegated(
 }
 
 pub fn list_objects(session: &Session, objects: &Vec<ObjectHandle>) -> Result<(), MgmError> {
-    cliclack::log::remark(format!("Found {} objects", objects.len()))?;
+    println!("Found {} objects\n", objects.len());
     for object in objects {
-        println!("  {}", BasicDescriptor::from(session.get_object_info(object.object_id, object.object_type)?));
+        println!("{}", BasicDescriptor::from(session.get_object_info(object.object_id, object.object_type)?));
     }
     Ok(())
 }
@@ -331,11 +352,11 @@ pub fn select_object_capabilities(
     default_select_all: bool,
     calculate_intersection: bool,
     type_capabilities:&Vec<ObjectCapability>,
-    permissible_capabilities:&Vec<ObjectCapability>) -> Result<Vec<ObjectCapability>, MgmError> {
+    all_capabilities:&Vec<ObjectCapability>) -> Result<Vec<ObjectCapability>, MgmError> {
 
     let selectable_capabilities: Vec<ObjectCapability> =
         if calculate_intersection {
-            get_intersected_capabilities(type_capabilities, permissible_capabilities)
+            get_intersected_capabilities(type_capabilities, all_capabilities)
         } else {
             type_capabilities.clone()
         };
@@ -366,6 +387,12 @@ pub fn get_permissible_capabilities(session: &Session, current_authkey: u16) -> 
         },
     };
     Ok(delegated_capabilities)
+}
+pub fn get_capability_collection(caps: &Option<Vec<ObjectCapability>>) -> Vec<ObjectCapability> {
+    match caps {
+        Some(caps) => caps.clone(),
+        None => Vec::new()
+    }
 }
 
 pub fn get_operation_key(

@@ -70,12 +70,12 @@ fn get_sym_command(session: &Session, current_authkey: u16) -> Result<SymCommand
     if HashSet::from([
         ObjectCapability::EncryptEcb,
         ObjectCapability::EncryptCbc]).intersection(&capabilities).count() > 0 {
-        commands = commands.item(SymCommand::PerformEncryption, "Do encryption", "");
+        commands = commands.item(SymCommand::PerformEncryption, "Encrypt", "");
     }
     if HashSet::from([
         ObjectCapability::DecryptEcb,
         ObjectCapability::DecryptCbc]).intersection(&capabilities).count() > 0 {
-        commands = commands.item(SymCommand::PerformDecryption, "Do decryption", "");
+        commands = commands.item(SymCommand::PerformDecryption, "Decrypt", "");
     }
     commands = commands.item(SymCommand::ReturnToMainMenu, "Return to main menu", "");
     Ok(commands.interact()?)

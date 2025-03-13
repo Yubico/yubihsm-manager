@@ -24,15 +24,6 @@ enum WrapCommand {
     ReturnToMainMenu,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum WrapImportKeyCommand {
-    #[default]
-    UserGenerated,
-    DeviceGenerated,
-    ImportFromShares,
-    ReturnToMenu,
-}
-
 const ACCEPTED_WRAP_KEY_LEN: [u32;3] = [128, 192, 256];
 const WRAP_SPLIT_PREFIX_LEN: usize = 20; // 2 object ID bytes + 2 domains bytes +
                                          // 8 capabilities bytes +
@@ -178,29 +169,11 @@ fn wrap_gen_key(session: &Session, current_authkey: u16) -> Result<(), MgmError>
 }
 
 fn wrap_import_key(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
-    loop {
-        let cmd = get_import_key_subcommand()?;
-        if let Err(err) = match cmd {
-            WrapImportKeyCommand::UserGenerated => import_user_generated(session, current_authkey),
-            WrapImportKeyCommand::DeviceGenerated => import_device_generated(session, current_authkey),
-            WrapImportKeyCommand::ImportFromShares => import_from_shares(session),
-            WrapImportKeyCommand::ReturnToMenu => break,
-        } {
-            cliclack::log::error(err)?;
-        }
+    if cliclack::confirm("Re-create from shares?").interact()? {
+        import_from_shares(session)
+    } else {
+        import_user_generated(session, current_authkey)
     }
-    Ok(())
-}
-
-fn get_import_key_subcommand() -> Result<WrapImportKeyCommand, MgmError> {
-    Ok(cliclack::select("")
-        .item(WrapImportKeyCommand::UserGenerated, "Import key from user input", "")
-        .item(WrapImportKeyCommand::DeviceGenerated, "Import key from device generated random number",
-              "get-pseudo-random function will be called to generated a random number that will be used as \
-              the wrap key to import")
-        .item(WrapImportKeyCommand::ImportFromShares, "Import key from shares", "")
-        .item(WrapImportKeyCommand::ReturnToMenu, "Return to main menu", "")
-        .interact()?)
 }
 
 fn perform_key_import(
@@ -251,9 +224,6 @@ fn perform_key_import(
 }
 
 fn import_user_generated(session:&Session, current_authkey:u16) -> Result<(), MgmError> {
-    let key_id = get_id()?;
-    let label = get_label()?;
-    let domains = get_domains()?;
     let key_str:String = cliclack::input("Enter wrap key in hex:")
         .validate(|input: &String| {
             if hex::decode(input).is_err() {
@@ -273,29 +243,22 @@ fn import_user_generated(session:&Session, current_authkey:u16) -> Result<(), Mg
         _ => unreachable!()
     };
 
-    perform_key_import(session, current_authkey, key_id, label, domains,  key_algo, wrap_key)
-}
-
-fn import_device_generated(session:&Session, current_authkey:u16) ->  Result<(), MgmError> {
     let key_id = get_id()?;
     let label = get_label()?;
     let domains = get_domains()?;
-    let key_len = get_key_len()?;
-    let key_algo = get_key_algo(key_len);
-    let wrap_key = session.get_random((key_len/8) as usize)?;
 
     perform_key_import(session, current_authkey, key_id, label, domains,  key_algo, wrap_key)
 }
 
 fn import_from_shares(session:&Session) -> Result<(), MgmError> {
-    let label = get_label()?;
-
     let (key_id,
         key_algorithm,
         domains,
         capabilities,
         delegated_capabilities,
         key) = recover_wrapkey()?;
+
+    let label = get_label()?;
 
     cliclack::note("Import wrap key with:",
                    get_object_properties_str_with_delegated(
@@ -489,7 +452,7 @@ pub fn get_shares() -> Result<u16, MgmError> {
 
 pub fn get_threshold(shares:u16) -> Result<u16, MgmError> {
     //let shares_clone = shares;
-    let t: String = cliclack::input("Enter the privacy threshold:")
+    let t: String = cliclack::input("Enter the number of shared necessary to re-create:")
         .placeholder("Must be greater than 0 and less than the number of shares")
         .validate(move |input: &String| {
             if input.parse::<u16>().is_err() {
@@ -552,18 +515,18 @@ pub fn split_wrapkey(
     cliclack::log::warning(
         "*************************************************************\n\
         * WARNING! The following shares will NOT be stored anywhere *\n\
-        * Record them and store them safely if you wish to re-use   *\n\
+        * Save them and store them safely if you wish to re-use   *\n\
         * the wrap key for this device in the future                *\n\
         *************************************************************")?;
 
-    let _str: String = cliclack::input("Press Enter to start recording key shares").required(false).interact()?;
+    let _str: String = cliclack::input("Press Enter to start saving key shares").required(false).interact()?;
 
     let shares = rusty_secrets::generate_shares(threshold as u8, shares as u8, &data)?;
 
     for share in shares {
         cliclack::clear_screen()?;
         cliclack::note("", share)?;
-        if cliclack::confirm("Have you recorded the key share?").interact()? {
+        if cliclack::confirm("Have you saved the key share?").interact()? {
             cliclack::clear_screen()?;
             let _str: String = cliclack::input(
                 "Press any key to display next key share or to return to menu").required(false).interact()?;
