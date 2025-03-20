@@ -1,8 +1,13 @@
-use std::collections::HashSet;
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectHandle, ObjectType};
+use std::fmt;
+use std::fmt::Display;
+use std::sync::LazyLock;
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{delete_objects, get_domains, get_id, get_label, get_object_properties_str, get_operation_key, get_permissible_capabilities, list_objects, print_object_properties, select_object_capabilities};
+use MAIN_STRING;
+use util::{delete_objects, get_new_object_basics, get_op_key, list_objects, print_object_properties};
+
+static SYM_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Symmetric keys", MAIN_STRING));
 
 const AES_KEY_CAPABILITIES: [ObjectCapability; 5] = [
     ObjectCapability::EncryptCbc,
@@ -14,14 +19,31 @@ const AES_KEY_CAPABILITIES: [ObjectCapability; 5] = [
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
 enum SymCommand {
     #[default]
-    ListKeys,
+    List,
     GetKeyProperties,
-    GenerateKey,
-    ImportKey,
-    DeleteKey,
-    PerformEncryption,
-    PerformDecryption,
+    Generate,
+    Import,
+    Delete,
+    Encrypt,
+    Decrypt,
     ReturnToMainMenu,
+    Exit,
+}
+
+impl Display for SymCommand {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SymCommand::List => write!(f, "List"),
+            SymCommand::GetKeyProperties => write!(f, "Print object properties"),
+            SymCommand::Generate => write!(f, "Generate"),
+            SymCommand::Import => write!(f, "Import"),
+            SymCommand::Delete => write!(f, "Delete"),
+            SymCommand::Encrypt => write!(f, "Encrypt"),
+            SymCommand::Decrypt => write!(f, "Decrypt"),
+            SymCommand::ReturnToMainMenu => write!(f, "Return to main menu"),
+            SymCommand::Exit => write!(f, "Exit"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
@@ -31,18 +53,43 @@ enum AesMode {
     Cbc,
 }
 
-pub fn exec_sym_command(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
+pub fn exec_sym_command(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+
     loop {
-        let cmd = get_sym_command(session, current_authkey)?;
+        println!("\n{}", SYM_STRING.to_string());
+
+        let cmd = get_command(authkey)?;
         let res = match cmd {
-            SymCommand::ListKeys => sym_list_keys(session),
-            SymCommand::GetKeyProperties => sym_get_key_properties(session),
-            SymCommand::GenerateKey => sym_gen_key(session, current_authkey),
-            SymCommand::ImportKey => sym_import_key(session, current_authkey),
-            SymCommand::DeleteKey => sym_delete_key(session),
-            SymCommand::PerformEncryption=> sym_op(session, current_authkey, true),
-            SymCommand::PerformDecryption => sym_op(session, current_authkey, false),
+            SymCommand::List => {
+                println!("\n{} > {}\n", SYM_STRING.to_string(), SymCommand::List);
+                list(session)
+            },
+            SymCommand::GetKeyProperties => {
+                println!("\n{} > {}\n", SYM_STRING.to_string(), SymCommand::GetKeyProperties);
+                print_key_properties(session)
+            },
+            SymCommand::Generate => {
+                println!("\n{} > {}\n", SYM_STRING.to_string(), SymCommand::Generate);
+                generate(session, authkey)
+            },
+            SymCommand::Import => {
+                println!("\n{} > {}\n", SYM_STRING.to_string(), SymCommand::Import);
+                import(session, authkey)
+            },
+            SymCommand::Delete => {
+                println!("\n{} > {}\n", SYM_STRING.to_string(), SymCommand::Delete);
+                delete(session)
+            },
+            SymCommand::Encrypt => {
+                println!("\n{} > {}\n", SYM_STRING.to_string(), SymCommand::Encrypt);
+                operate(session, authkey, true)
+            },
+            SymCommand::Decrypt => {
+                println!("\n{} > {}\n", SYM_STRING.to_string(), SymCommand::Decrypt);
+                operate(session, authkey, false)
+            },
             SymCommand::ReturnToMainMenu => return Ok(()),
+            SymCommand::Exit => std::process::exit(0),
         };
 
         if let Err(e) = res {
@@ -51,82 +98,79 @@ pub fn exec_sym_command(session: &Session, current_authkey: u16) -> Result<(), M
     }
 }
 
-fn get_sym_command(session: &Session, current_authkey: u16) -> Result<SymCommand, MgmError> {
-    let capabilities: HashSet<ObjectCapability> =
-        session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?.capabilities.into_iter().collect();
+fn get_command(authkey: &ObjectDescriptor) -> Result<SymCommand, MgmError> {
+    // let capabilities: HashSet<ObjectCapability> = authkey.capabilities.into_iter().collect();
+    let capabilities= &authkey.capabilities;
 
-    let mut commands = cliclack::select("").initial_value(SymCommand::ListKeys);
-    commands = commands.item(SymCommand::ListKeys, "List keys", "");
-    commands = commands.item(SymCommand::GetKeyProperties, "Get key properties", "");
+    let mut commands = cliclack::select("").initial_value(SymCommand::List);
+    commands = commands.item(SymCommand::List, SymCommand::List, "");
+    commands = commands.item(SymCommand::GetKeyProperties, SymCommand::GetKeyProperties, "");
     if capabilities.contains(&ObjectCapability::GenerateSymmetricKey) {
-        commands = commands.item(SymCommand::GenerateKey, "Generate AES key", "");
+        commands = commands.item(SymCommand::Generate, SymCommand::Generate, "");
     }
     if capabilities.contains(&ObjectCapability::PutSymmetricKey) {
-        commands = commands.item(SymCommand::ImportKey, "Import AES key", "");
+        commands = commands.item(SymCommand::Import, SymCommand::Import, "");
     }
     if capabilities.contains(&ObjectCapability::DeleteSymmetricKey) {
-        commands = commands.item(SymCommand::DeleteKey, "Delete AES key", "");
+        commands = commands.item(SymCommand::Delete, SymCommand::Delete, "");
     }
-    if HashSet::from([
-        ObjectCapability::EncryptEcb,
-        ObjectCapability::EncryptCbc]).intersection(&capabilities).count() > 0 {
-        commands = commands.item(SymCommand::PerformEncryption, "Encrypt", "");
+    if capabilities.contains(&ObjectCapability::EncryptEcb) ||
+        capabilities.contains(&ObjectCapability::EncryptCbc) {
+    // if HashSet::from([
+    //     ObjectCapability::EncryptEcb,
+    //     ObjectCapability::EncryptCbc]).intersection(&capabilities).count() > 0 {
+        commands = commands.item(SymCommand::Encrypt, SymCommand::Encrypt, "");
     }
-    if HashSet::from([
-        ObjectCapability::DecryptEcb,
-        ObjectCapability::DecryptCbc]).intersection(&capabilities).count() > 0 {
-        commands = commands.item(SymCommand::PerformDecryption, "Decrypt", "");
+    if capabilities.contains(&ObjectCapability::DecryptEcb) ||
+        capabilities.contains(&ObjectCapability::DecryptCbc) {
+    // if HashSet::from([
+    //     ObjectCapability::DecryptEcb,
+    //     ObjectCapability::DecryptCbc]).intersection(&capabilities).count() > 0 {
+        commands = commands.item(SymCommand::Decrypt, SymCommand::Decrypt, "");
     }
-    commands = commands.item(SymCommand::ReturnToMainMenu, "Return to main menu", "");
+    commands = commands.item(SymCommand::ReturnToMainMenu, SymCommand::ReturnToMainMenu, "");
+    commands = commands.item(SymCommand::Exit, SymCommand::Exit, "");
     Ok(commands.interact()?)
 }
 
 fn get_all_sym_keys(session: &Session) -> Result<Vec<ObjectHandle>, MgmError> {
-    let keys = session.
-                              list_objects_with_filter(0, ObjectType::SymmetricKey, "", ObjectAlgorithm::ANY, &Vec::new())?;
+    let keys = session.list_objects_with_filter(
+        0,
+        ObjectType::SymmetricKey,
+        "",
+        ObjectAlgorithm::ANY,
+        &Vec::new())?;
     Ok(keys)
 }
 
-fn sym_list_keys(session: &Session) -> Result<(), MgmError> {
+fn list(session: &Session) -> Result<(), MgmError> {
     let keys = get_all_sym_keys(session)?;
-
     list_objects(session, &keys)
 }
 
-fn sym_get_key_properties(session: &Session) -> Result<(), MgmError> {
+fn print_key_properties(session: &Session) -> Result<(), MgmError> {
     print_object_properties(session, get_all_sym_keys(session)?)
 }
 
-fn sym_gen_key(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
-    let key_id = get_id()?;
-    let label = get_label()?;
-    let domains = get_domains()?;
-
-    let permissible_capabilities = get_permissible_capabilities(session, current_authkey)?;
-
-
-
+fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     let key_algorithm = cliclack::select("Choose key algorithm:")
         .item(ObjectAlgorithm::Aes128, "AES128", "")
         .item(ObjectAlgorithm::Aes192, "AES192", "")
         .item(ObjectAlgorithm::Aes256, "AES256", "")
         .interact()?;
 
-    let capabilities = select_object_capabilities(
-        "Select key capabilities",
-        false,
-        true,
-        &AES_KEY_CAPABILITIES.to_vec(),
-        &permissible_capabilities)?;
+    let mut new_key = get_new_object_basics(
+        authkey, ObjectType::SymmetricKey, &AES_KEY_CAPABILITIES)?;
+    new_key.algorithm = key_algorithm;
 
-    cliclack::note("Generating AES key with:",
-                   get_object_properties_str(&key_algorithm, &label, key_id, &domains, &capabilities))?;
+    cliclack::note("Generating AES key with:", get_new_key_note(&new_key))?;
 
     if cliclack::confirm("Generate key?").interact()? {
         let mut spinner = cliclack::spinner();
         spinner.start("Generating AES key...");
         let id = session
-            .generate_aes_key(key_id, &label, &capabilities, &*domains, key_algorithm)?;
+            .generate_aes_key(
+                new_key.id, &new_key.label, &new_key.capabilities, &new_key.domains, key_algorithm)?;
         spinner.stop("");
         cliclack::log::success(
             format!("Generated AES key with ID 0x{:04x} on the device", id))?;
@@ -134,20 +178,7 @@ fn sym_gen_key(session: &Session, current_authkey: u16) -> Result<(), MgmError> 
     Ok(())
 }
 
-fn sym_import_key(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
-    let key_id = get_id()?;
-    let label = get_label()?;
-    let domains = get_domains()?;
-
-    let permissible_capabilities = get_permissible_capabilities(session, current_authkey)?;
-
-    let capabilities = select_object_capabilities(
-        "Select key capabilities",
-        false,
-        true,
-        &AES_KEY_CAPABILITIES.to_vec(),
-        &permissible_capabilities)?;
-
+fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     let key_str:String = cliclack::input("Enter AES key in hex:")
         .validate(|input: &String| {
             if hex::decode(input).is_err() {
@@ -167,38 +198,48 @@ fn sym_import_key(session: &Session, current_authkey: u16) -> Result<(), MgmErro
         _ => unreachable!()
     };
 
-    cliclack::note("Import AES key with:",
-                   get_object_properties_str(&key_algorithm, &label, key_id, &domains, &capabilities))?;
+    let mut new_key = get_new_object_basics(
+        authkey, ObjectType::SymmetricKey, &AES_KEY_CAPABILITIES)?;
+    new_key.algorithm = key_algorithm;
+
+    cliclack::note("Import AES key with:", get_new_key_note(&new_key))?;
 
     if cliclack::confirm("Import key?").interact()? {
         let id = session
-            .import_aes_key(key_id, &label, &*domains, &capabilities, key_algorithm, &key)?;
+            .import_aes_key(
+                new_key.id, &new_key.label, &new_key.domains, &new_key.capabilities, key_algorithm, &key)?;
         cliclack::log::success(
             format!("Imported AES key with ID 0x{:04x} on the device", id))?;
     }
     Ok(())
 }
 
-fn sym_delete_key(session: &Session) -> Result<(), MgmError> {
+fn delete(session: &Session) -> Result<(), MgmError> {
     delete_objects(session, get_all_sym_keys(session)?)
 }
 
-fn sym_op(session: &Session, current_authkey: u16, enc: bool) -> Result<(), MgmError> {
+fn operate(session: &Session, authkey: &ObjectDescriptor, enc: bool) -> Result<(), MgmError> {
 
-    let mode = cliclack::select("Select encryption mode")
-        .item(AesMode::Ecb, "ECB", "")
-        .item(AesMode::Cbc, "CBC", "")
-        .interact()?;
+    let mut mode = cliclack::select("Select encryption mode");
+    if (enc && authkey.capabilities.contains(&ObjectCapability::EncryptEcb)) ||
+        (!enc && authkey.capabilities.contains(&ObjectCapability::DecryptEcb)) {
+        mode = mode.item(AesMode::Ecb, "ECB", "");
+    }
+    if (enc && authkey.capabilities.contains(&ObjectCapability::EncryptCbc)) ||
+        (!enc && authkey.capabilities.contains(&ObjectCapability::DecryptCbc)) {
+        mode = mode.item(AesMode::Cbc, "CBC", "")
+    }
+    let mode = mode.interact()?;
 
-    let authkey_capabilities = get_permissible_capabilities(session, current_authkey)?;
+    // let authkey_capabilities = get_permissible_capabilities(session, current_authkey)?;
     let key = match mode {
-        AesMode::Ecb => get_operation_key(
-            session, &authkey_capabilities,
+        AesMode::Ecb => get_op_key(
+            session, authkey,
             [if enc {ObjectCapability::EncryptEcb} else {ObjectCapability::DecryptEcb}].to_vec().as_ref(),
             ObjectType::SymmetricKey,
             &[])?,
-        AesMode::Cbc  => get_operation_key(
-            session, &authkey_capabilities,
+        AesMode::Cbc  => get_op_key(
+            session, authkey,
             [if enc {ObjectCapability::EncryptCbc} else {ObjectCapability::DecryptCbc}].to_vec().as_ref(),
             ObjectType::SymmetricKey,
             &[])?,
@@ -251,4 +292,11 @@ fn get_iv() -> Result<Vec<u8>, MgmError> {
             }
         }).interact()?;
     Ok(hex::decode(iv)?)
+}
+
+fn get_new_key_note(key_desc: &ObjectDescriptor) -> String {
+    key_desc.to_string()
+            .replace("Sequence:  0\t", "")
+            .replace("Origin: Generated\t", "")
+            .replace("\t", "\n")
 }

@@ -1,16 +1,19 @@
 use std::collections::HashSet;
+use std::fmt;
+use std::fmt::Display;
+use std::sync::LazyLock;
 
 use crate::util::{delete_objects};
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectHandle, ObjectType};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{get_domains, get_ec_pubkey_from_pemfile, get_file_path, get_id, get_label, get_object_properties_str, get_permissible_capabilities, InputOutputFormat, list_objects, print_object_properties, read_file_bytes, select_object_capabilities};
-use wrap_commands::{get_shares, get_threshold, object_to_file, split_wrapkey};
-use YH_EC_P256_PUBKEY_LEN;
+use util::{get_delegated_capabilities, get_ec_pubkey_from_pemfile, get_file_path, get_new_object_basics, get_password,
+           list_objects, print_object_properties, select_capabilities};
+use ::{MAIN_STRING, YH_EC_P256_PUBKEY_LEN};
 
-const KSP_WRAPKEY_LEN: usize = 32;
+static AUTH_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Authentication keys", MAIN_STRING));
 
-const ALL_USER_CAPABILITIES: [ObjectCapability; 10] = [
+const USER_CAPABILITIES: [ObjectCapability; 10] = [
     ObjectCapability::SignPkcs,
     ObjectCapability::SignPss,
     ObjectCapability::SignEcdsa,
@@ -23,7 +26,7 @@ const ALL_USER_CAPABILITIES: [ObjectCapability; 10] = [
     ObjectCapability::ExportableUnderWrap,
 ];
 
-const ALL_ADMIN_CAPABILITIES: [ObjectCapability; 6] = [
+const ADMIN_CAPABILITIES: [ObjectCapability; 6] = [
     ObjectCapability::GenerateAsymmetricKey,
     ObjectCapability::PutAsymmetricKey,
     ObjectCapability::DeleteAsymmetricKey,
@@ -32,47 +35,84 @@ const ALL_ADMIN_CAPABILITIES: [ObjectCapability; 6] = [
     ObjectCapability::ExportableUnderWrap,
 ];
 
-const KSP_AUTHKEY_DELEGATED_CAPABILITIES: [ObjectCapability; 11] = [
-    ObjectCapability::GenerateAsymmetricKey,
-    ObjectCapability::SignPkcs,
-    ObjectCapability::SignPss,
-    ObjectCapability::SignEcdsa,
-    ObjectCapability::DeriveEcdh,
-    ObjectCapability::ExportableUnderWrap,
-    ObjectCapability::ExportWrapped,
-    ObjectCapability::ImportWrapped,
-    ObjectCapability::ExportWrapped,
-    ObjectCapability::ExportableUnderWrap,
+const AUDITOR_CAPABILITIES: [ObjectCapability; 2] = [
     ObjectCapability::GetLogEntries,
+    ObjectCapability::ExportableUnderWrap,
 ];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum AuthKeyType {
+    #[default]
+    PasswordDerived,
+    Ecp256,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum AuthCommand {
     #[default]
-    ListKeys,
+    List,
     GetKeyProperties,
-    DeleteKey,
+    Delete,
     SetupUser,
     SetupAdmin,
     SetupAuditor,
     SetupBackupAdmin,
-    SetupKsp,
     ReturnToMainMenu,
+    Exit,
 }
 
-pub fn exec_auth_command(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
+impl Display for AuthCommand {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AuthCommand::List => write!(f, "List"),
+            AuthCommand::GetKeyProperties => write!(f, "Print object properties"),
+            AuthCommand::Delete => write!(f, "Delete"),
+            AuthCommand::SetupUser => write!(f, "Setup user"),
+            AuthCommand::SetupAdmin => write!(f, "Setup Admin"),
+            AuthCommand::SetupAuditor => write!(f, "Setup Auditor"),
+            AuthCommand::SetupBackupAdmin => write!(f, "Setup backup admin"),
+            AuthCommand::ReturnToMainMenu => write!(f, "Return to main menu"),
+            AuthCommand::Exit => write!(f, "Exit"),
+        }
+    }
+}
+
+pub fn exec_auth_command(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     loop {
-        let cmd = get_auth_command(session, current_authkey)?;
+        println!("\n{}", *AUTH_STRING);
+
+        let cmd = get_auth_command(authkey)?;
         let res = match cmd {
-            AuthCommand::ListKeys => auth_list_keys(session),
-            AuthCommand::GetKeyProperties => auth_get_key_properties(session),
-            AuthCommand::DeleteKey => auth_delete_user(session),
-            AuthCommand::SetupUser => auth_setup_user(session, current_authkey),
-            AuthCommand::SetupAdmin => auth_setup_admin(session, current_authkey),
-            AuthCommand::SetupAuditor => auth_setup_auditor(session, current_authkey),
-            AuthCommand::SetupBackupAdmin => auth_setup_backupadmin(session, current_authkey),
-            AuthCommand::SetupKsp => setup_ksp(session, current_authkey),
+            AuthCommand::List => {
+                println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::List);
+                auth_list_keys(session)
+            },
+            AuthCommand::GetKeyProperties => {
+                println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::GetKeyProperties);
+                auth_get_key_properties(session)
+            },
+            AuthCommand::Delete => {
+                println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::Delete);
+                auth_delete_user(session)
+            },
+            AuthCommand::SetupUser => {
+                println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::SetupUser);
+                auth_setup_user(session, authkey)
+            },
+            AuthCommand::SetupAdmin => {
+                println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::SetupAdmin);
+                auth_setup_admin(session, authkey)
+            },
+            AuthCommand::SetupAuditor => {
+                println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::SetupAuditor);
+                auth_setup_auditor(session, authkey)
+            },
+            AuthCommand::SetupBackupAdmin => {
+                println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::SetupBackupAdmin);
+                auth_setup_backupadmin(session, authkey)
+            },
             AuthCommand::ReturnToMainMenu => return Ok(()),
+            AuthCommand::Exit => std::process::exit(0),
         };
 
         if let Err(err) = res {
@@ -81,42 +121,35 @@ pub fn exec_auth_command(session: &Session, current_authkey: u16) -> Result<(), 
     }
 }
 
-fn get_auth_command(session: &Session, current_authkey: u16) -> Result<AuthCommand, MgmError> {
-    let capabilities: HashSet<ObjectCapability> =
-        session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?
-            .capabilities.into_iter().collect();
-    let Some(delegated_capabilities_vec) =
-        session.get_object_info(current_authkey, ObjectType::AuthenticationKey)?.delegated_capabilities
-        else {
-            return Err(MgmError::Error("Failed to read current authkey delegated capabilities".to_string()))
-        };
-    let delegated_capabilities:HashSet<ObjectCapability> = delegated_capabilities_vec.into_iter().collect();
+fn get_auth_command(authkey: &ObjectDescriptor) -> Result<AuthCommand, MgmError> {
+    let capabilities: HashSet<ObjectCapability> = authkey.capabilities.clone().into_iter().collect();
+    let delegated_capabilities:HashSet<ObjectCapability> = get_delegated_capabilities(authkey).into_iter().collect();
 
     let mut commands = cliclack::select("");
-    commands = commands.item(AuthCommand::ListKeys, "List keys", "");
-    commands = commands.item(AuthCommand::GetKeyProperties, "Get user info", "");
+    commands = commands.item(AuthCommand::List, AuthCommand::List, "");
+    commands = commands.item(AuthCommand::GetKeyProperties, AuthCommand::GetKeyProperties, "");
     if capabilities.contains(&ObjectCapability::DeleteAuthenticationKey) {
-        commands = commands.item(AuthCommand::DeleteKey,"Delete user", "");
+        commands = commands.item(AuthCommand::Delete,AuthCommand::Delete, "");
     }
     if capabilities.contains(&ObjectCapability::PutAuthenticationKey) {
 
-        if HashSet::from(ALL_USER_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
-            commands = commands.item(AuthCommand::SetupUser, "Setup user", "Can only use asymmetric keys");
+        if HashSet::from(USER_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
+            commands = commands.item(
+                AuthCommand::SetupUser, AuthCommand::SetupUser, "Can only use asymmetric keys");
         }
-        if HashSet::from(ALL_ADMIN_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
-            commands = commands.item(AuthCommand::SetupAdmin, "Setup admin", "Can only manage asymmetric keys");
+        if HashSet::from(ADMIN_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
+            commands = commands.item(
+                AuthCommand::SetupAdmin, AuthCommand::SetupAdmin, "Can only manage asymmetric keys");
         }
         if delegated_capabilities.contains(&ObjectCapability::GetLogEntries) {
-            commands = commands.item(AuthCommand::SetupAuditor, "Setup auditor", "Can only perform audit functions");
+            commands = commands.item(
+                AuthCommand::SetupAuditor, AuthCommand::SetupAuditor, "Can only perform audit functions");
         }
-        commands = commands.item(AuthCommand::SetupBackupAdmin, "Setup backup user", "Can have all the delegated capabilities of this user");
-
-        if capabilities.contains(&ObjectCapability::PutWrapKey) &&
-           HashSet::from(KSP_AUTHKEY_DELEGATED_CAPABILITIES).intersection(&delegated_capabilities).count() > 0  {
-            commands = commands.item(AuthCommand::SetupKsp, "Setup KSP user", "");
-        }
+        commands = commands.item(
+            AuthCommand::SetupBackupAdmin, AuthCommand::SetupBackupAdmin, "Can have all capabilities of the current user");
     }
     commands = commands.item(AuthCommand::ReturnToMainMenu, "Return to main menu", "");
+    commands = commands.item(AuthCommand::Exit, AuthCommand::Exit, "");
     Ok(commands.interact()?)
 }
 
@@ -141,318 +174,89 @@ fn auth_delete_user(session: &Session) -> Result<(), MgmError> {
     delete_objects(session, get_all_auth_keys(session)?)
 }
 
-fn get_password(prompt: &str) -> Result<String, MgmError> {
-    let pwd = cliclack::password(prompt)
-        .mask('*')
-        .interact()?;
-
-    let pwd_clone = pwd.clone();
-    cliclack::password("Re-enter password")
-        .mask('*')
-        .validate(move |input: &String| {
-            if input != &pwd_clone {
-                Err("The passwords do not match!")
-            } else {
-                Ok(())
-            }
-        })
-        .interact()?;
-    Ok(pwd)
-}
-
-fn create_user(
+fn create_authkey(
     session: &Session,
-    capabilities: Vec<ObjectCapability>,
-    delegated_capabilities: Vec<ObjectCapability>
+    new_authkey: &ObjectDescriptor,
 ) -> Result<(), MgmError> {
-    let key_id = get_id()?;
-    let label = get_label()?;
-    let domains = get_domains()?;
 
-    let mut key_str = get_object_properties_str(
-        &ObjectAlgorithm::Aes128YubicoAuthentication, &label, key_id, &domains, &capabilities);
-    key_str.push_str("    Delegated capabilities: ");
-    delegated_capabilities.iter().for_each(|cap| key_str.push_str(format!("{:?}, ", cap).as_str()));
-    key_str.push('\n');
+    let auth_string = new_authkey.to_string()
+        .replace("Algorithm: Unknown\t", "")
+        .replace("Sequence:  0\t", "")
+        .replace("Origin: Generated\t", "")
+        .replace("\t", "\n");
 
-    let asymauth = cliclack::select("Select authentication key type:")
-        .item(false, "Password derived", "Session keys are derived from a password")
-        .item(true, "Asymmetric", "Using ECP256 curve")
+    let auth_type = cliclack::select("Select authentication type:")
+        .item(AuthKeyType::PasswordDerived, "Password derived", "Session keys are derived from a password")
+        .item(AuthKeyType::Ecp256, "EC P256", "Session authenticated using EC key with curve secp256r1")
         .interact()?;
 
-    if !asymauth {
-        let pwd = get_password("Enter user password:")?;
+    let mut id: u16 = 0;
+    match auth_type {
+        AuthKeyType::PasswordDerived => {
+            let pwd = get_password("Enter user password:")?;
 
-        let id = session.import_authentication_key(
-            key_id, &label, &domains, &capabilities, &delegated_capabilities, pwd.as_bytes())?;
-        cliclack::log::success(format!("Created new authentication key with ID 0x{id:04x}"))?;
-
-    } else {
-        let format = cliclack::select("Select public key format:")
-            .initial_value(InputOutputFormat::PEM)
-            .item(InputOutputFormat::PEM, InputOutputFormat::PEM, "")
-            .item(InputOutputFormat::BINARY, InputOutputFormat::BINARY, "")
-            .interact()?;
-
-        let pubkey = match format {
-            InputOutputFormat::PEM => {
-                get_ec_pubkey_from_pemfile(get_file_path("Enter path to ECP256 public key PEM file: ")?)?
+            cliclack::note("Creating new authentication key with:",
+                           auth_string)?;
+            if cliclack::confirm("Create key?").interact()? {
+                id = session.import_authentication_key(
+                    new_authkey.id,
+                    &new_authkey.label,
+                    &new_authkey.domains,
+                    &new_authkey.capabilities,
+                    get_delegated_capabilities(new_authkey).as_slice(),
+                    pwd.as_bytes())?
             }
-            InputOutputFormat::BINARY => {
-                read_file_bytes("Enter path to ECP256 public key binary file: ")?
+        },
+        AuthKeyType::Ecp256 => {
+            let pubkey = get_ec_pubkey_from_pemfile(
+                get_file_path("Enter path to ECP256 public key PEM file: ")?)?;
+            if pubkey.len() != YH_EC_P256_PUBKEY_LEN {
+                return Err(MgmError::Error("Invalid public key".to_string()))
             }
-            _ => unreachable!()
-        };
 
-        if pubkey.len() != YH_EC_P256_PUBKEY_LEN {
-            return Err(MgmError::Error("Invalid public key".to_string()))
+            cliclack::note("Creating new authentication key with:",
+                           str::replace(&new_authkey.to_string(), "\t", "\n"))?;
+            if cliclack::confirm("Create key?").interact()? {
+                id = session.import_authentication_publickey(
+                    new_authkey.id,
+                    &new_authkey.label,
+                    &new_authkey.domains,
+                    &new_authkey.capabilities,
+                    get_delegated_capabilities(new_authkey).as_slice(), &pubkey)?
+            }
         }
-        let id = session.import_authentication_publickey(
-            key_id, &label, &domains, &capabilities, &delegated_capabilities, &pubkey)?;
-        cliclack::log::success(format!("Created new authentication key with ID 0x{id:04x}"))?;
-    }
-
-    cliclack::note("Creating authentication key with:", key_str)?;
-    if !cliclack::confirm("Create authentication key?").interact()? {
-        return Ok(())
-    }
-    Ok(())
-}
-
-fn auth_setup_user(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
-    let permissible_capabilities = get_permissible_capabilities(session, current_authkey)?;
-
-    let selected_capabilities =
-        select_object_capabilities(
-            "Select key capabilities",
-            false,
-            true,
-            &ALL_USER_CAPABILITIES.to_vec(),
-            &permissible_capabilities)?;
-    create_user(session, selected_capabilities, Vec::new())
-}
-
-fn auth_setup_admin(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
-    let permissible_capabilities = get_permissible_capabilities(session, current_authkey)?;
-
-    let capabilities =
-        select_object_capabilities(
-            "Select key capabilities",
-            false,
-            true,
-            &ALL_ADMIN_CAPABILITIES.to_vec(),
-            &permissible_capabilities)?;
-
-    let delegated_capabilities =
-        select_object_capabilities(
-            "Select key capabilities",
-            false,
-            true,
-            &ALL_USER_CAPABILITIES.to_vec(),
-            &permissible_capabilities)?;
-
-    create_user(session, capabilities, delegated_capabilities)
-}
-
-fn auth_setup_auditor(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
-    let Some(permissible_capabilities) = session.get_object_info(
-        current_authkey, ObjectType::AuthenticationKey)?.delegated_capabilities else {
-        return Err(MgmError::Error("Cannot read current authentication key's delegated capabilities".to_string()))
     };
-
-    if !permissible_capabilities.contains(&ObjectCapability::GetLogEntries) {
-        return Err(MgmError::Error("Current user does not have permission to create auditor".to_string()));
-    }
-
-    let mut capabilities = vec![ObjectCapability::GetLogEntries];
-
-    if permissible_capabilities.contains(&ObjectCapability::ExportableUnderWrap) &&
-        cliclack::confirm("Is key exportable under wrap?").interact()? {
-        capabilities.push(ObjectCapability::ExportableUnderWrap);
-    }
-
-    create_user(session, capabilities, Vec::new())
-}
-
-fn auth_setup_backupadmin(session: &Session, current_authkey: u16) -> Result<(), MgmError> {
-    let Some(permissible_capabilities) = session.get_object_info(
-        current_authkey, ObjectType::AuthenticationKey)?.delegated_capabilities else {
-        return Err(MgmError::Error("Cannot read current authentication key's delegated capabilities".to_string()))
-    };
-
-    let capabilities = select_object_capabilities(
-        "Select key capabilities",
-        true,
-        false,
-        &permissible_capabilities,
-        &permissible_capabilities)?;
-
-    let delegated_capabilities = select_object_capabilities(
-        "Select key delegated capabilities",
-        true,
-        false,
-        &permissible_capabilities,
-        &permissible_capabilities)?;
-
-    create_user(session, capabilities, delegated_capabilities)
-}
-
-
-pub fn setup_ksp(session: &Session, current_authkey: u16) -> Result<(), MgmError>{
-    let capabilities_rsa_decrypt = &[ObjectCapability::DecryptPkcs, ObjectCapability::DecryptOaep];
-
-    let mut wrapkey_delegated = vec![
-        ObjectCapability::GenerateAsymmetricKey,
-        ObjectCapability::SignPkcs,
-        ObjectCapability::SignPss,
-        ObjectCapability::SignEcdsa,
-        ObjectCapability::DeriveEcdh,
-        ObjectCapability::ImportWrapped,
-        ObjectCapability::ExportWrapped,
-        ObjectCapability::ExportableUnderWrap,
-        ObjectCapability::GetLogEntries,
-    ];
-
-    let mut authkey_capabilities = vec![
-        ObjectCapability::GenerateAsymmetricKey,
-        ObjectCapability::SignPkcs,
-        ObjectCapability::SignPss,
-        ObjectCapability::SignEcdsa,
-        ObjectCapability::DeriveEcdh,
-        ObjectCapability::ImportWrapped,
-        ObjectCapability::ExportWrapped,
-        ObjectCapability::ExportableUnderWrap,
-    ];
-
-    let mut authkey_delegated = vec![
-        ObjectCapability::GenerateAsymmetricKey,
-        ObjectCapability::SignPkcs,
-        ObjectCapability::SignPss,
-        ObjectCapability::SignEcdsa,
-        ObjectCapability::DeriveEcdh,
-        ObjectCapability::ExportableUnderWrap,
-    ];
-
-    if cliclack::confirm("Add RSA decryption capabilities?").interact()? {
-        wrapkey_delegated.extend_from_slice(capabilities_rsa_decrypt);
-        authkey_capabilities.extend_from_slice(capabilities_rsa_decrypt);
-        authkey_delegated.extend_from_slice(capabilities_rsa_decrypt);
-    }
-
-    let &wrapkey_capabilities = &[
-        ObjectCapability::ImportWrapped,
-        ObjectCapability::ExportWrapped,
-    ];
-
-    let wrapkey = session.get_random(KSP_WRAPKEY_LEN)?;
-
-    let domains = get_domains()?;
-
-    // Create a wrapping key for importing application authentication keys and secrets
-    let wrap_id = get_id()?;
-    let wrap_id = session
-        .import_wrap_key(
-            wrap_id,
-            "KSP Wrap key",
-            &domains,
-            &wrapkey_capabilities,
-            ObjectAlgorithm::Aes256CcmWrap,
-            &wrapkey_delegated,
-            &wrapkey,
-        )?;
-    cliclack::log::success(format!("Stored wrap key with ID 0x{:04x} on the device\n", wrap_id))?;
-
-    // Split the wrap key
-    let shares = get_shares()?;
-    let threshold = get_threshold(shares)?;
-    split_wrapkey(
-        wrap_id,
-        &domains,
-        &wrapkey_capabilities,
-        &wrapkey_delegated,
-        &wrapkey,
-        threshold,
-        shares,
-    )?;
-
-    // Create an authentication key for usage with the above wrap key
-    let auth_id = get_id()?;
-    let application_password = get_password("Enter application authentication key password:")?;
-
-    let auth_id = session
-        .import_authentication_key(
-            auth_id,
-            "Application auth key",
-            &domains,
-            &authkey_capabilities,
-            &authkey_delegated,
-            application_password.as_bytes(),
-        )?;
-    cliclack::log::success(format!(
-        "Stored application authentication key with ID 0x{:04x} on the device",
-        auth_id
-    ))?;
-
-    let mut export = false;
-    if cliclack::confirm("Export Authentication key? ").interact()? {
-        export = true;
-        let auth_wrapped = session
-            .export_wrapped(wrap_id, ObjectType::AuthenticationKey, auth_id)?;
-
-        let auth_file = object_to_file(auth_id, ObjectType::AuthenticationKey, &auth_wrapped)?;
-
-        cliclack::log::success(format!(
-            "Saved wrapped application authentication key to {}\n",
-            auth_file
-        ))?;
-    }
-
-    if cliclack::confirm("Create an audit key?").interact()? {
-        add_ksp_audit_key(session, wrap_id, &domains, export)?;
-    }
-
-    if cliclack::confirm("Delete the current authentication key (strongly recommended)?").interact()? {
-        session.delete_object(current_authkey, ObjectType::AuthenticationKey)?;
-    }
-
+    cliclack::log::success(format!("Created new authentication key with ID 0x{id:04x}"))?;
     Ok(())
 }
 
-fn add_ksp_audit_key(
-    session: &Session,
-    wrap_id: u16,
-    domains: &[ObjectDomain],
-    export: bool,
-) -> Result<(), MgmError> {
-    let audit_id = get_id()?;
-    let audit_password = get_password("Enter audit authentication key password:")?;
+fn auth_setup_user(session: &Session, current_authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    let new_authkey = get_new_object_basics(
+        current_authkey, ObjectType::AuthenticationKey,&USER_CAPABILITIES)?;
+    create_authkey(session, &new_authkey)
+}
 
-    // Create audit auth key
-    let audit_id = session
-        .import_authentication_key(
-            audit_id,
-            "Audit auth key",
-            domains,
-            &[
-                ObjectCapability::GetLogEntries,
-                ObjectCapability::ExportableUnderWrap,
-            ],
-            &[],
-            audit_password.as_bytes(),
-        )?;
-    cliclack::log::success(format!(
-        "Stored audit authentication key with ID 0x{:04x} on the device",
-        audit_id
-    ))?;
+fn auth_setup_admin(session: &Session, current_authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    let mut new_authkey = get_new_object_basics(
+        current_authkey, ObjectType::AuthenticationKey, &ADMIN_CAPABILITIES)?;
+    let delegated_caps = select_capabilities(
+        "Select delegated capabilities", current_authkey, &USER_CAPABILITIES)?;
+    new_authkey.delegated_capabilities = if delegated_caps.is_empty() { None } else { Some(delegated_caps) };
+    create_authkey(session, &new_authkey)
+}
 
-    if export {
-        let audit_wrapped = session
-            .export_wrapped(wrap_id, ObjectType::AuthenticationKey, audit_id)?;
+fn auth_setup_auditor(session: &Session, current_authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    let new_authkey = get_new_object_basics(
+        current_authkey, ObjectType::AuthenticationKey, &AUDITOR_CAPABILITIES)?;
+    create_authkey(session, &new_authkey)
+}
 
-        let audit_file =
-            object_to_file(audit_id, ObjectType::AuthenticationKey, &audit_wrapped)?;
-        cliclack::log::success(format!("Saved wrapped audit authentication key to {}", audit_file))?;
-    }
-
-    Ok(())
+fn auth_setup_backupadmin(session: &Session, current_authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    let current_authkey_delegated = get_delegated_capabilities(current_authkey);
+    let mut new_authkey = get_new_object_basics(
+        current_authkey, ObjectType::AuthenticationKey, current_authkey_delegated.as_slice())?;
+    let delegated_caps = select_capabilities(
+        "Select delegated capabilities", current_authkey, current_authkey_delegated.as_slice())?;
+    new_authkey.delegated_capabilities = if delegated_caps.is_empty() { None } else { Some(delegated_caps) };
+    create_authkey(session, &new_authkey)
 }

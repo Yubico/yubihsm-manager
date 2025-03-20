@@ -3,8 +3,6 @@ extern crate clap;
 extern crate cliclack;
 extern crate console;
 extern crate hex;
-#[macro_use]
-extern crate lazy_static;
 extern crate openssl;
 extern crate pem;
 extern crate regex;
@@ -18,6 +16,7 @@ use std::str::FromStr;
 
 use clap::Arg;
 use yubihsmrs::{Session, YubiHsm};
+use yubihsmrs::object::ObjectType;
 
 use error::MgmError;
 use util::get_ec_privkey_from_pemfile;
@@ -26,9 +25,11 @@ use util::list_objects;
 pub mod error;
 pub mod util;
 pub mod asym_commands;
+pub mod java_commands;
 pub mod sym_commands;
 pub mod auth_commands;
 pub mod wrap_commands;
+pub mod ksp_command;
 
 macro_rules! unwrap_or_exit1 {
     ( $e:expr, $msg:expr) => {
@@ -45,7 +46,7 @@ macro_rules! unwrap_or_exit1 {
 const YH_EC_P256_PUBKEY_LEN: usize = 65;
 const YH_EC_P256_PRIVKEY_LEN: usize = 32;
 
-const MENU_STRING: &str = "YubiHSM Manager";
+pub const MAIN_STRING: &str = "[BETA VERSION] YubiHSM Manager";
 
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
 enum MainCommand {
@@ -92,9 +93,8 @@ fn get_random_number(session: &Session) -> Result<(), MgmError> {
         })
         .interact()?;
     match session.get_random(nr_of_bytes) {
-        //Ok(random) => cliclack::log::success(hex::encode(random))?,
-            Ok(random) => println!("{}", hex::encode(random)),
-            Err(err) => {
+        Ok(random) => println!("{}", hex::encode(random)),
+        Err(err) => {
             cliclack::log::error(format!("Failed to get pseudo random number from device. {}", err))?;
         }
     }
@@ -116,6 +116,14 @@ fn main() -> Result<(), MgmError>{
         .version(env!("CARGO_PKG_VERSION"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .subcommand(clap::Command::new("get-device-info").about("Display YubiHSM device info"))
+        .subcommand(clap::Command::new("asym").about("Manage asymmetric keys"))
+        .subcommand(clap::Command::new("sym").about("Manage symmetric keys"))
+        .subcommand(clap::Command::new("auth").about("Manage authentication keys (aka users)"))
+        .subcommand(clap::Command::new("wrap").about("Manage wrap keys"))
+        .subcommand(clap::Command::new("gen-pseudo-random").about("Generate a pseudo random number"))
+        .subcommand(clap::Command::new("reset").about("Reset YubiHSM2 device"))
+        .subcommand(clap::Command::new("ksp").about("Setup KSP user for Windows CNG provider"))
+        .subcommand(clap::Command::new("sunpkcs11").about("Manage asymmetric keys compatible with JAVA SunPKCS11 provider"))
         .arg(Arg::new("authkey")
             .long("authkey")
             .short('k')
@@ -212,47 +220,66 @@ fn main() -> Result<(), MgmError>{
         unwrap_or_exit1!(h.establish_session(authkey, &password, true), "Unable to open session")
     };
 
-    loop {
-        println!("\n{}", MENU_STRING);
+    let authkey = session.get_object_info(authkey, ObjectType::AuthenticationKey)?;
 
-        let command = cliclack::select("")
-            .item(MainCommand::GetDeviceInfo, "Get device info", "")
-            .item(MainCommand::ListObjects, "List all objects", "")
-            .item(MainCommand::AsymMgm, "Asymmetric keys", "")
-            .item(MainCommand::SymMgm, "Symmetric keys", "Available with firmware version 2.3.1 or later")
-            .item(MainCommand::AuthMgm, "Authentication keys", "")
-            .item(MainCommand::WrapMgm, "Wrap keys", "")
-            .item(MainCommand::Ksp, "Special usecase: KSP", "")
-            .item(MainCommand::Java, "Special usecase: JAVA", "")
-            .item(MainCommand::Random, "Generate pseudo random number", "")
-            .item(MainCommand::Reset, "Reset device", "")
-            .item(MainCommand::Exit, "Exit", "")
-            .interact()?;
+    match matches.subcommand() {
+        Some(subcommand) => {
+            match subcommand.0 {
+                "asym" => asym_commands::exec_asym_command(&session, &authkey),
+                "sym" => sym_commands::exec_sym_command(&session, &authkey),
+                "auth" => auth_commands::exec_auth_command(&session, &authkey),
+                "wrap" => wrap_commands::exec_wrap_command(&session, &authkey),
+                "gen-pseudo-random" => get_random_number(&session),
+                "reset" => reset_device(&session),
+                "ksp" => ksp_command::setup_ksp(&session, authkey.id),
+                "sunpkcs11" => java_commands::exec_java_command(&session, &authkey),
+                _ => unreachable!(),
+            }
+        },
+        None => {
+            loop {
+                println!("\n{}", MAIN_STRING);
 
-        let result = match command {
-            MainCommand::GetDeviceInfo => {
-                cliclack::log::success(h.get_device_info()?)?;
-                Ok(())
-            },
-            MainCommand::ListObjects => {
-                match session.list_objects() {
-                    Ok(objects ) => list_objects(&session, &objects),
-                    Err(err) => Err(MgmError::LibYubiHsm(err)),
+                let command = cliclack::select("")
+                    .item(MainCommand::GetDeviceInfo, "Get device info", "")
+                    .item(MainCommand::ListObjects, "List all objects", "")
+                    .item(MainCommand::AsymMgm, "Asymmetric keys", "")
+                    .item(MainCommand::SymMgm, "Symmetric keys", "Available with firmware version 2.3.1 or later")
+                    .item(MainCommand::AuthMgm, "Authentication keys", "User's access and permissions")
+                    .item(MainCommand::WrapMgm, "Wrap keys", "")
+                    .item(MainCommand::Ksp, "Special usecase: KSP", "Setup KSP user for Windows CNG provider")
+                    .item(MainCommand::Java, "Special usecase: SunPKCS11", "Manage asymmetric keys compatible with JAVA SunPKCS11 provider")
+                    .item(MainCommand::Random, "Generate pseudo random number", "")
+                    .item(MainCommand::Reset, "Reset device", "")
+                    .item(MainCommand::Exit, "Exit", "")
+                    .interact()?;
+
+                let result = match command {
+                    MainCommand::GetDeviceInfo => {
+                        cliclack::log::success(h.get_device_info()?)?;
+                        Ok(())
+                    },
+                    MainCommand::ListObjects => {
+                        match session.list_objects() {
+                            Ok(objects) => list_objects(&session, &objects),
+                            Err(err) => Err(MgmError::LibYubiHsm(err)),
+                        }
+                    },
+                    MainCommand::AsymMgm => asym_commands::exec_asym_command(&session, &authkey),
+                    MainCommand::SymMgm => sym_commands::exec_sym_command(&session, &authkey),
+                    MainCommand::AuthMgm => auth_commands::exec_auth_command(&session, &authkey),
+                    MainCommand::WrapMgm => wrap_commands::exec_wrap_command(&session, &authkey),
+                    MainCommand::Ksp => ksp_command::setup_ksp(&session, authkey.id),
+                    MainCommand::Java => java_commands::exec_java_command(&session, &authkey),
+                    MainCommand::Random => get_random_number(&session),
+                    MainCommand::Reset => reset_device(&session),
+                    MainCommand::Exit => std::process::exit(0),
+                };
+
+                if let Err(err) = result {
+                    cliclack::log::error(err)?;
                 }
-            },
-            MainCommand::AsymMgm => asym_commands::exec_asym_command(&session, authkey),
-            MainCommand::SymMgm => sym_commands::exec_sym_command(&session, authkey),
-            MainCommand::AuthMgm => auth_commands::exec_auth_command(&session, authkey),
-            MainCommand::WrapMgm => wrap_commands::exec_wrap_command(&session, authkey),
-            MainCommand::Ksp => auth_commands::setup_ksp(&session, authkey),
-            MainCommand::Java => asym_commands::asym_java_manage(&session, authkey),
-            MainCommand::Random => get_random_number(&session),
-            MainCommand::Reset => reset_device(&session),
-            MainCommand::Exit => std::process::exit(0),
-        };
-
-        if let Err(err) = result {
-            cliclack::log::error(err)?;
+            }
         }
     }
 }

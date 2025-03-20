@@ -21,14 +21,14 @@ pub enum MgmError {
 
 impl fmt::Display for MgmError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            MgmError::LibYubiHsm(ref err) => err.fmt(f),
-            MgmError::OpenSSLError(ref err) => err.fmt(f),
-            MgmError::StdIoError(ref err) => err.fmt(f),
-            MgmError::PemError(ref err) => err.fmt(f),
-            MgmError::HexError(ref err) => err.fmt(f),
-            MgmError::InvalidInput(ref param) => write!(f, "Unsupported or unrecognized value: {}", param),
-            MgmError::Error(ref param) => write!(f, "{}", param),
+        match self {
+            MgmError::LibYubiHsm(err) => err.fmt(f),
+            MgmError::OpenSSLError(err) => err.fmt(f),
+            MgmError::StdIoError(err) => err.fmt(f),
+            MgmError::PemError(err) => err.fmt(f),
+            MgmError::HexError(err) => err.fmt(f),
+            MgmError::InvalidInput(param) => write!(f, "Unsupported or unrecognized value: {}", param),
+            MgmError::Error(param) => write!(f, "{}", param),
         }
     }
 }
@@ -47,12 +47,12 @@ impl error::Error for MgmError {
     }
     */
     fn cause(&self) -> Option<&dyn error::Error> {
-        match *self {
-            MgmError::LibYubiHsm(ref err) => Some(err),
-            MgmError::OpenSSLError(ref err) => Some(err),
-            MgmError::StdIoError(ref err) => Some(err),
-            MgmError::PemError(ref err) => Some(err),
-            MgmError::HexError(ref err) => Some(err),
+        match self {
+            MgmError::LibYubiHsm(err) => Some(err),
+            MgmError::OpenSSLError(err) => Some(err),
+            MgmError::StdIoError(err) => Some(err),
+            MgmError::PemError(err) => Some(err),
+            MgmError::HexError(err) => Some(err),
             MgmError::InvalidInput(_) => None,
             MgmError::Error(_) => None,
         }
