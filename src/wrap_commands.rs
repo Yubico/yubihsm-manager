@@ -182,9 +182,9 @@ fn get_new_key_note(key_desc: &ObjectDescriptor) -> String {
 
 fn wrap_gen_key(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     let algorithm = get_key_algo(get_key_len()?);
-    let mut new_key = get_new_object_basics(authkey, ObjectType::WrapKey, &WRAP_KEY_CAPABILITIES)?;
+    let mut new_key = get_new_object_basics(authkey, ObjectType::WrapKey, &WRAP_KEY_CAPABILITIES, &[])?;
     let delegated = select_capabilities(
-        "Select delegated capabilities", authkey, get_delegated_capabilities(authkey).as_slice())?;
+        "Select delegated capabilities", authkey, get_delegated_capabilities(authkey).as_slice(), get_delegated_capabilities(authkey).as_slice())?;
     new_key.delegated_capabilities = if delegated.is_empty() {None} else {Some(delegated)};
     new_key.algorithm = algorithm;
 
@@ -234,8 +234,8 @@ fn import_full_key(session:&Session, authkey: &ObjectDescriptor) -> Result<(), M
         _ => unreachable!()
     };
 
-    let mut new_key = get_new_object_basics(authkey, ObjectType::WrapKey, &WRAP_KEY_CAPABILITIES)?;
-    let delegated = select_capabilities("Select delegated capabilities", authkey, get_delegated_capabilities(authkey).as_slice())?;
+    let mut new_key = get_new_object_basics(authkey, ObjectType::WrapKey, &WRAP_KEY_CAPABILITIES, &[])?;
+    let delegated = select_capabilities("Select delegated capabilities", authkey, get_delegated_capabilities(authkey).as_slice(), get_delegated_capabilities(authkey).as_slice())?;
     new_key.delegated_capabilities = if delegated.is_empty() {None} else {Some(delegated)};
     new_key.algorithm = algo;
 
@@ -308,7 +308,7 @@ fn backup_device(session: &Session) -> Result<(), MgmError> {
         &[ObjectCapability::ExportWrapped])?;
     let wrapping_key = select_one_object(
         "Select the wrapping key to use for exporting objects:",
-        convert_handlers(session, wrap_keys)?)?;
+        convert_handlers(session, &wrap_keys)?)?;
 
     let exportable_objects = session.list_objects_with_filter(
         0,
@@ -319,7 +319,7 @@ fn backup_device(session: &Session) -> Result<(), MgmError> {
     cliclack::log::info(format!("Found {} objects marked as exportable-under-wrap", exportable_objects.len()))?;
     let export_objects = select_multiple_objects(
         "Select objects to export",
-        convert_handlers(session, exportable_objects)?, true)?;
+        convert_handlers(session, &exportable_objects)?, true)?;
 
     let dir: String = get_directory("Enter backup directory:")?;
 
@@ -354,7 +354,7 @@ fn restore_device(session: &Session) -> Result<(), MgmError> {
         &[ObjectCapability::ImportWrapped])?;
     let wrapping_key = select_one_object(
         "Select the wrapping key to use for importing objects:",
-        convert_handlers(session, wrap_keys)?)?;
+        convert_handlers(session, &wrap_keys)?)?;
 
     let dir = get_directory("Enter backup directory:")?;
 

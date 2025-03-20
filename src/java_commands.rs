@@ -16,7 +16,7 @@ use asym_commands::{gen_asym_key, get_attestation_cert, import_asym_key};
 
 use error::MgmError;
 use MAIN_STRING;
-use util::{BasicDescriptor, convert_handlers, get_domains, get_file_path, get_id, get_label, get_new_object_basics, get_op_key, list_objects, print_object_properties, read_file_bytes, read_file_string, read_pem_file, select_multiple_objects, write_file};
+use util::{BasicDescriptor, convert_handlers, get_file_path, get_new_object_basics, get_op_key, list_objects, print_object_properties, read_file_bytes, read_file_string, read_pem_file, select_multiple_objects, write_file};
 
 use crate::util::{delete_objects};
 
@@ -75,6 +75,11 @@ pub fn exec_java_command(session: &Session, authkey: &ObjectDescriptor) -> Resul
 
         println!("\n{}", JAVA_STRING.to_string());
 
+        cliclack::note("",
+            "SunPKCS11 compatible keys entails that an asymmetric key and its equivalent X509Certificate \
+        are store in the device with the same ObjectID".to_string())?;
+
+
         let cmd = get_command(authkey)?;
         let res = match cmd {
             JavaCommand::List => {
@@ -132,7 +137,7 @@ fn get_command(authkey: &ObjectDescriptor) -> Result<JavaCommand, MgmError> {
 }
 
 
-fn get_all_keys(session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
+fn get_all_keys(session: &Session) -> Result<Vec<ObjectHandle>, MgmError> {
     let mut keys = session.list_objects_with_filter(
         0,
         ObjectType::Opaque,
@@ -141,16 +146,18 @@ fn get_all_keys(session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
         &Vec::new())?;
     keys.retain(|k| session.get_object_info(k.object_id, ObjectType::AsymmetricKey).is_ok());
     keys.iter_mut().for_each(|x| x.object_type = ObjectType::AsymmetricKey);
-    convert_handlers(session, keys)
+    Ok(keys)
+    // convert_handlers(session, &keys)
 }
 
 fn list(session: &Session) -> Result<(), MgmError> {
     let keys = get_all_keys(session)?;
-    cliclack::log::remark(format!("Found {} objects", keys.len()))?;
-    for k in keys {
-        println!("  {}", BasicDescriptor::from(k));
-    }
-    Ok(())
+    // cliclack::log::remark(format!("Found {} objects", keys.len()))?;
+    // for k in keys {
+    //     println!("  {}", BasicDescriptor::from(k));
+    // }
+    // Ok(())
+    list_objects(session, &keys)
 }
 
 fn delete(session: &Session) -> Result<(), MgmError> {
@@ -161,7 +168,7 @@ fn delete(session: &Session) -> Result<(), MgmError> {
     }
 
     let selected_keys = select_multiple_objects(
-        "Select keys to delete", keys, false)?;
+        "Select keys to delete", convert_handlers(session, &keys)?, false)?;
 
     // let mut selected_keys = cliclack::multiselect(
     //     "Select JAVA keys to delete. Press the space button to select and unselect item. Press 'Enter' when done.");

@@ -66,6 +66,7 @@ enum AsymCommand {
     Import,
     Delete,
     GetPublicKey,
+    GetCertificate,
     Sign,
     Decrypt,
     DeriveEcdh,
@@ -83,12 +84,29 @@ impl Display for AsymCommand {
             AsymCommand::Import => write!(f, "Import"),
             AsymCommand::Delete => write!(f, "Delete"),
             AsymCommand::GetPublicKey => write!(f, "Get public key"),
+            AsymCommand::GetCertificate => write!(f, "Get X509 certificate"),
             AsymCommand::Sign => write!(f, "Sign"),
             AsymCommand::Decrypt => write!(f, "Decrypt"),
             AsymCommand::DeriveEcdh => write!(f, "Derive ECDH"),
             AsymCommand::SignAttestationCert => write!(f, "Get attestation certificate"),
             AsymCommand::ReturnToMainMenu => write!(f, "Return to main menu"),
             AsymCommand::Exit => write!(f, "Exit"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
+enum AsymTypes {
+    #[default]
+    Keys,
+    X509Certificates,
+}
+
+impl Display for AsymTypes {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AsymTypes::Keys => write!(f, "Private keys"),
+            AsymTypes::X509Certificates => write!(f, "X509Certificates"),
         }
     }
 }
@@ -124,6 +142,10 @@ pub fn exec_asym_command(session: &Session, authkey: &ObjectDescriptor) -> Resul
             AsymCommand::GetPublicKey => {
                 println!("\n{} > {}\n", *ASYM_STRING, AsymCommand::GetPublicKey);
                 get_public_key(session)
+            },
+            AsymCommand::GetCertificate => {
+                println!("\n{} > {}\n", *ASYM_STRING, AsymCommand::GetCertificate);
+                get_cert(session)
             },
             AsymCommand::Sign => {
                 println!("\n{} > {}\n", *ASYM_STRING, AsymCommand::Sign);
@@ -168,6 +190,7 @@ fn get_command(authkey: &ObjectDescriptor) -> Result<AsymCommand, MgmError> {
         commands = commands.item(AsymCommand::Delete, AsymCommand::Delete, "");
     }
     commands = commands.item(AsymCommand::GetPublicKey, AsymCommand::GetPublicKey, "");
+    commands = commands.item(AsymCommand::GetCertificate, AsymCommand::GetCertificate, "");
     if HashSet::from([ObjectCapability::SignPkcs,
         ObjectCapability::SignPss,
         ObjectCapability::SignEcdsa,
@@ -249,11 +272,11 @@ pub fn gen_asym_key(session: &Session, authkey: &ObjectDescriptor) -> Result<Obj
 
     let mut new_key =
     if RSA_KEY_ALGORITHM.contains(&key_algo) {
-        get_new_object_basics(authkey, ObjectType::AsymmetricKey, &RSA_KEY_CAPABILITIES)?
+        get_new_object_basics(authkey, ObjectType::AsymmetricKey, &RSA_KEY_CAPABILITIES, &[])?
     } else if EC_KEY_ALGORITHM.contains(&key_algo) {
-        get_new_object_basics(authkey, ObjectType::AsymmetricKey, &EC_KEY_CAPABILITIES)?
+        get_new_object_basics(authkey, ObjectType::AsymmetricKey, &EC_KEY_CAPABILITIES, &[])?
     } else {
-        get_new_object_basics(authkey, ObjectType::AsymmetricKey, &ED_KEY_CAPABILITIES)?
+        get_new_object_basics(authkey, ObjectType::AsymmetricKey, &ED_KEY_CAPABILITIES, &[])?
     };
     new_key.algorithm = key_algo;
 
@@ -302,7 +325,7 @@ pub fn import_asym_key(session: &Session, authkey: &ObjectDescriptor, filepath: 
 
                     let key_algorithm = get_rsa_key_algo(private_rsa.size())?;
                     new_key = get_new_object_basics(
-                        authkey, ObjectType::AsymmetricKey, &RSA_KEY_CAPABILITIES)?;
+                        authkey, ObjectType::AsymmetricKey, &RSA_KEY_CAPABILITIES, &[])?;
                     new_key.algorithm = key_algorithm;
 
                     cliclack::note("Importing RSA key with: ", get_new_key_note(&new_key))?;
@@ -334,7 +357,7 @@ pub fn import_asym_key(session: &Session, authkey: &ObjectDescriptor, filepath: 
 
                     let key_algorithm = get_algo_from_nid(nid)?;
                     new_key = get_new_object_basics(
-                        authkey, ObjectType::AsymmetricKey, &EC_KEY_CAPABILITIES)?;
+                        authkey, ObjectType::AsymmetricKey, &EC_KEY_CAPABILITIES, &[])?;
                     new_key.algorithm = key_algorithm;
 
                     cliclack::note("Importing EC key with: ", get_new_key_note(&new_key))?;
@@ -358,7 +381,7 @@ pub fn import_asym_key(session: &Session, authkey: &ObjectDescriptor, filepath: 
                     let k = private_ed.raw_private_key()?;
 
                     new_key = get_new_object_basics(
-                        authkey, ObjectType::AsymmetricKey, &ED_KEY_CAPABILITIES)?;
+                        authkey, ObjectType::AsymmetricKey, &ED_KEY_CAPABILITIES, &[])?;
                     new_key.algorithm = ObjectAlgorithm::Ed25519;
 
                     cliclack::note("Importing ED key with: ", get_new_key_note(&new_key))?;
@@ -385,7 +408,7 @@ pub fn import_asym_key(session: &Session, authkey: &ObjectDescriptor, filepath: 
                     cliclack::log::info("Found X509Certificate")?;
 
                     new_key = get_new_object_basics(
-                        authkey, ObjectType::Opaque, &OPAQUE_CAPABILITIES)?;
+                        authkey, ObjectType::Opaque, &OPAQUE_CAPABILITIES, &[])?;
                     new_key.algorithm = ObjectAlgorithm::OpaqueX509Certificate;
 
                     cliclack::note("Importing X509Certificate with: ", get_new_key_note(&new_key))?;
@@ -420,7 +443,21 @@ fn get_all_asym_objects(session: &Session) -> Result<Vec<ObjectHandle>, MgmError
 }
 
 fn list(session: &Session) -> Result<(), MgmError> {
-    let keys = get_all_asym_objects(session)?;
+    let types = cliclack::multiselect("Select type to list")
+        .initial_values([AsymTypes::Keys, AsymTypes::X509Certificates].to_vec())
+        .required(false)
+        .item(AsymTypes::Keys, AsymTypes::Keys, "")
+        .item(AsymTypes::X509Certificates, AsymTypes::X509Certificates, "")
+        .interact()?;
+    let mut keys = Vec::new();
+    if types.contains(&AsymTypes::Keys) {
+        keys.extend(session.
+            list_objects_with_filter(0, ObjectType::AsymmetricKey, "", ObjectAlgorithm::ANY, &Vec::new())?);
+    }
+    if types.contains(&AsymTypes::X509Certificates) {
+        keys.extend(session.
+            list_objects_with_filter(0, ObjectType::Opaque, "",ObjectAlgorithm::OpaqueX509Certificate, &Vec::new())?);
+    }
     list_objects(session, &keys)
 }
 
@@ -437,7 +474,7 @@ fn get_public_key(session: &Session) -> Result<(), MgmError> {
     let keys = session.
         list_objects_with_filter(0, ObjectType::AsymmetricKey, "", ObjectAlgorithm::ANY, &Vec::new())?;
     let keys = select_multiple_objects(
-        "Select keys" , convert_handlers(session, keys)?, false)?;
+        "Select keys" , convert_handlers(session, &keys)?, false)?;
 
     if keys.is_empty() {
         cliclack::log::info("No keys were selected")?;
@@ -572,8 +609,21 @@ fn get_public_key(session: &Session) -> Result<(), MgmError> {
                                          err))?;
         }
 
-        //print_pem_string(ed_pubkey.public_key_to_pem()?);
+        // print_pem_string(ed_pubkey.public_key_to_pem()?);
     }
+    Ok(())
+}
+
+fn get_cert(session: &Session) -> Result<(), MgmError> {
+    let certs = session.
+                          list_objects_with_filter(0, ObjectType::Opaque, "", ObjectAlgorithm::OpaqueX509Certificate, &Vec::new())?;
+    let cert = select_one_object(
+        "Select certificates" , convert_handlers(session, &certs)?)?;
+
+
+    let cert = session.get_opaque(cert.id)?;
+    let cert = openssl::x509::X509::from_der(cert.as_slice())?;
+    print_pem_string(cert.to_pem()?);
     Ok(())
 }
 
@@ -761,7 +811,7 @@ fn sign_attestation(session: &Session, authkey:&ObjectDescriptor) -> Result<(), 
     if keys.is_empty() {
         return Err(MgmError::Error("There are no asymmetric keys to attest".to_string()));
     }
-    let keys = convert_handlers(session, keys)?;
+    let keys = convert_handlers(session, &keys)?;
 
     let mut attested_keys = keys.clone();
     attested_keys.retain(|k| k.origin == ObjectOrigin::Generated);

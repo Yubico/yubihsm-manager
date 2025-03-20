@@ -44,6 +44,7 @@ scan_dir = "0.3.3"
 #openssl-sys = "0.9.88"
 cliclack = "0.1.9"
 console = "0.15.7"
+comfy-table = "7.0.1"
 
 
 [dependencies.yubihsmrs]

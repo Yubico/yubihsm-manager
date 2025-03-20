@@ -13,7 +13,7 @@ use ::{MAIN_STRING, YH_EC_P256_PUBKEY_LEN};
 
 static AUTH_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Authentication keys", MAIN_STRING));
 
-const USER_CAPABILITIES: [ObjectCapability; 10] = [
+const ASYM_USER_CAPABILITIES: [ObjectCapability; 14] = [
     ObjectCapability::SignPkcs,
     ObjectCapability::SignPss,
     ObjectCapability::SignEcdsa,
@@ -23,15 +23,22 @@ const USER_CAPABILITIES: [ObjectCapability; 10] = [
     ObjectCapability::DeriveEcdh,
     ObjectCapability::SignSshCertificate,
     ObjectCapability::SignAttestationCertificate,
+    ObjectCapability::EncryptEcb,
+    ObjectCapability::EncryptCbc,
+    ObjectCapability::DecryptEcb,
+    ObjectCapability::DecryptCbc,
     ObjectCapability::ExportableUnderWrap,
 ];
 
-const ADMIN_CAPABILITIES: [ObjectCapability; 6] = [
+const ASYM_ADMIN_CAPABILITIES: [ObjectCapability; 9] = [
     ObjectCapability::GenerateAsymmetricKey,
     ObjectCapability::PutAsymmetricKey,
     ObjectCapability::DeleteAsymmetricKey,
     ObjectCapability::PutOpaque,
     ObjectCapability::DeleteOpaque,
+    ObjectCapability::GenerateSymmetricKey,
+    ObjectCapability::PutSymmetricKey,
+    ObjectCapability::DeleteSymmetricKey,
     ObjectCapability::ExportableUnderWrap,
 ];
 
@@ -45,6 +52,15 @@ enum AuthKeyType {
     #[default]
     PasswordDerived,
     Ecp256,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum UserType {
+    #[default]
+    AsymUser,
+    AsymAdmin,
+    Auditor,
+    BackupAdmin,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -67,8 +83,8 @@ impl Display for AuthCommand {
             AuthCommand::List => write!(f, "List"),
             AuthCommand::GetKeyProperties => write!(f, "Print object properties"),
             AuthCommand::Delete => write!(f, "Delete"),
-            AuthCommand::SetupUser => write!(f, "Setup user"),
-            AuthCommand::SetupAdmin => write!(f, "Setup Admin"),
+            AuthCommand::SetupUser => write!(f, "Setup asymmetric/symmetric keys user"),
+            AuthCommand::SetupAdmin => write!(f, "Setup asymmetric/symmetric keys Admin"),
             AuthCommand::SetupAuditor => write!(f, "Setup Auditor"),
             AuthCommand::SetupBackupAdmin => write!(f, "Setup backup admin"),
             AuthCommand::ReturnToMainMenu => write!(f, "Return to main menu"),
@@ -85,31 +101,31 @@ pub fn exec_auth_command(session: &Session, authkey: &ObjectDescriptor) -> Resul
         let res = match cmd {
             AuthCommand::List => {
                 println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::List);
-                auth_list_keys(session)
+                list(session)
             },
             AuthCommand::GetKeyProperties => {
                 println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::GetKeyProperties);
-                auth_get_key_properties(session)
+                print_key_properties(session)
             },
             AuthCommand::Delete => {
                 println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::Delete);
-                auth_delete_user(session)
+                delete(session)
             },
             AuthCommand::SetupUser => {
                 println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::SetupUser);
-                auth_setup_user(session, authkey)
+                setup_user(session, authkey, UserType::AsymUser)
             },
             AuthCommand::SetupAdmin => {
                 println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::SetupAdmin);
-                auth_setup_admin(session, authkey)
+                setup_user(session, authkey, UserType::AsymAdmin)
             },
             AuthCommand::SetupAuditor => {
                 println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::SetupAuditor);
-                auth_setup_auditor(session, authkey)
+                setup_user(session, authkey, UserType::Auditor)
             },
             AuthCommand::SetupBackupAdmin => {
                 println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::SetupBackupAdmin);
-                auth_setup_backupadmin(session, authkey)
+                setup_user(session, authkey, UserType::BackupAdmin)
             },
             AuthCommand::ReturnToMainMenu => return Ok(()),
             AuthCommand::Exit => std::process::exit(0),
@@ -133,13 +149,13 @@ fn get_auth_command(authkey: &ObjectDescriptor) -> Result<AuthCommand, MgmError>
     }
     if capabilities.contains(&ObjectCapability::PutAuthenticationKey) {
 
-        if HashSet::from(USER_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
+        if HashSet::from(ASYM_USER_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
             commands = commands.item(
-                AuthCommand::SetupUser, AuthCommand::SetupUser, "Can only use asymmetric keys");
+                AuthCommand::SetupUser, AuthCommand::SetupUser, "Can only use asymmetric and symmetric keys");
         }
-        if HashSet::from(ADMIN_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
+        if HashSet::from(ASYM_ADMIN_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
             commands = commands.item(
-                AuthCommand::SetupAdmin, AuthCommand::SetupAdmin, "Can only manage asymmetric keys");
+                AuthCommand::SetupAdmin, AuthCommand::SetupAdmin, "Can only manage asymmetric and symmetric keys");
         }
         if delegated_capabilities.contains(&ObjectCapability::GetLogEntries) {
             commands = commands.item(
@@ -162,15 +178,15 @@ fn get_all_auth_keys(session: &Session) -> Result<Vec<ObjectHandle>, MgmError> {
         &Vec::new())?)
 }
 
-fn auth_list_keys(session: &Session) -> Result<(), MgmError> {
+fn list(session: &Session) -> Result<(), MgmError> {
     list_objects(session, &get_all_auth_keys(session)?)
 }
 
-fn auth_get_key_properties(session: &Session) -> Result<(), MgmError> {
+fn print_key_properties(session: &Session) -> Result<(), MgmError> {
     print_object_properties(session, get_all_auth_keys(session)?)
 }
 
-fn auth_delete_user(session: &Session) -> Result<(), MgmError> {
+fn delete(session: &Session) -> Result<(), MgmError> {
     delete_objects(session, get_all_auth_keys(session)?)
 }
 
@@ -230,33 +246,29 @@ fn create_authkey(
     Ok(())
 }
 
-fn auth_setup_user(session: &Session, current_authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let new_authkey = get_new_object_basics(
-        current_authkey, ObjectType::AuthenticationKey,&USER_CAPABILITIES)?;
-    create_authkey(session, &new_authkey)
-}
-
-fn auth_setup_admin(session: &Session, current_authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let mut new_authkey = get_new_object_basics(
-        current_authkey, ObjectType::AuthenticationKey, &ADMIN_CAPABILITIES)?;
-    let delegated_caps = select_capabilities(
-        "Select delegated capabilities", current_authkey, &USER_CAPABILITIES)?;
-    new_authkey.delegated_capabilities = if delegated_caps.is_empty() { None } else { Some(delegated_caps) };
-    create_authkey(session, &new_authkey)
-}
-
-fn auth_setup_auditor(session: &Session, current_authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let new_authkey = get_new_object_basics(
-        current_authkey, ObjectType::AuthenticationKey, &AUDITOR_CAPABILITIES)?;
-    create_authkey(session, &new_authkey)
-}
-
-fn auth_setup_backupadmin(session: &Session, current_authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let current_authkey_delegated = get_delegated_capabilities(current_authkey);
-    let mut new_authkey = get_new_object_basics(
-        current_authkey, ObjectType::AuthenticationKey, current_authkey_delegated.as_slice())?;
-    let delegated_caps = select_capabilities(
-        "Select delegated capabilities", current_authkey, current_authkey_delegated.as_slice())?;
-    new_authkey.delegated_capabilities = if delegated_caps.is_empty() { None } else { Some(delegated_caps) };
+fn setup_user(session: &Session, current_authkey: &ObjectDescriptor, user_type: UserType) -> Result<(), MgmError> {
+    let new_authkey = match user_type {
+        UserType::AsymUser => get_new_object_basics(
+            current_authkey, ObjectType::AuthenticationKey,&ASYM_USER_CAPABILITIES, &[])?,
+        UserType::AsymAdmin => {
+            let mut new_key = get_new_object_basics(
+                current_authkey, ObjectType::AuthenticationKey, &ASYM_ADMIN_CAPABILITIES, &[])?;
+            let delegated_caps = select_capabilities(
+                "Select delegated capabilities", current_authkey, &ASYM_USER_CAPABILITIES, &[])?;
+            new_key.delegated_capabilities = if delegated_caps.is_empty() { None } else { Some(delegated_caps) };
+            new_key
+        },
+        UserType::Auditor => get_new_object_basics(
+            current_authkey, ObjectType::AuthenticationKey, &AUDITOR_CAPABILITIES, &[ObjectCapability::GetLogEntries])?,
+        UserType::BackupAdmin => {
+            let current_authkey_delegated = get_delegated_capabilities(current_authkey);
+            let mut new_key = get_new_object_basics(
+                current_authkey, ObjectType::AuthenticationKey, current_authkey_delegated.as_slice(), current_authkey_delegated.as_slice())?;
+            let delegated_caps = select_capabilities(
+                "Select delegated capabilities", current_authkey, current_authkey_delegated.as_slice(), current_authkey_delegated.as_slice())?;
+            new_key.delegated_capabilities = if delegated_caps.is_empty() { None } else { Some(delegated_caps) };
+            new_key
+        },
+    };
     create_authkey(session, &new_authkey)
 }

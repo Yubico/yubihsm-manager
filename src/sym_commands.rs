@@ -160,7 +160,7 @@ fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmErro
         .interact()?;
 
     let mut new_key = get_new_object_basics(
-        authkey, ObjectType::SymmetricKey, &AES_KEY_CAPABILITIES)?;
+        authkey, ObjectType::SymmetricKey, &AES_KEY_CAPABILITIES, &[])?;
     new_key.algorithm = key_algorithm;
 
     cliclack::note("Generating AES key with:", get_new_key_note(&new_key))?;
@@ -199,7 +199,7 @@ fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError>
     };
 
     let mut new_key = get_new_object_basics(
-        authkey, ObjectType::SymmetricKey, &AES_KEY_CAPABILITIES)?;
+        authkey, ObjectType::SymmetricKey, &AES_KEY_CAPABILITIES, &[])?;
     new_key.algorithm = key_algorithm;
 
     cliclack::note("Import AES key with:", get_new_key_note(&new_key))?;

@@ -10,6 +10,7 @@ extern crate rusty_secrets;
 extern crate scan_dir;
 extern crate serde;
 extern crate yubihsmrs;
+extern crate comfy_table;
 
 
 use std::str::FromStr;
@@ -209,14 +210,15 @@ fn main() -> Result<(), MgmError>{
         }
         unwrap_or_exit1!(h.establish_session_asym(authkey, privkey.as_slice(), device_pubkey.as_slice()), "Unable to open asymmetric session")
     } else {
-        let password = match matches.get_one::<String>("password") {
-            Some(password) => password.to_owned(),
-            None => {
-                cliclack::password("Enter authentication password:")
-                    .mask('*')
-                    .interact()?
-            },
-        };
+        let password = "password";
+        // let password = match matches.get_one::<String>("password") {
+        //     Some(password) => password.to_owned(),
+        //     None => {
+        //         cliclack::password("Enter authentication password:")
+        //             .mask('*')
+        //             .interact()?
+        //     },
+        // };
         unwrap_or_exit1!(h.establish_session(authkey, &password, true), "Unable to open session")
     };
 
@@ -245,7 +247,7 @@ fn main() -> Result<(), MgmError>{
                     .item(MainCommand::ListObjects, "List all objects", "")
                     .item(MainCommand::AsymMgm, "Asymmetric keys", "")
                     .item(MainCommand::SymMgm, "Symmetric keys", "Available with firmware version 2.3.1 or later")
-                    .item(MainCommand::AuthMgm, "Authentication keys", "User's access and permissions")
+                    .item(MainCommand::AuthMgm, "Authentication keys", "Users' access and permissions")
                     .item(MainCommand::WrapMgm, "Wrap keys", "")
                     .item(MainCommand::Ksp, "Special usecase: KSP", "Setup KSP user for Windows CNG provider")
                     .item(MainCommand::Java, "Special usecase: SunPKCS11", "Manage asymmetric keys compatible with JAVA SunPKCS11 provider")

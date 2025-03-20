@@ -15,6 +15,8 @@ use pem::Pem;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::{Session};
 use error::MgmError;
+use comfy_table::{Table,ContentArrangement};
+
 
 macro_rules! unwrap_or_exit1 {
     ( $e:expr, $msg:expr) => {
@@ -54,23 +56,38 @@ impl Display for InputOutputFormat {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BasicDescriptor {
-    pub object_id: u16,
-    pub object_label:String,
-    pub object_algorithm: ObjectAlgorithm,
+    pub id: u16,
+    pub label:String,
+    pub algorithm: ObjectAlgorithm,
+    pub domains: Vec<ObjectDomain>,
+    pub capabilities: Vec<ObjectCapability>,
 }
 
 impl Display for BasicDescriptor {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "0x{:04x} : {:40} : {}", self.object_id, self.object_label, self.object_algorithm)
+        let mut dom_str = String::new().to_owned();
+        self.domains.iter().for_each(
+            |domain| dom_str.push_str(format!("{:160},", domain).as_str()));
+        dom_str.pop();
+
+        // let mut caps_str = String::new().to_owned();
+        // self.capabilities.iter().for_each(|cap| caps_str.push_str(format!("{:?},", cap).as_str()));
+        // caps_str.pop();
+
+        write!(f, "0x{:04x} : {:40} : {} : {}",
+             self.id, self.label, self.algorithm, dom_str)
     }
 }
 
 impl From<ObjectDescriptor> for BasicDescriptor {
     fn from(object_desc: ObjectDescriptor) -> Self {
         BasicDescriptor {
-            object_id: object_desc.id,
-            object_label: object_desc.label,
-            object_algorithm: object_desc.algorithm}
+            id: object_desc.id,
+            label: object_desc.label,
+            algorithm: object_desc.algorithm,
+            domains: object_desc.domains,
+            capabilities: object_desc.capabilities,
+        }
     }
 }
 
@@ -175,7 +192,7 @@ pub fn select_domains(selection: &Vec<ObjectDomain>) -> Result<Vec<ObjectDomain>
     }
 }
 
-pub fn convert_handlers(session:&Session, handlers: Vec<ObjectHandle>) -> Result<Vec<ObjectDescriptor>, MgmError> {
+pub fn convert_handlers(session:&Session, handlers: &Vec<ObjectHandle>) -> Result<Vec<ObjectDescriptor>, MgmError> {
     let descriptors: Vec<ObjectDescriptor> = handlers
         .into_iter()
         .map(|k| session.get_object_info(k.object_id, k.object_type))
@@ -278,7 +295,7 @@ pub fn select_multiple_objects(
 
 pub fn delete_objects(session: &Session, handles: Vec<ObjectHandle>) -> Result<(), MgmError> {
     let objects = select_multiple_objects(
-        "Select key(s) to delete", convert_handlers(session, handles)?,false)?;
+        "Select key(s) to delete", convert_handlers(session, &handles)?,false)?;
 
     if objects.is_empty() {
         cliclack::log::info("No keys were selected")?;
@@ -411,7 +428,7 @@ pub fn print_object_properties(session: &Session, objects:Vec<ObjectHandle>) -> 
         return Ok(());
     }
 
-    let result = select_one_object("", convert_handlers(session, objects)?)?;
+    let result = select_one_object("", convert_handlers(session, &objects)?)?;
     cliclack::log::success(result.to_string().replace('\t', "\n"))?;
     Ok(())
 }
@@ -456,10 +473,26 @@ pub fn print_object_properties(session: &Session, objects:Vec<ObjectHandle>) -> 
 // }
 
 pub fn list_objects(session: &Session, objects: &Vec<ObjectHandle>) -> Result<(), MgmError> {
-    println!("Found {} objects\n", objects.len());
-    for object in objects {
-        println!("{}", BasicDescriptor::from(session.get_object_info(object.object_id, object.object_type)?));
+    let mut descs = convert_handlers(session, objects)?;
+    descs.sort_by(|a, b| a.id.cmp(&b.id));
+
+    let mut table = Table::new();
+    table.set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_header(vec!["ID", "Label", "Algorithm", "Domains", "Capabilities"]);
+    for d in descs {
+        let id = format!("0x{:04x}", d.id);
+        let mut domains = String::new().to_owned();
+        d.domains.iter().for_each(
+            |domain| domains.push_str(format!("{:160},", domain).as_str()));
+        domains.pop();
+
+        let mut capabilities = String::new().to_owned();
+        d.capabilities.iter().for_each(|cap| capabilities.push_str(format!("{:?},", cap).as_str()));
+        capabilities.pop();
+
+        table.add_row(vec![id, d.label.to_string(), d.algorithm.to_string(), domains, capabilities]);
     }
+    println!("{table}");
     Ok(())
 }
 
@@ -596,7 +629,7 @@ pub fn get_op_key(
     // let mut keys: Vec<ObjectDescriptor> = keys.into_iter()
     //     .map(|k| session.get_object_info(k.object_id, k.object_type))
     //     .collect::<Result<_, _>>()?;
-    let mut keys = convert_handlers(session, keys)?;
+    let mut keys = convert_handlers(session, &keys)?;
 
     if !key_algos.is_empty() {
         keys.retain(|desc| key_algos.contains(&desc.algorithm));
@@ -629,7 +662,8 @@ pub fn get_delegated_capabilities(authkey: &ObjectDescriptor) -> Vec<ObjectCapab
 pub fn select_capabilities(
     prompt: &str,
     authkey: &ObjectDescriptor,
-    capability_options: &[ObjectCapability]) -> Result<Vec<ObjectCapability>, MgmError> {
+    capability_options: &[ObjectCapability],
+    capabilities_preselected: &[ObjectCapability]) -> Result<Vec<ObjectCapability>, MgmError> {
 
     let authkey_delegated = get_delegated_capabilities(authkey);
 
@@ -644,9 +678,13 @@ pub fn select_capabilities(
     if caps_options.is_empty() {
         Ok(Vec::new())
     } else {
+        caps_options.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
         let mut selected_caps =
             cliclack::multiselect(format!("{}{}", prompt, MULTI_SELECT_PROMPT_HELP));
         selected_caps = selected_caps.required(false);
+        if !capabilities_preselected.is_empty() {
+            selected_caps = selected_caps.initial_values(capabilities_preselected.to_vec());
+        }
         for c in caps_options {
             selected_caps = selected_caps
                 .item(c.clone(), c.to_string(), format!("yubihsm-shell name: {:?}", c));
@@ -655,12 +693,17 @@ pub fn select_capabilities(
     }
 }
 
-pub fn get_new_object_basics(authkey: &ObjectDescriptor, object_type: ObjectType, capability_options: &[ObjectCapability]) -> Result<ObjectDescriptor, MgmError> {
+pub fn get_new_object_basics(
+    authkey: &ObjectDescriptor,
+    object_type: ObjectType,
+    capability_options: &[ObjectCapability],
+    capabilities_preselected: &[ObjectCapability]) -> Result<ObjectDescriptor, MgmError> {
     let mut desc = ObjectDescriptor::new();
     desc.object_type = object_type;
     desc.id = get_id()?;
     desc.label = get_label()?;
     desc.domains = select_domains(&authkey.domains)?;
-    desc.capabilities = select_capabilities("Select object capabilities", authkey, capability_options)?;
+    desc.capabilities = select_capabilities(
+        "Select object capabilities", authkey, capability_options, capabilities_preselected)?;
     Ok(desc)
 }
