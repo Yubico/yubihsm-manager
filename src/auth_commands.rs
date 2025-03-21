@@ -7,8 +7,7 @@ use crate::util::{delete_objects};
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{get_delegated_capabilities, get_ec_pubkey_from_pemfile, get_file_path, get_new_object_basics, get_password,
-           list_objects, print_object_properties, select_capabilities};
+use util::{get_delegated_capabilities, get_ec_pubkey_from_pem_string, get_file_path, get_new_object_basics, get_password, list_objects, print_object_properties, read_string_from_file, select_capabilities};
 use ::{MAIN_STRING, YH_EC_P256_PUBKEY_LEN};
 
 static AUTH_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Authentication keys", MAIN_STRING));
@@ -224,8 +223,8 @@ fn create_authkey(
             }
         },
         AuthKeyType::Ecp256 => {
-            let pubkey = get_ec_pubkey_from_pemfile(
-                get_file_path("Enter path to ECP256 public key PEM file: ")?)?;
+            let (pubkey, _) = get_ec_pubkey_from_pem_string(
+                read_string_from_file("Enter path to ECP256 public key PEM file: ")?)?;
             if pubkey.len() != YH_EC_P256_PUBKEY_LEN {
                 return Err(MgmError::Error("Invalid public key".to_string()))
             }

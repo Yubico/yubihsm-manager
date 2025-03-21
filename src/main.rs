@@ -13,6 +13,7 @@ extern crate yubihsmrs;
 extern crate comfy_table;
 
 
+use std::fs;
 use std::str::FromStr;
 
 use clap::Arg;
@@ -20,7 +21,7 @@ use yubihsmrs::{Session, YubiHsm};
 use yubihsmrs::object::ObjectType;
 
 use error::MgmError;
-use util::get_ec_privkey_from_pemfile;
+use util::get_ec_privkey_from_pem_string;
 use util::list_objects;
 
 pub mod error;
@@ -198,7 +199,7 @@ fn main() -> Result<(), MgmError>{
                 std::process::exit(1);
             },
         };
-        let privkey = get_ec_privkey_from_pemfile(filename)?;
+        let privkey = get_ec_privkey_from_pem_string(fs::read_to_string(filename)?)?;
         if privkey.len() != YH_EC_P256_PRIVKEY_LEN {
             cliclack::log::error("Wrong length of private key").unwrap();
             std::process::exit(1);
@@ -210,15 +211,14 @@ fn main() -> Result<(), MgmError>{
         }
         unwrap_or_exit1!(h.establish_session_asym(authkey, privkey.as_slice(), device_pubkey.as_slice()), "Unable to open asymmetric session")
     } else {
-        let password = "password";
-        // let password = match matches.get_one::<String>("password") {
-        //     Some(password) => password.to_owned(),
-        //     None => {
-        //         cliclack::password("Enter authentication password:")
-        //             .mask('*')
-        //             .interact()?
-        //     },
-        // };
+        let password = match matches.get_one::<String>("password") {
+            Some(password) => password.to_owned(),
+            None => {
+                cliclack::password("Enter authentication password:")
+                    .mask('*')
+                    .interact()?
+            },
+        };
         unwrap_or_exit1!(h.establish_session(authkey, &password, true), "Unable to open session")
     };
 

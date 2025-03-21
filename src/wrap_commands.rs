@@ -9,7 +9,9 @@ use openssl::base64;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{convert_handlers, delete_objects, get_delegated_capabilities, get_directory, get_label, get_new_object_basics, list_objects, print_object_properties, select_capabilities, select_multiple_objects, select_one_object, write_file};
+use util::{convert_handlers, delete_objects, get_delegated_capabilities, get_directory, get_label,
+           get_new_object_basics, list_objects, print_object_properties, select_capabilities, select_multiple_objects,
+           select_one_object, write_bytes_to_file};
 use regex::Regex;
 use rusty_secrets::recover_secret;
 use MAIN_STRING;
@@ -341,7 +343,7 @@ fn backup_device(session: &Session) -> Result<(), MgmError> {
 
 pub fn object_to_file(dir: String, id: u16, object_type: ObjectType, data: &[u8]) -> Result<String, MgmError> {
     let filename = format!("{}/0x{:04x}-{}.yhw", dir, id, object_type);
-    write_file(base64::encode_block(data).as_bytes().to_vec(), &filename)?;
+    write_bytes_to_file(base64::encode_block(data).as_bytes().to_vec(), &filename)?;
     Ok(filename)
 }
 

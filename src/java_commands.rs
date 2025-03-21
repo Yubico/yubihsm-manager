@@ -16,7 +16,8 @@ use asym_commands::{gen_asym_key, get_attestation_cert, import_asym_key};
 
 use error::MgmError;
 use MAIN_STRING;
-use util::{BasicDescriptor, convert_handlers, get_file_path, get_new_object_basics, get_op_key, list_objects, print_object_properties, read_file_bytes, read_file_string, read_pem_file, select_multiple_objects, write_file};
+use util::{BasicDescriptor, convert_handlers, get_file_path, get_new_object_basics, get_op_key, list_objects,
+           print_object_properties, read_file_bytes, read_pem_file, select_multiple_objects, write_bytes_to_file};
 
 use crate::util::{delete_objects};
 

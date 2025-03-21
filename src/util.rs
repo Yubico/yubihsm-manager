@@ -1,7 +1,7 @@
 extern crate yubihsmrs;
 
 use std::fmt::{Display};
-use std::{fmt, fs};
+use std::{env, fmt, fs};
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{Write};
@@ -11,6 +11,7 @@ use std::str::FromStr;
 use cliclack::MultiSelect;
 use openssl::bn::BigNumContext;
 use openssl::ec::PointConversionForm;
+use openssl::nid::Nid;
 use pem::Pem;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::{Session};
@@ -59,23 +60,12 @@ pub struct BasicDescriptor {
     pub id: u16,
     pub label:String,
     pub algorithm: ObjectAlgorithm,
-    pub domains: Vec<ObjectDomain>,
-    pub capabilities: Vec<ObjectCapability>,
 }
 
 impl Display for BasicDescriptor {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut dom_str = String::new().to_owned();
-        self.domains.iter().for_each(
-            |domain| dom_str.push_str(format!("{:160},", domain).as_str()));
-        dom_str.pop();
-
-        // let mut caps_str = String::new().to_owned();
-        // self.capabilities.iter().for_each(|cap| caps_str.push_str(format!("{:?},", cap).as_str()));
-        // caps_str.pop();
-
-        write!(f, "0x{:04x} : {:40} : {} : {}",
-             self.id, self.label, self.algorithm, dom_str)
+        write!(f, "0x{:04x} : {:40} : {}",
+             self.id, self.label, self.algorithm)
     }
 }
 
@@ -85,8 +75,6 @@ impl From<ObjectDescriptor> for BasicDescriptor {
             id: object_desc.id,
             label: object_desc.label,
             algorithm: object_desc.algorithm,
-            domains: object_desc.domains,
-            capabilities: object_desc.capabilities,
         }
     }
 }
@@ -341,19 +329,53 @@ pub fn get_file_path(prompt:&str) -> Result<String, MgmError> {
     Ok(file_path)
 }
 
-pub fn read_file_string(file_path:String) -> Result<String, MgmError> {
-    match fs::read_to_string(file_path) {
-        Ok(content) => Ok(content),
-        Err(err) => {
-            cliclack::log::error("Failed to read file to string")?;
-            if cliclack::confirm("Try again?").interact()? {
-                read_file_string(get_file_path("")?)
-            } else {
-                Err(MgmError::StdIoError(err))
-            }
-        }
+// pub fn read_file_string(file_path:String) -> Result<String, MgmError> {
+//     match fs::read_to_string(file_path) {
+//         Ok(content) => Ok(content),
+//         Err(err) => {
+//             cliclack::log::error("Failed to read file to string")?;
+//             if cliclack::confirm("Try again?").interact()? {
+//                 read_file_string(get_file_path("")?)
+//             } else {
+//                 Err(MgmError::StdIoError(err))
+//             }
+//         }
+//     }
+// }
+
+pub fn read_string_from_file(prompt:&str) -> Result<String, MgmError> {
+    let path = get_file_path(prompt)?;
+    Ok(fs::read_to_string(path)?)
+}
+
+pub fn read_input_bytes(prompt: &str, expected_hex: bool) -> Result<Vec<u8>, MgmError> {
+    let user_input: String = cliclack::input(prompt).interact()?;
+    if user_input.is_empty() {
+        return Err(MgmError::InvalidInput("No input to read".to_string()))
+    }
+    if Path::new(&user_input).exists() {
+        cliclack::log::info(format!("Read input from file: {}", user_input))?;
+        return Ok(fs::read(user_input)?)
+    }
+    if expected_hex {
+        Ok(hex::decode(user_input)?)
+    } else {
+        Ok(user_input.as_bytes().to_vec())
     }
 }
+
+pub fn read_input_string(prompt: &str) -> Result<String, MgmError> {
+    let user_input: String = cliclack::input(prompt).interact()?;
+    if user_input.is_empty() {
+        return Err(MgmError::InvalidInput("No input to read".to_string()))
+    }
+    if Path::new(&user_input).exists() {
+        cliclack::log::info(format!("Read input from file: {}", user_input))?;
+        return Ok(fs::read_to_string(user_input)?)
+    }
+    Ok(user_input)
+}
+
 
 pub fn read_file_bytes(prompt:&str) -> Result<Vec<u8>, MgmError> {
     let file_path = get_file_path(prompt)?;
@@ -371,7 +393,8 @@ pub fn read_file_bytes(prompt:&str) -> Result<Vec<u8>, MgmError> {
 }
 
 pub fn read_pem_file(file_path:String) -> Result<Pem, MgmError> {
-    let content = read_file_string(file_path)?;
+    // let content = read_file_string(file_path)?;
+    let content = fs::read_to_string(file_path)?;
     match pem::parse(content) {
         Ok(pem) => Ok(pem),
         Err(err) => {
@@ -385,21 +408,45 @@ pub fn read_pem_file(file_path:String) -> Result<Pem, MgmError> {
     }
 }
 
-pub fn get_ec_pubkey_from_pemfile(file_path:String) -> Result<Vec<u8>, MgmError> {
-    let pubkey = openssl::ec::EcKey::public_key_from_pem(read_file_string(file_path)?.as_bytes())?;
+pub fn get_ec_pubkey_from_pem_string(pem_str:String) -> Result<(Vec<u8>, Nid), MgmError> {
+    let pubkey = openssl::ec::EcKey::public_key_from_pem(pem_str.as_bytes())?;
     let mut ctx = BigNumContext::new()?;
     let ec_point_ref = pubkey.public_key();
     let ec_group_ref = pubkey.group();
-    Ok(ec_point_ref.to_bytes(ec_group_ref, PointConversionForm::UNCOMPRESSED, &mut ctx)?)
+    let key = ec_point_ref.to_bytes(ec_group_ref, PointConversionForm::UNCOMPRESSED, &mut ctx)?;
+    let nid = ec_group_ref.curve_name().ok_or(MgmError::Error(String::from("Failed to find EC curve name")))?;
+    Ok((key, nid))
 }
+//
+// pub fn get_ec_pubkey_from_string(pem_str:String) -> Result<Vec<u8>, MgmError> {
+//     let pubkey = openssl::ec::EcKey::public_key_from_pem(pem_str.as_bytes())?;
+//     let mut ctx = BigNumContext::new()?;
+//     let ec_point_ref = pubkey.public_key();
+//     let ec_group_ref = pubkey.group();
+//     Ok(ec_point_ref.to_bytes(ec_group_ref, PointConversionForm::UNCOMPRESSED, &mut ctx)?)
+// }
 
-pub fn get_ec_privkey_from_pemfile(file_path:String) -> Result<Vec<u8>, MgmError> {
-    let privkey = openssl::ec::EcKey::private_key_from_pem(read_file_string(file_path)?.as_bytes())?;
+pub fn get_ec_privkey_from_pem_string(pem_str:String) -> Result<Vec<u8>, MgmError> {
+    let privkey = openssl::ec::EcKey::private_key_from_pem(pem_str.as_bytes())?;
     let s = privkey.private_key();
     Ok(s.to_vec())
 }
 
-pub fn write_file(content: Vec<u8>, filename:&String) -> Result<(), MgmError> {
+// pub fn get_ec_pubkey_from_pemfile(file_path:String) -> Result<Vec<u8>, MgmError> {
+//     let pubkey = openssl::ec::EcKey::public_key_from_pem(read_file_string(file_path)?.as_bytes())?;
+//     let mut ctx = BigNumContext::new()?;
+//     let ec_point_ref = pubkey.public_key();
+//     let ec_group_ref = pubkey.group();
+//     Ok(ec_point_ref.to_bytes(ec_group_ref, PointConversionForm::UNCOMPRESSED, &mut ctx)?)
+// }
+
+// pub fn get_ec_privkey_from_pemfile(file_path:String) -> Result<Vec<u8>, MgmError> {
+//     let privkey = openssl::ec::EcKey::private_key_from_pem(read_file_string(file_path)?.as_bytes())?;
+//     let s = privkey.private_key();
+//     Ok(s.to_vec())
+// }
+
+pub fn write_bytes_to_file(content: Vec<u8>, filename:&String) -> Result<(), MgmError> {
     let mut file = match File::options().create_new(true).write(true).open(filename) {
         Ok(f) => f,
         Err(error) => {
@@ -416,7 +463,11 @@ pub fn write_file(content: Vec<u8>, filename:&String) -> Result<(), MgmError> {
         }
     };
     match file.write_all(content.deref()) {
-        Ok(_) => cliclack::log::success(format!("Wrote file {}", filename))?,
+        Ok(_) => {
+            let dir = env::current_dir()?;
+            let dir = dir.to_str().unwrap_or_default();
+            cliclack::log::success(format!("Wrote file {}/{}", if dir.is_empty() {"."} else {dir}, filename))?
+        },
         Err(err) => return Err(MgmError::StdIoError(err)),
     }
     Ok(())
