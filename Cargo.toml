@@ -17,15 +17,7 @@
 [package]
 name = "yubihsm-manager"
 version = "0.2.0"
-description = """
-[BETA VERSION] Command line tool for YubiHSM 2
-
-Mange symmetric and asymmetric keys, authentication keys and wrap keys as well as setting up the YubiHSM2 for specific
-usecases.
-
-Use this tool instead of yubihsm-setup. Use Space key to select and deselect options in multi-choice
-questions. Use ESC key to cancel current operation.
-"""
+description = "[BETA VERSION] Command line tool for YubiHSM 2"
 authors = ["Aveen Ismail <aveen.ismail@yubico.com>"]
 license = "Apache-2.0"
 

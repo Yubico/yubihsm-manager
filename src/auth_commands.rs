@@ -7,7 +7,8 @@ use crate::util::{delete_objects};
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{get_delegated_capabilities, get_ec_pubkey_from_pem_string, get_new_object_basics, get_password, list_objects, print_object_properties, read_string_from_file, select_capabilities};
+use util::{get_delegated_capabilities, get_ec_pubkey_from_pem_string, get_new_object_basics, get_password,
+           list_objects, print_object_properties, read_string_from_file, select_capabilities};
 use ::{MAIN_STRING, YH_EC_P256_PUBKEY_LEN};
 
 static AUTH_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Authentication keys", MAIN_STRING));
