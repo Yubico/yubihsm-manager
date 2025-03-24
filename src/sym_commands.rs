@@ -5,7 +5,8 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, Obj
 use yubihsmrs::Session;
 use error::MgmError;
 use MAIN_STRING;
-use util::{delete_objects, get_new_object_basics, get_op_key, list_objects, print_object_properties};
+use util::{delete_objects, get_new_object_basics, get_op_key, list_objects, print_object_properties, read_input_bytes,
+           write_bytes_to_file};
 
 static SYM_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Symmetric keys", MAIN_STRING));
 
@@ -53,40 +54,47 @@ enum AesMode {
     Cbc,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
+enum EncryptionMode {
+    #[default]
+    Encrypt,
+    Decrypt,
+}
+
 pub fn exec_sym_command(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
 
     loop {
-        println!("\n{}", SYM_STRING.to_string());
+        println!("\n{}", *SYM_STRING);
 
         let cmd = get_command(authkey)?;
         let res = match cmd {
             SymCommand::List => {
-                println!("\n{} > {}\n", SYM_STRING.to_string(), SymCommand::List);
+                println!("\n{} > {}\n", *SYM_STRING, SymCommand::List);
                 list(session)
             },
             SymCommand::GetKeyProperties => {
-                println!("\n{} > {}\n", SYM_STRING.to_string(), SymCommand::GetKeyProperties);
+                println!("\n{} > {}\n", *SYM_STRING, SymCommand::GetKeyProperties);
                 print_key_properties(session)
             },
             SymCommand::Generate => {
-                println!("\n{} > {}\n", SYM_STRING.to_string(), SymCommand::Generate);
+                println!("\n{} > {}\n", *SYM_STRING, SymCommand::Generate);
                 generate(session, authkey)
             },
             SymCommand::Import => {
-                println!("\n{} > {}\n", SYM_STRING.to_string(), SymCommand::Import);
+                println!("\n{} > {}\n", *SYM_STRING, SymCommand::Import);
                 import(session, authkey)
             },
             SymCommand::Delete => {
-                println!("\n{} > {}\n", SYM_STRING.to_string(), SymCommand::Delete);
+                println!("\n{} > {}\n", *SYM_STRING, SymCommand::Delete);
                 delete(session)
             },
             SymCommand::Encrypt => {
-                println!("\n{} > {}\n", SYM_STRING.to_string(), SymCommand::Encrypt);
-                operate(session, authkey, true)
+                println!("\n{} > {}\n", *SYM_STRING, SymCommand::Encrypt);
+                operate(session, authkey, EncryptionMode::Encrypt)
             },
             SymCommand::Decrypt => {
-                println!("\n{} > {}\n", SYM_STRING.to_string(), SymCommand::Decrypt);
-                operate(session, authkey, false)
+                println!("\n{} > {}\n", *SYM_STRING, SymCommand::Decrypt);
+                operate(session, authkey, EncryptionMode::Decrypt)
             },
             SymCommand::ReturnToMainMenu => return Ok(()),
             SymCommand::Exit => std::process::exit(0),
@@ -99,7 +107,6 @@ pub fn exec_sym_command(session: &Session, authkey: &ObjectDescriptor) -> Result
 }
 
 fn get_command(authkey: &ObjectDescriptor) -> Result<SymCommand, MgmError> {
-    // let capabilities: HashSet<ObjectCapability> = authkey.capabilities.into_iter().collect();
     let capabilities= &authkey.capabilities;
 
     let mut commands = cliclack::select("").initial_value(SymCommand::List);
@@ -116,16 +123,10 @@ fn get_command(authkey: &ObjectDescriptor) -> Result<SymCommand, MgmError> {
     }
     if capabilities.contains(&ObjectCapability::EncryptEcb) ||
         capabilities.contains(&ObjectCapability::EncryptCbc) {
-    // if HashSet::from([
-    //     ObjectCapability::EncryptEcb,
-    //     ObjectCapability::EncryptCbc]).intersection(&capabilities).count() > 0 {
         commands = commands.item(SymCommand::Encrypt, SymCommand::Encrypt, "");
     }
     if capabilities.contains(&ObjectCapability::DecryptEcb) ||
         capabilities.contains(&ObjectCapability::DecryptCbc) {
-    // if HashSet::from([
-    //     ObjectCapability::DecryptEcb,
-    //     ObjectCapability::DecryptCbc]).intersection(&capabilities).count() > 0 {
         commands = commands.item(SymCommand::Decrypt, SymCommand::Decrypt, "");
     }
     commands = commands.item(SymCommand::ReturnToMainMenu, SymCommand::ReturnToMainMenu, "");
@@ -168,12 +169,12 @@ fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmErro
     if cliclack::confirm("Generate key?").interact()? {
         let mut spinner = cliclack::spinner();
         spinner.start("Generating AES key...");
-        let id = session
+        new_key.id = session
             .generate_aes_key(
-                new_key.id, &new_key.label, &new_key.capabilities, &new_key.domains, key_algorithm)?;
+                new_key.id, &new_key.label, &new_key.capabilities, &new_key.domains, new_key.algorithm)?;
         spinner.stop("");
         cliclack::log::success(
-            format!("Generated AES key with ID 0x{:04x} on the device", id))?;
+            format!("Generated AES key with ID 0x{:04x} on the device", new_key.id))?;
     }
     Ok(())
 }
@@ -184,7 +185,7 @@ fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError>
             if hex::decode(input).is_err() {
                 Err("Input must be in hex format")
             } else if input.len() != 32 && input.len() != 48 && input.len() != 64 {
-                Err("Input must be 32, 48 or 64 characters long")
+                Err("Key must be 16, 24 or 32 bytes long")
             } else {
                 Ok(())
             }
@@ -205,11 +206,11 @@ fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError>
     cliclack::note("Import AES key with:", get_new_key_note(&new_key))?;
 
     if cliclack::confirm("Import key?").interact()? {
-        let id = session
+        new_key.id = session
             .import_aes_key(
-                new_key.id, &new_key.label, &new_key.domains, &new_key.capabilities, key_algorithm, &key)?;
+                new_key.id, &new_key.label, &new_key.domains, &new_key.capabilities, new_key.algorithm, &key)?;
         cliclack::log::success(
-            format!("Imported AES key with ID 0x{:04x} on the device", id))?;
+            format!("Imported AES key with ID 0x{:04x} on the device", new_key.id))?;
     }
     Ok(())
 }
@@ -218,64 +219,65 @@ fn delete(session: &Session) -> Result<(), MgmError> {
     delete_objects(session, get_all_sym_keys(session)?)
 }
 
-fn operate(session: &Session, authkey: &ObjectDescriptor, enc: bool) -> Result<(), MgmError> {
+fn operate(session: &Session, authkey: &ObjectDescriptor, enc_mode: EncryptionMode) -> Result<(), MgmError> {
 
-    let mut mode = cliclack::select("Select encryption mode");
-    if (enc && authkey.capabilities.contains(&ObjectCapability::EncryptEcb)) ||
-        (!enc && authkey.capabilities.contains(&ObjectCapability::DecryptEcb)) {
-        mode = mode.item(AesMode::Ecb, "ECB", "");
+    let mut aes_mode = cliclack::select("Select AES encryption mode");
+    if (enc_mode == EncryptionMode::Encrypt && authkey.capabilities.contains(&ObjectCapability::EncryptEcb)) ||
+        (enc_mode == EncryptionMode::Decrypt && authkey.capabilities.contains(&ObjectCapability::DecryptEcb)) {
+        aes_mode = aes_mode.item(AesMode::Ecb, "ECB", "");
     }
-    if (enc && authkey.capabilities.contains(&ObjectCapability::EncryptCbc)) ||
-        (!enc && authkey.capabilities.contains(&ObjectCapability::DecryptCbc)) {
-        mode = mode.item(AesMode::Cbc, "CBC", "")
+    if (enc_mode == EncryptionMode::Encrypt && authkey.capabilities.contains(&ObjectCapability::EncryptCbc)) ||
+        (enc_mode == EncryptionMode::Decrypt && authkey.capabilities.contains(&ObjectCapability::DecryptCbc)) {
+        aes_mode = aes_mode.item(AesMode::Cbc, "CBC", "")
     }
-    let mode = mode.interact()?;
+    let aes_mode = aes_mode.interact()?;
 
-    // let authkey_capabilities = get_permissible_capabilities(session, current_authkey)?;
-    let key = match mode {
-        AesMode::Ecb => get_op_key(
-            session, authkey,
-            [if enc {ObjectCapability::EncryptEcb} else {ObjectCapability::DecryptEcb}].to_vec().as_ref(),
-            ObjectType::SymmetricKey,
-            &[])?,
-        AesMode::Cbc  => get_op_key(
-            session, authkey,
-            [if enc {ObjectCapability::EncryptCbc} else {ObjectCapability::DecryptCbc}].to_vec().as_ref(),
-            ObjectType::SymmetricKey,
-            &[])?,
+    let op_capability = match aes_mode {
+        AesMode::Ecb => if enc_mode == EncryptionMode::Encrypt {ObjectCapability::EncryptEcb} else {ObjectCapability::DecryptEcb},
+        AesMode::Cbc => if enc_mode == EncryptionMode::Encrypt {ObjectCapability::EncryptCbc} else {ObjectCapability::DecryptCbc},
     };
+    let key = get_op_key(
+        session, authkey,
+        [op_capability].to_vec().as_ref(),
+        ObjectType::SymmetricKey,
+        &[])?;
 
-    let in_data: String = cliclack::input("Enter data in hex or path to file (data must be a multiple of 16 bytes):")
-        .validate(|input: &String| {
-            if hex::decode(input).is_err() {
-                Err("Input must be in hex format")
-            } else if input.len() % 32 != 0 {
-                Err("Input must be a multiple of 32 characters long")
-            } else {
-                Ok(())
-            }
-        }).interact()?;
-    let in_data: Vec<u8> = hex::decode(in_data)?;
+    let in_data = read_input_bytes(
+        "Enter data in hex or path to binary file (data must be a multiple of 16 bytes long):", true)?;
+    if in_data.len() % 16 != 0 {
+        return Err(MgmError::InvalidInput("Input data not a multiple of 16 bytes".to_string()))
+    }
 
-    let out_data = if enc {
-        match mode {
-            AesMode::Ecb => session.encrypt_aes_ecb(key.id, &in_data)?,
-            AesMode::Cbc => {
-                let iv = get_iv()?;
-                session.encrypt_aes_cbc(key.id, &iv, &in_data)?
+    let out_data = match enc_mode {
+        EncryptionMode::Encrypt => {
+            match aes_mode {
+                AesMode::Ecb => session.encrypt_aes_ecb(key.id, &in_data)?,
+                AesMode::Cbc => {
+                    let iv = get_iv()?;
+                    session.encrypt_aes_cbc(key.id, &iv, &in_data)?
+                }
             }
-        }
-    } else {
-        match mode {
-            AesMode::Ecb => session.decrypt_aes_ecb(key.id, &in_data)?,
-            AesMode::Cbc => {
-                let iv = get_iv()?;
-                session.decrypt_aes_cbc(key.id, &iv, &in_data)?
+        },
+        EncryptionMode::Decrypt => {
+            match aes_mode {
+                AesMode::Ecb => session.decrypt_aes_ecb(key.id, &in_data)?,
+                AesMode::Cbc => {
+                    let iv = get_iv()?;
+                    session.decrypt_aes_cbc(key.id, &iv, &in_data)?
+                }
             }
         }
     };
 
-    cliclack::log::success(hex::encode(out_data))?;
+    cliclack::log::success(hex::encode(&out_data))?;
+
+    if cliclack::confirm("Write to binary file?").interact()? {
+        let filename = if enc_mode == EncryptionMode::Encrypt {"data.enc"} else {"data.dec"};
+        if let Err(err) = write_bytes_to_file(out_data, &filename.to_string()) {
+            cliclack::log::error(format!("Failed to write binary data to file. {}", err))?;
+        }
+    }
+
     Ok(())
 }
 
@@ -286,7 +288,7 @@ fn get_iv() -> Result<Vec<u8>, MgmError> {
             if hex::decode(input).is_err() {
                 Err("Input must be in hex format")
             } else if input.len() != 32 {
-                Err("IV must be a 32 characters long")
+                Err("IV must be 16 bytes long")
             } else {
                 Ok(())
             }

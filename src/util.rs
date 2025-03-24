@@ -354,7 +354,7 @@ pub fn read_input_bytes(prompt: &str, expected_hex: bool) -> Result<Vec<u8>, Mgm
         return Err(MgmError::InvalidInput("No input to read".to_string()))
     }
     if Path::new(&user_input).exists() {
-        cliclack::log::info(format!("Read input from file: {}", user_input))?;
+        cliclack::log::info(format!("Read input from binary file: {}", user_input))?;
         return Ok(fs::read(user_input)?)
     }
     if expected_hex {

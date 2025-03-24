@@ -726,7 +726,7 @@ fn sign(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
 
     cliclack::log::success(format!("Signature in HEX:\n{}", hex::encode(&sig)))?;
 
-    if cliclack::confirm("Write to file?").interact()? {
+    if cliclack::confirm("Write to binary file?").interact()? {
         if let Err(err) = write_bytes_to_file(sig, &"data.sig".to_string()) {
             cliclack::log::error(format!("Failed to write signature to file. {}", err))?;
         }
@@ -783,7 +783,7 @@ fn decrypt(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError
         cliclack::log::success(format!("Plain text data:\n{}", data_str))?;
     }
 
-    if cliclack::confirm("Write to file?").interact()? {
+    if cliclack::confirm("Write to binary file?").interact()? {
         if let Err(err) = write_bytes_to_file(data, &"data.dec".to_string()) {
             cliclack::log::error(format!("Failed to write decrypted data to file. {}", err))?;
         }
