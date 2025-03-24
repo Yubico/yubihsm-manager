@@ -1,42 +1,15 @@
-use std::collections::HashSet;
 use std::fmt;
 use std::fmt::{Display};
 use std::sync::LazyLock;
-use openssl::{base64, pkey};
-use openssl::bn::{BigNum, BigNumContext};
-use openssl::ec::{EcGroup, EcKey, EcPoint, PointConversionForm};
-use openssl::hash::{MessageDigest};
-use openssl::nid::Nid;
-use openssl::pkey::PKey;
-use pem::Pem;
-use yubihsmrs::error::Error;
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectOrigin, ObjectType};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use asym_commands::{gen_asym_key, get_attestation_cert, import_asym_key};
 
 use error::MgmError;
 use MAIN_STRING;
-use util::{BasicDescriptor, convert_handlers, get_file_path, get_new_object_basics, get_op_key, list_objects,
-           print_object_properties, read_file_bytes, read_pem_file, select_multiple_objects, write_bytes_to_file};
-
-use crate::util::{delete_objects};
+use util::{convert_handlers, get_file_path, list_objects, read_pem_file, select_multiple_objects};
 
 static JAVA_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > SunPKCS11 keys", MAIN_STRING));
-
-const RSA_KEY_ALGORITHM: [ObjectAlgorithm; 3] = [
-    ObjectAlgorithm::Rsa2048,
-    ObjectAlgorithm::Rsa3072,
-    ObjectAlgorithm::Rsa4096];
-
-const EC_KEY_ALGORITHM: [ObjectAlgorithm; 8] = [
-    ObjectAlgorithm::EcP224,
-    ObjectAlgorithm::EcP256,
-    ObjectAlgorithm::EcP384,
-    ObjectAlgorithm::EcP521,
-    ObjectAlgorithm::EcK256,
-    ObjectAlgorithm::EcBp256,
-    ObjectAlgorithm::EcBp384,
-    ObjectAlgorithm::EcBp512];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum JavaCommand {
@@ -62,19 +35,11 @@ impl Display for JavaCommand {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum AsymKeyTypes {
-    #[default]
-    Rsa,
-    Ec,
-    Ed,
-}
-
 pub fn exec_java_command(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
 
     loop {
 
-        println!("\n{}", JAVA_STRING.to_string());
+        println!("\n{}", *JAVA_STRING);
 
         cliclack::note("",
             "SunPKCS11 compatible keys entails that an asymmetric key and its equivalent X509Certificate \
@@ -84,19 +49,19 @@ pub fn exec_java_command(session: &Session, authkey: &ObjectDescriptor) -> Resul
         let cmd = get_command(authkey)?;
         let res = match cmd {
             JavaCommand::List => {
-                println!("\n{} > {}\n", JAVA_STRING.to_string(), JavaCommand::List);
+                println!("\n{} > {}\n", *JAVA_STRING, JavaCommand::List);
                 list(session)
             },
             JavaCommand::Generate => {
-                println!("\n{} > {}\n", JAVA_STRING.to_string(), JavaCommand::Generate);
+                println!("\n{} > {}\n", *JAVA_STRING, JavaCommand::Generate);
                 generate(session, authkey)
             },
             JavaCommand::Import => {
-                println!("\n{} > {}\n", JAVA_STRING.to_string(), JavaCommand::Import);
+                println!("\n{} > {}\n", *JAVA_STRING, JavaCommand::Import);
                 import(session, authkey)
             },
             JavaCommand::Delete => {
-                println!("\n{} > {}\n", JAVA_STRING.to_string(), JavaCommand::Delete);
+                println!("\n{} > {}\n", *JAVA_STRING, JavaCommand::Delete);
                 delete(session)
             },
             JavaCommand::ReturnToMainMenu => return Ok(()),
@@ -148,16 +113,10 @@ fn get_all_keys(session: &Session) -> Result<Vec<ObjectHandle>, MgmError> {
     keys.retain(|k| session.get_object_info(k.object_id, ObjectType::AsymmetricKey).is_ok());
     keys.iter_mut().for_each(|x| x.object_type = ObjectType::AsymmetricKey);
     Ok(keys)
-    // convert_handlers(session, &keys)
 }
 
 fn list(session: &Session) -> Result<(), MgmError> {
     let keys = get_all_keys(session)?;
-    // cliclack::log::remark(format!("Found {} objects", keys.len()))?;
-    // for k in keys {
-    //     println!("  {}", BasicDescriptor::from(k));
-    // }
-    // Ok(())
     list_objects(session, &keys)
 }
 
@@ -171,13 +130,6 @@ fn delete(session: &Session) -> Result<(), MgmError> {
     let selected_keys = select_multiple_objects(
         "Select keys to delete", convert_handlers(session, &keys)?, false)?;
 
-    // let mut selected_keys = cliclack::multiselect(
-    //     "Select JAVA keys to delete. Press the space button to select and unselect item. Press 'Enter' when done.");
-    // selected_keys = selected_keys.required(false);
-    // for key in all_java_keys {
-    //     selected_keys = selected_keys.item(key.clone(), BasicDescriptor::from(key), "");
-    // }
-    // let selected_keys = selected_keys.interact()?;
     if !selected_keys.is_empty() && cliclack::confirm(
         "All selected key(s) will be deleted and cannot be recovered. Delete anyway?").interact()? {
         for key in selected_keys {
@@ -194,15 +146,9 @@ fn delete_java_key(session: &Session, id: u16) -> Result<(), MgmError>{
     session.delete_object(id, ObjectType::AsymmetricKey)?;
     cliclack::log::info(
         format!("Deleted asymmetric key with ID 0x{:04x} from the device", id))?;
-    match session.delete_object(id, ObjectType::Opaque) {
-        Ok(()) => cliclack::log::info(format!("Deleted X509Certificate with ID 0x{:04x} from the device", id))?,
-        _ => {}
+    if let Ok(()) = session.delete_object(id, ObjectType::Opaque) {
+        cliclack::log::info(format!("Deleted X509Certificate with ID 0x{:04x} from the device", id))?
     };
-    // if cert_id != 0 {
-    //     session.delete_object(cert_id, ObjectType::Opaque)?;
-    //     cliclack::log::info(
-    //         format!("Deleted X509Certificate with ID 0x{:04x} from the device", cert_id))?;
-    // }
     Ok(())
 }
 

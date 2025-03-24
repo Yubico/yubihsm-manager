@@ -3,7 +3,6 @@ use std::fmt::Display;
 
 use std::fs::File;
 use std::io::{Read};
-use std::path::Path;
 use std::sync::LazyLock;
 use openssl::base64;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};

@@ -18,19 +18,6 @@ use yubihsmrs::{Session};
 use error::MgmError;
 use comfy_table::{Table,ContentArrangement};
 
-
-macro_rules! unwrap_or_exit1 {
-    ( $e:expr, $msg:expr) => {
-        match $e {
-            Ok(x) => x,
-            Err(err) => {
-                cliclack::log::error(format!("{}. {}", $msg, err))?;
-                std::process::exit(1);
-            },
-        }
-    }
-}
-
 const MULTI_SELECT_PROMPT_HELP: &str = ". Press the space button to select and unselect item. Press 'Enter' when done.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
