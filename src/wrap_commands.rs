@@ -8,9 +8,7 @@ use openssl::base64;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{convert_handlers, delete_objects, get_delegated_capabilities, get_directory, get_label,
-           get_new_object_basics, list_objects, print_object_properties, select_capabilities, select_multiple_objects,
-           select_one_object, write_bytes_to_file};
+use util::{convert_handlers, delete_objects, get_delegated_capabilities, get_directory, get_label, get_new_object_basics, list_objects, print_object_properties, select_capabilities, select_multiple_objects, select_one_object, write_bytes_to_file};
 use regex::Regex;
 use rusty_secrets::recover_secret;
 use MAIN_STRING;
@@ -44,24 +42,18 @@ impl Display for WrapCommand {
             WrapCommand::Generate => write!(f, "Generate"),
             WrapCommand::Import => write!(f, "Import"),
             WrapCommand::Delete => write!(f, "Delete"),
-            WrapCommand::Backup => write!(f, "Backup YubiHSM content"),
-            WrapCommand::Restore => write!(f, "Restore YubiHSM content"),
+            WrapCommand::Backup => write!(f, "Backup YubiHSM objects"),
+            WrapCommand::Restore => write!(f, "Restore YubiHSM objects"),
             WrapCommand::ReturnToMainMenu => write!(f, "Return to main menu"),
             WrapCommand::Exit => write!(f, "Exit"),
         }
     }
 }
 
-const ACCEPTED_WRAP_KEY_LEN: [u32;3] = [128, 192, 256];
+// const ACCEPTED_WRAP_KEY_LEN: [u32;3] = [128, 192, 256];
 const WRAP_SPLIT_PREFIX_LEN: usize = 20; // 2 object ID bytes + 2 domains bytes +
                                          // 8 capabilities bytes +
                                          // 8 delegated capabilities bytes
-
-// lazy_static! {
-//     static ref SHARE_RE_256: Regex = Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{70}$").unwrap();
-//     static ref SHARE_RE_192: Regex = Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{59}$").unwrap();
-//     static ref SHARE_RE_128: Regex = Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{48}$").unwrap();
-// }
 
 static SHARE_RE_256: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{70}$").unwrap());
 static SHARE_RE_192: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{59}$").unwrap());
@@ -70,36 +62,36 @@ static SHARE_RE_128: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-z
 pub fn exec_wrap_command(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     loop {
 
-        println!("\n{}", WRAP_STRING.to_string());
+        println!("\n{}", *WRAP_STRING);
 
         let cmd = get_wrap_command(authkey)?;
         let result = match cmd {
             WrapCommand::List => {
-                println!("\n{} > {}\n", WRAP_STRING.to_string(), WrapCommand::List);
-                wrap_list_keys(session)
+                println!("\n{} > {}\n", *WRAP_STRING, WrapCommand::List);
+                list(session)
             },
             WrapCommand::GetKeyProperties => {
-                println!("\n{} > {}\n", WRAP_STRING.to_string(), WrapCommand::GetKeyProperties);
-                wrap_get_key_properties(session)
+                println!("\n{} > {}\n", *WRAP_STRING, WrapCommand::GetKeyProperties);
+                print_key_properties(session)
             },
             WrapCommand::Generate => {
-                println!("\n{} > {}\n", WRAP_STRING.to_string(), WrapCommand::Generate);
-                wrap_gen_key(session, authkey)
+                println!("\n{} > {}\n", *WRAP_STRING, WrapCommand::Generate);
+                generate(session, authkey)
             },
             WrapCommand::Import => {
-                println!("\n{} > {}\n", WRAP_STRING.to_string(), WrapCommand::Import);
-                wrap_import_key(session, authkey)
+                println!("\n{} > {}\n", *WRAP_STRING, WrapCommand::Import);
+                import(session, authkey)
             },
             WrapCommand::Delete => {
-                println!("\n{} > {}\n", WRAP_STRING.to_string(), WrapCommand::Delete);
-                wrap_delete_key(session)
+                println!("\n{} > {}\n", *WRAP_STRING, WrapCommand::Delete);
+                delete(session)
             },
             WrapCommand::Backup => {
-                println!("\n{} > {}\n", WRAP_STRING.to_string(), WrapCommand::Backup);
+                println!("\n{} > {}\n", *WRAP_STRING, WrapCommand::Backup);
                 backup_device(session)
             },
             WrapCommand::Restore => {
-                println!("\n{} > {}\n", WRAP_STRING.to_string(), WrapCommand::Restore);
+                println!("\n{} > {}\n", *WRAP_STRING, WrapCommand::Restore);
                 restore_device(session)
             },
             WrapCommand::ReturnToMainMenu => return Ok(()),
@@ -129,11 +121,11 @@ fn get_wrap_command(authkey: &ObjectDescriptor) -> Result<WrapCommand, MgmError>
     }
     if capabilities.contains(&ObjectCapability::ExportWrapped) {
         commands = commands.item(WrapCommand::Backup, WrapCommand::Backup,
-                                 "Writes files ending with .yhw to current directory");
+                                 "Writes files ending with .yhw to backup directory");
     }
     if capabilities.contains(&ObjectCapability::ImportWrapped) {
         commands = commands.item(WrapCommand::Restore, WrapCommand::Restore,
-                                 "Reads files ending with .yhw from currant directory");
+                                 "Reads files ending with .yhw from backup directory");
     }
     commands = commands.item(WrapCommand::ReturnToMainMenu, WrapCommand::ReturnToMainMenu, "");
     commands = commands.item(WrapCommand::Exit, WrapCommand::Exit, "");
@@ -145,34 +137,34 @@ fn get_all_wrap_key(session: &Session) -> Result<Vec<ObjectHandle>, MgmError> {
         0, ObjectType::WrapKey, "", ObjectAlgorithm::ANY, &Vec::new())?)
 }
 
-fn wrap_list_keys(session: &Session) -> Result<(), MgmError> {
+fn list(session: &Session) -> Result<(), MgmError> {
     list_objects(session, &get_all_wrap_key(session)?)
 }
 
-fn wrap_get_key_properties(session: &Session) -> Result<(), MgmError> {
+fn print_key_properties(session: &Session) -> Result<(), MgmError> {
     print_object_properties(session, get_all_wrap_key(session)?)
 }
 
-fn wrap_delete_key(session: &Session) -> Result<(), MgmError> {
+fn delete(session: &Session) -> Result<(), MgmError> {
     delete_objects(session, get_all_wrap_key(session)?)
 }
 
-fn get_key_len() -> Result<u32, MgmError> {
-    let mut key_len = cliclack::select("Select key length");
-    for l in ACCEPTED_WRAP_KEY_LEN {
-        key_len = key_len.item(l, l, "");
-    }
-    Ok(key_len.interact()?)
-}
-
-fn get_key_algo(key_len:u32) -> ObjectAlgorithm {
-    match key_len {
-        128 => ObjectAlgorithm::Aes128CcmWrap,
-        192 => ObjectAlgorithm::Aes192CcmWrap,
-        256 => ObjectAlgorithm::Aes256CcmWrap,
-        _ => unreachable!()
-    }
-}
+// fn get_key_len() -> Result<u32, MgmError> {
+//     let mut key_len = cliclack::select("Select key length");
+//     for l in ACCEPTED_WRAP_KEY_LEN {
+//         key_len = key_len.item(l, l, "");
+//     }
+//     Ok(key_len.interact()?)
+// }
+//
+// fn get_key_algo(key_len:u32) -> ObjectAlgorithm {
+//     match key_len {
+//         128 => ObjectAlgorithm::Aes128CcmWrap,
+//         192 => ObjectAlgorithm::Aes192CcmWrap,
+//         256 => ObjectAlgorithm::Aes256CcmWrap,
+//         _ => unreachable!()
+//     }
+// }
 
 fn get_new_key_note(key_desc: &ObjectDescriptor) -> String {
     key_desc.to_string()
@@ -181,8 +173,13 @@ fn get_new_key_note(key_desc: &ObjectDescriptor) -> String {
             .replace("\t", "\n")
 }
 
-fn wrap_gen_key(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let algorithm = get_key_algo(get_key_len()?);
+fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    let algorithm = cliclack::select("Choose key algorithm:")
+        .item(ObjectAlgorithm::Aes128CcmWrap, "AES128", format!("yubihsm-shell name: {}", ObjectAlgorithm::Aes128CcmWrap))
+        .item(ObjectAlgorithm::Aes192CcmWrap, "AES192", format!("yubihsm-shell name: {}", ObjectAlgorithm::Aes192CcmWrap))
+        .item(ObjectAlgorithm::Aes256CcmWrap, "AES256", format!("yubihsm-shell name: {}", ObjectAlgorithm::Aes256CcmWrap))
+        .interact()?;
+
     let mut new_key = get_new_object_basics(authkey, ObjectType::WrapKey, &WRAP_KEY_CAPABILITIES, &[])?;
     let delegated = select_capabilities(
         "Select delegated capabilities", authkey, get_delegated_capabilities(authkey).as_slice(), get_delegated_capabilities(authkey).as_slice())?;
@@ -192,22 +189,22 @@ fn wrap_gen_key(session: &Session, authkey: &ObjectDescriptor) -> Result<(), Mgm
     cliclack::note("Generating wrap key with:",get_new_key_note(&new_key))?;
 
     if cliclack::confirm("Generate wrap key?").interact()? {
-        let key_id = session
+        new_key.id = session
             .generate_wrap_key(
                 new_key.id,
                 &new_key.label,
                 &new_key.domains,
                 &new_key.capabilities,
-                algorithm,
+                new_key.algorithm,
                 get_delegated_capabilities(&new_key).as_slice())?;
 
         cliclack::log::success(
-            format!("Generated wrap key with ID 0x{:04x} on the device", key_id))?;
+            format!("Generated wrap key with ID 0x{:04x} on the device", new_key.id))?;
     }
     Ok(())
 }
 
-fn wrap_import_key(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     if cliclack::confirm("Re-create from shares?").interact()? {
         import_from_shares(session)
     } else {
@@ -216,19 +213,19 @@ fn wrap_import_key(session: &Session, authkey: &ObjectDescriptor) -> Result<(), 
 }
 
 fn import_full_key(session:&Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let key_str:String = cliclack::input("Enter wrap key in HEX format:")
+    let key:String = cliclack::input("Enter wrap key in HEX format:")
         .validate(|input: &String| {
             if hex::decode(input).is_err() {
                 Err("Input must be in hex format")
             } else if input.len() != 32 && input.len() != 48 && input.len() != 64 {
-                Err("Input must be 32, 48 or 64 characters long")
+                Err("Input must be 16, 24 or 32 bytes long")
             } else {
                 Ok(())
             }
         })
         .interact()?;
-    let wrap_key:Vec<u8> = hex::decode(key_str)?;
-    let algo = match wrap_key.len() {
+    let key:Vec<u8> = hex::decode(key)?;
+    let algorithm = match key.len() {
         32 => ObjectAlgorithm::Aes256CcmWrap,
         24 => ObjectAlgorithm::Aes192CcmWrap,
         16 => ObjectAlgorithm::Aes128CcmWrap,
@@ -238,7 +235,7 @@ fn import_full_key(session:&Session, authkey: &ObjectDescriptor) -> Result<(), M
     let mut new_key = get_new_object_basics(authkey, ObjectType::WrapKey, &WRAP_KEY_CAPABILITIES, &[])?;
     let delegated = select_capabilities("Select delegated capabilities", authkey, get_delegated_capabilities(authkey).as_slice(), get_delegated_capabilities(authkey).as_slice())?;
     new_key.delegated_capabilities = if delegated.is_empty() {None} else {Some(delegated)};
-    new_key.algorithm = algo;
+    new_key.algorithm = algorithm;
 
     cliclack::note("Import wrap key with:", get_new_key_note(&new_key))?;
 
@@ -251,7 +248,7 @@ fn import_full_key(session:&Session, authkey: &ObjectDescriptor) -> Result<(), M
                 &new_key.capabilities,
                 new_key.algorithm,
                 get_delegated_capabilities(&new_key).as_slice(),
-                &wrap_key)?;
+                &key)?;
 
         cliclack::log::success(
             format!("Imported wrap key with ID 0x{:04x} on the device", key_id))?;
@@ -267,7 +264,7 @@ fn import_full_key(session:&Session, authkey: &ObjectDescriptor) -> Result<(), M
             &new_key.domains,
             &new_key.capabilities,
             get_delegated_capabilities(&new_key).as_slice(),
-            &wrap_key,
+            &key,
             threshold,
             shares,
         )?;
@@ -322,15 +319,12 @@ fn backup_device(session: &Session) -> Result<(), MgmError> {
         "Select objects to export",
         convert_handlers(session, &exportable_objects)?, true)?;
 
-    let dir: String = get_directory("Enter backup directory:")?;
+    let dir: String = get_directory("Enter path to backup directory:")?;
 
     for object in export_objects {
         match session.export_wrapped(wrapping_key.id, object.object_type, object.id) {
             Ok(bytes) => {
-                let filename = object_to_file(dir.clone(), object.id, object.object_type, &bytes)?;
-                cliclack::log::success(format!(
-                    "Successfully exported object {} with ID 0x{:04x} to {}",
-                    object.object_type, object.id, filename))?;
+                object_to_file(dir.clone(), object.id, object.object_type, &bytes)?;
             }
             Err(err) => cliclack::log::warning(format!(
                 "Unable to export {} object with ID 0x{:04x} wrapped under key ID 0x{:04x}: {}. Skipping over ...",
@@ -341,8 +335,8 @@ fn backup_device(session: &Session) -> Result<(), MgmError> {
 }
 
 pub fn object_to_file(dir: String, id: u16, object_type: ObjectType, data: &[u8]) -> Result<String, MgmError> {
-    let filename = format!("{}/0x{:04x}-{}.yhw", dir, id, object_type);
-    write_bytes_to_file(base64::encode_block(data).as_bytes().to_vec(), &filename)?;
+    let filename = format!("0x{:04x}-{}.yhw", id, object_type);
+    write_bytes_to_file(base64::encode_block(data).as_bytes().to_vec(), &dir, filename.as_str())?;
     Ok(filename)
 }
 
@@ -417,20 +411,6 @@ fn restore_device(session: &Session) -> Result<(), MgmError> {
     Ok(())
 }
 
-// fn get_backup_directory() -> Result<String, MgmError> {
-//     let dir: String = cliclack::input("Enter backup directory?")
-//         .placeholder("Default is current directory")
-//         .default_input(".")
-//         .validate(|input: &String| {
-//             if !Path::new(input).exists() {
-//                 Err("No such directory. Please enter an existing path.")
-//             } else {
-//                 Ok(())
-//             }
-//         })
-//         .interact()?;
-//     Ok(dir)
-// }
 
 
 
@@ -602,7 +582,7 @@ fn recover_wrapkey() -> Result<(ObjectDescriptor, Vec<u8>), MgmError> {
 
     let secret = match recover_secret(shares_vec) {
         Ok(sec) => sec,
-        Err(err) => return Err(MgmError::Error(format!("Unable to recover wrap key: {}", err.to_string()))),
+        Err(err) => return Err(MgmError::Error(format!("Unable to recover wrap key: {}", err))),
     };
 
     if secret.len() != WRAP_SPLIT_PREFIX_LEN + (key_len/8) {

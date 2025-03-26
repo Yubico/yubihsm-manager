@@ -13,9 +13,7 @@ use yubihsmrs::Session;
 
 use error::MgmError;
 use MAIN_STRING;
-use util::{convert_handlers, get_ec_pubkey_from_pem_string, get_file_path, get_new_object_basics, get_op_key,
-           list_objects, print_object_properties, read_input_bytes, read_input_string, read_pem_file,
-           read_string_from_file, select_one_object, write_bytes_to_file};
+use util::{convert_handlers, get_ec_pubkey_from_pem_string, get_file_path, get_new_object_basics, get_op_key, list_objects, print_object_properties, read_input_bytes, read_input_string, read_pem_file, read_string_from_file, select_one_object, write_bytes_to_file};
 
 use crate::util::{delete_objects};
 
@@ -260,14 +258,14 @@ pub fn gen_asym_key(session: &Session, authkey: &ObjectDescriptor) -> Result<Obj
         .item(ObjectAlgorithm::Rsa2048, "RSA 2048", format!("yubihsm-shell name: {}", ObjectAlgorithm::Rsa2048))
         .item(ObjectAlgorithm::Rsa3072, "RSA 3072", format!("yubihsm-shell name: {}", ObjectAlgorithm::Rsa3072))
         .item(ObjectAlgorithm::Rsa4096, "RSA 4096", format!("yubihsm-shell name: {}", ObjectAlgorithm::Rsa4096))
-        .item(ObjectAlgorithm::EcP224, "EC P224", format!("curve secp224r1. yubihsm-shell name: {}", ObjectAlgorithm::EcP224))
-        .item(ObjectAlgorithm::EcP256, "EC P256", format!("curve secp224r1. yubihsm-shell name: {}", ObjectAlgorithm::EcP256))
-        .item(ObjectAlgorithm::EcP384, "EC P384", format!("curve secp224r1. yubihsm-shell name: {}", ObjectAlgorithm::EcP384))
-        .item(ObjectAlgorithm::EcP521, "EC P521", format!("curve secp224r1. yubihsm-shell name: {}", ObjectAlgorithm::EcP521))
-        .item(ObjectAlgorithm::EcK256, "EC K256", format!("curve secp224r1. yubihsm-shell name: {}", ObjectAlgorithm::EcK256))
-        .item(ObjectAlgorithm::EcBp256, "EC BP256", format!("curve secp224r1. yubihsm-shell name: {}", ObjectAlgorithm::EcBp256))
-        .item(ObjectAlgorithm::EcBp384, "EC BP384", format!("curve secp224r1. yubihsm-shell name: {}", ObjectAlgorithm::EcBp384))
-        .item(ObjectAlgorithm::EcBp512, "EC BP512", format!("curve secp224r1. yubihsm-shell name: {}", ObjectAlgorithm::EcBp512))
+        .item(ObjectAlgorithm::EcP224, "EC P224", format!("curve: secp224r1. yubihsm-shell name: {}", ObjectAlgorithm::EcP224))
+        .item(ObjectAlgorithm::EcP256, "EC P256", format!("curve: secp256r1. yubihsm-shell name: {}", ObjectAlgorithm::EcP256))
+        .item(ObjectAlgorithm::EcP384, "EC P384", format!("curve: secp384r1. yubihsm-shell name: {}", ObjectAlgorithm::EcP384))
+        .item(ObjectAlgorithm::EcP521, "EC P521", format!("curve: secp521r1. yubihsm-shell name: {}", ObjectAlgorithm::EcP521))
+        .item(ObjectAlgorithm::EcK256, "EC K256", format!("curve: secp256k1. yubihsm-shell name: {}", ObjectAlgorithm::EcK256))
+        .item(ObjectAlgorithm::EcBp256, "EC BP256", format!("curve: brainpool256r1. yubihsm-shell name: {}", ObjectAlgorithm::EcBp256))
+        .item(ObjectAlgorithm::EcBp384, "EC BP384", format!("curve: brainpool384r1. yubihsm-shell name: {}", ObjectAlgorithm::EcBp384))
+        .item(ObjectAlgorithm::EcBp512, "EC BP512", format!("curve: brainpool512r1. yubihsm-shell name: {}", ObjectAlgorithm::EcBp512))
         .item(ObjectAlgorithm::Ed25519, "ED 25519", format!("yubihsm-shell name: {}", ObjectAlgorithm::Ed25519))
         .interact()?;
 
@@ -598,8 +596,8 @@ fn get_public_key(session: &Session) -> Result<(), MgmError> {
     if let Ok(str) = String::from_utf8(pem_pubkey.clone()) { println!("{}\n", str) }
 
     if cliclack::confirm("Write to file?").interact()? {
-        let filename = format!("0x{:04x}.pubkey.pem", key.id).to_string();
-        if let Err(err) = write_bytes_to_file(pem_pubkey, &filename) {
+        let filename = format!("0x{:04x}.pubkey.pem", key.id);
+        if let Err(err) = write_bytes_to_file(pem_pubkey, "", filename.as_str()) {
             cliclack::log::error(
                 format!("Failed to write public key 0x{:04x} to file. {}", key.id, err))?;
         }
@@ -618,8 +616,8 @@ fn get_cert(session: &Session) -> Result<(), MgmError> {
     if let Ok(str) = String::from_utf8(cert_pem.clone()) { println!("{}\n", str) }
 
     if cliclack::confirm("Write to file?").interact()? {
-        let filename = format!("0x{:04x}.cert.pem", cert.id).to_string();
-        if let Err(err) = write_bytes_to_file(cert_pem, &filename) {
+        let filename = format!("0x{:04x}.cert.pem", cert.id);
+        if let Err(err) = write_bytes_to_file(cert_pem, "", filename.as_str()) {
             cliclack::log::error(
                 format!("Failed to write certificate 0x{:04x} to file. {}", cert.id, err))?;
         }
@@ -727,7 +725,7 @@ fn sign(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     cliclack::log::success(format!("Signature in HEX:\n{}", hex::encode(&sig)))?;
 
     if cliclack::confirm("Write to binary file?").interact()? {
-        if let Err(err) = write_bytes_to_file(sig, &"data.sig".to_string()) {
+        if let Err(err) = write_bytes_to_file(sig, "", "data.sig") {
             cliclack::log::error(format!("Failed to write signature to file. {}", err))?;
         }
     }
@@ -784,7 +782,7 @@ fn decrypt(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError
     }
 
     if cliclack::confirm("Write to binary file?").interact()? {
-        if let Err(err) = write_bytes_to_file(data, &"data.dec".to_string()) {
+        if let Err(err) = write_bytes_to_file(data, "", "data.dec") {
             cliclack::log::error(format!("Failed to write decrypted data to file. {}", err))?;
         }
     }
@@ -843,7 +841,7 @@ fn sign_attestation(session: &Session, authkey:&ObjectDescriptor) -> Result<(), 
     if let Ok(str) = String::from_utf8(cert_pem.clone()) { println!("{}\n", str) }
 
     if cliclack::confirm("Write to file?").interact()? {
-        if let Err(err) = write_bytes_to_file(cert_pem, &"attestation_cert.pem".to_string()) {
+        if let Err(err) = write_bytes_to_file(cert_pem, "", "attestation_cert.pem") {
             cliclack::log::error(
                 format!("Failed to write attestation certificate to file. {}", err))?;
         }

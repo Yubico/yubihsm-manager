@@ -13,7 +13,7 @@ use ::{MAIN_STRING, YH_EC_P256_PUBKEY_LEN};
 
 static AUTH_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Authentication keys", MAIN_STRING));
 
-const ASYM_USER_CAPABILITIES: [ObjectCapability; 14] = [
+const ASYM_USER_CAPABILITIES: [ObjectCapability; 13] = [
     ObjectCapability::SignPkcs,
     ObjectCapability::SignPss,
     ObjectCapability::SignEcdsa,
@@ -21,7 +21,6 @@ const ASYM_USER_CAPABILITIES: [ObjectCapability; 14] = [
     ObjectCapability::DecryptPkcs,
     ObjectCapability::DecryptOaep,
     ObjectCapability::DeriveEcdh,
-    ObjectCapability::SignSshCertificate,
     ObjectCapability::SignAttestationCertificate,
     ObjectCapability::EncryptEcb,
     ObjectCapability::EncryptCbc,
@@ -84,7 +83,7 @@ impl Display for AuthCommand {
             AuthCommand::GetKeyProperties => write!(f, "Print object properties"),
             AuthCommand::Delete => write!(f, "Delete"),
             AuthCommand::SetupUser => write!(f, "Setup asymmetric/symmetric keys user"),
-            AuthCommand::SetupAdmin => write!(f, "Setup asymmetric/symmetric keys Admin"),
+            AuthCommand::SetupAdmin => write!(f, "Setup asymmetric/symmetric keys admin"),
             AuthCommand::SetupAuditor => write!(f, "Setup Auditor"),
             AuthCommand::SetupBackupAdmin => write!(f, "Setup backup admin"),
             AuthCommand::ReturnToMainMenu => write!(f, "Return to main menu"),
@@ -249,7 +248,7 @@ fn create_authkey(
 fn setup_user(session: &Session, current_authkey: &ObjectDescriptor, user_type: UserType) -> Result<(), MgmError> {
     let new_authkey = match user_type {
         UserType::AsymUser => get_new_object_basics(
-            current_authkey, ObjectType::AuthenticationKey,&ASYM_USER_CAPABILITIES, &[])?,
+            current_authkey, ObjectType::AuthenticationKey,&ASYM_USER_CAPABILITIES, &ASYM_USER_CAPABILITIES)?,
         UserType::AsymAdmin => {
             let mut new_key = get_new_object_basics(
                 current_authkey, ObjectType::AuthenticationKey, &ASYM_ADMIN_CAPABILITIES, &[])?;

@@ -154,15 +154,15 @@ fn print_key_properties(session: &Session) -> Result<(), MgmError> {
 }
 
 fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let key_algorithm = cliclack::select("Choose key algorithm:")
-        .item(ObjectAlgorithm::Aes128, "AES128", "")
-        .item(ObjectAlgorithm::Aes192, "AES192", "")
-        .item(ObjectAlgorithm::Aes256, "AES256", "")
+    let algorithm = cliclack::select("Choose key algorithm:")
+        .item(ObjectAlgorithm::Aes128, "AES128", format!("yubihsm-shell name: {}", ObjectAlgorithm::Aes128))
+        .item(ObjectAlgorithm::Aes192, "AES192", format!("yubihsm-shell name: {}", ObjectAlgorithm::Aes192))
+        .item(ObjectAlgorithm::Aes256, "AES256", format!("yubihsm-shell name: {}", ObjectAlgorithm::Aes256))
         .interact()?;
 
     let mut new_key = get_new_object_basics(
         authkey, ObjectType::SymmetricKey, &AES_KEY_CAPABILITIES, &[])?;
-    new_key.algorithm = key_algorithm;
+    new_key.algorithm = algorithm;
 
     cliclack::note("Generating AES key with:", get_new_key_note(&new_key))?;
 
@@ -273,7 +273,7 @@ fn operate(session: &Session, authkey: &ObjectDescriptor, enc_mode: EncryptionMo
 
     if cliclack::confirm("Write to binary file?").interact()? {
         let filename = if enc_mode == EncryptionMode::Encrypt {"data.enc"} else {"data.dec"};
-        if let Err(err) = write_bytes_to_file(out_data, &filename.to_string()) {
+        if let Err(err) = write_bytes_to_file(out_data, "", filename) {
             cliclack::log::error(format!("Failed to write binary data to file. {}", err))?;
         }
     }
