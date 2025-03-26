@@ -373,10 +373,20 @@ jobs:
           Set-PSDebug -Trace 1
 
           mkdir artifact
+          
+          C:/vcpkg/vcpkg.exe install openssl:x64-windows
+          $env:OPENSSL_ROOT_DIR ="C:/vcpkg/packages/openssl_x64-windows"
 
-          $env:OPENSSL_LIB_DIR="C:\Strawberry\c\lib"
-          $env:OPENSSL_INCLUDE_DIR="C:\Strawberry\c\include"
-          $env:OPENSSL_DIR="C:\Strawberry\c"
+          $env:OPENSSL_LIB_DIR="$env:OPENSSL_ROOT_DIR\lib"
+          $env:OPENSSL_INCLUDE_DIR="$env:OPENSSL_ROOT_DIR\include"
+          $env:OPENSSL_DIR="$env:OPENSSL_ROOT_DIR"
+          
+          #$env:OPENSSL_LIB_DIR="C:\Strawberry\c\lib"
+          #$env:OPENSSL_INCLUDE_DIR="C:\Strawberry\c\include"
+          #$env:OPENSSL_DIR="C:\Strawberry\c"
+          
+          ls $env:OPENSSL_DIR/
+          ls $env:OPENSSL_DIR/bin
 
           rustup target add x86_64-pc-windows-gnu
           rustup default stable-x86_64-pc-windows-gnu
@@ -384,8 +394,11 @@ jobs:
           $env:RUST_BACKTRACE=1
           $env:YUBIHSM_LIB_DIR="C:\Program Files\Yubico\YubiHSM Shell\bin"
           #$env:PATH+=";C:\Program Files\Yubico\YubiHSM Shell\bin;C:\rtools44\x86_64-w64-mingw32.static.posix\bin"
+          $env:PATH+=";C:\Program Files\Yubico\YubiHSM Shell\bin"
           cargo.exe update
           cargo.exe build --release
+          ./target/release/yubihsm-manager.exe --help
+          ./target/release/yubihsm-manager.exe --version
           install target/release/yubihsm-manager $env:GITHUB_WORKSPACE/artifact/yubihsm-manager
 
       - name: Upload artifact
