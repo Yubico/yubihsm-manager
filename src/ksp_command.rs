@@ -1,12 +1,22 @@
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectType};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
 use yubihsmrs::Session;
 use error::MgmError;
-use util::{get_directory, get_domains, get_id, get_password};
+use util::{contains_all, get_directory, get_domains, get_id, get_password};
 use wrap_commands::{get_shares, get_threshold, object_to_file, split_wrapkey};
 
 const KSP_WRAPKEY_LEN: usize = 32;
 
-pub fn setup_ksp(session: &Session, current_authkey: u16) -> Result<(), MgmError>{
+const REQUIRED_CAPABILITIES: [ObjectCapability; 4] = [
+    ObjectCapability::GetPseudoRandom,
+    ObjectCapability::PutWrapKey,
+    ObjectCapability::PutAuthenticationKey,
+    ObjectCapability::ExportWrapped];
+
+pub fn setup_ksp(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError>{
+    if !contains_all(authkey.capabilities.as_slice(), &REQUIRED_CAPABILITIES) {
+        return Err(MgmError::Error("Current user does not have the necessary permissions to setup the YubiHSM for KSP use case".to_string()))
+    }
+
     let capabilities_rsa_decrypt = &[ObjectCapability::DecryptPkcs, ObjectCapability::DecryptOaep];
 
     let mut wrapkey_delegated = vec![
@@ -123,7 +133,7 @@ pub fn setup_ksp(session: &Session, current_authkey: u16) -> Result<(), MgmError
     }
 
     if cliclack::confirm("Delete the current authentication key (strongly recommended)?").interact()? {
-        session.delete_object(current_authkey, ObjectType::AuthenticationKey)?;
+        session.delete_object(authkey.id, ObjectType::AuthenticationKey)?;
     }
 
     Ok(())

@@ -7,7 +7,7 @@ use asym_commands::{gen_asym_key, get_attestation_cert, import_asym_key};
 
 use error::MgmError;
 use MAIN_STRING;
-use util::{convert_handlers, get_file_path, list_objects, read_pem_file, select_multiple_objects};
+use util::{contains_all, convert_handlers, get_file_path, list_objects, read_pem_file, select_multiple_objects};
 
 static JAVA_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > SunPKCS11 keys", MAIN_STRING));
 
@@ -81,20 +81,18 @@ fn get_command(authkey: &ObjectDescriptor) -> Result<JavaCommand, MgmError> {
     let mut commands = cliclack::select("");
     commands = commands.item(JavaCommand::List, JavaCommand::List, "");
 
-    if auth_capabilities.contains(&ObjectCapability::GenerateAsymmetricKey) &&
-        auth_capabilities.contains(&ObjectCapability::PutOpaque) &&
-        auth_capabilities.contains(&ObjectCapability::SignAttestationCertificate) {
+    if contains_all(auth_capabilities.as_slice(),
+                    &[ObjectCapability::GenerateAsymmetricKey, ObjectCapability::PutOpaque, ObjectCapability::SignAttestationCertificate]) {
         commands = commands.item(JavaCommand::Generate, JavaCommand::Generate, "");
     }
 
-    if auth_capabilities.contains(&ObjectCapability::PutAsymmetricKey) &&
-        auth_capabilities.contains(&ObjectCapability::PutOpaque) &&
-        auth_capabilities.contains(&ObjectCapability::SignAttestationCertificate) {
+    if contains_all(auth_capabilities.as_slice(),
+                    &[ObjectCapability::PutAsymmetricKey, ObjectCapability::PutOpaque, ObjectCapability::SignAttestationCertificate]) {
         commands = commands.item(JavaCommand::Import, JavaCommand::Import, "");
     }
 
-    if auth_capabilities.contains(&ObjectCapability::DeleteAsymmetricKey) &&
-        auth_capabilities.contains(&ObjectCapability::DeleteOpaque) {
+    if contains_all(auth_capabilities.as_slice(),
+                    &[ObjectCapability::DeleteAsymmetricKey, ObjectCapability::DeleteOpaque]) {
         commands = commands.item(JavaCommand::Delete, JavaCommand::Delete, "");
     }
     commands = commands.item(JavaCommand::ReturnToMainMenu, JavaCommand::ReturnToMainMenu, "");

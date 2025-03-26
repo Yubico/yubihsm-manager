@@ -310,7 +310,6 @@ pub fn read_file_bytes(prompt:&str) -> Result<Vec<u8>, MgmError> {
 }
 
 pub fn read_pem_file(file_path:String) -> Result<Pem, MgmError> {
-    // let content = read_file_string(file_path)?;
     let content = fs::read_to_string(file_path)?;
     match pem::parse(content) {
         Ok(pem) => Ok(pem),
@@ -411,10 +410,6 @@ pub fn get_op_key(
     key_type: ObjectType,
     key_algos: &[ObjectAlgorithm]) -> Result<ObjectDescriptor, MgmError> {
 
-    // let caps1: HashSet<ObjectCapability> = authkey.capabilities.clone().into_iter().collect();
-    // let caps2: HashSet<ObjectCapability> = op_capabilities.clone().to_vec().into_iter().collect();
-    // let key_capabilities = caps1.intersection(&caps2).copied().collect::<Vec<ObjectCapability>>();
-
     let mut key_capabilities = op_capabilities.to_vec();
     key_capabilities.retain(|c| authkey.capabilities.contains(c));
     if key_capabilities.is_empty() {
@@ -430,9 +425,6 @@ pub fn get_op_key(
     if keys.is_empty() {
         return Err(MgmError::Error("There are no keys available for operation".to_string()))
     }
-    // let mut keys: Vec<ObjectDescriptor> = keys.into_iter()
-    //     .map(|k| session.get_object_info(k.object_id, k.object_type))
-    //     .collect::<Result<_, _>>()?;
     let mut keys = convert_handlers(session, &keys)?;
 
     if !key_algos.is_empty() {
@@ -462,10 +454,6 @@ pub fn select_capabilities(
 
     let mut caps_options = capability_options.to_vec();
     caps_options.retain(|c| authkey_delegated.contains(c));
-
-    // let caps1: HashSet<ObjectCapability> = get_delegated_capabilities(authkey).into_iter().collect();
-    // let caps2: HashSet<ObjectCapability> = capability_options.iter().copied().collect();
-    // let cap_options = caps1.intersection(&caps2).copied().collect::<Vec<ObjectCapability>>();
 
     if caps_options.is_empty() {
         Ok(Vec::new())
@@ -498,4 +486,13 @@ pub fn get_new_object_basics(
     desc.capabilities = select_capabilities(
         "Select object capabilities", authkey, capability_options, capabilities_preselected)?;
     Ok(desc)
+}
+
+pub fn contains_all(set: &[ObjectCapability], subset: &[ObjectCapability]) -> bool {
+    for c in subset {
+        if !set.contains(c) {
+            return false
+        }
+    }
+    return true
 }

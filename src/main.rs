@@ -233,7 +233,7 @@ fn main() -> Result<(), MgmError>{
                 "wrap" => wrap_commands::exec_wrap_command(&session, &authkey),
                 "gen-pseudo-random" => get_random_number(&session),
                 "reset" => reset_device(&session),
-                "ksp" => ksp_command::setup_ksp(&session, authkey.id),
+                "ksp" => ksp_command::setup_ksp(&session, &authkey),
                 "sunpkcs11" => java_commands::exec_java_command(&session, &authkey),
                 _ => unreachable!(),
             }
@@ -271,7 +271,7 @@ fn main() -> Result<(), MgmError>{
                     MainCommand::SymMgm => sym_commands::exec_sym_command(&session, &authkey),
                     MainCommand::AuthMgm => auth_commands::exec_auth_command(&session, &authkey),
                     MainCommand::WrapMgm => wrap_commands::exec_wrap_command(&session, &authkey),
-                    MainCommand::Ksp => ksp_command::setup_ksp(&session, authkey.id),
+                    MainCommand::Ksp => ksp_command::setup_ksp(&session, &authkey),
                     MainCommand::Java => java_commands::exec_java_command(&session, &authkey),
                     MainCommand::Random => get_random_number(&session),
                     MainCommand::Reset => reset_device(&session),

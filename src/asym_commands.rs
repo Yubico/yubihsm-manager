@@ -189,7 +189,9 @@ fn get_command(authkey: &ObjectDescriptor) -> Result<AsymCommand, MgmError> {
         commands = commands.item(AsymCommand::Delete, AsymCommand::Delete, "");
     }
     commands = commands.item(AsymCommand::GetPublicKey, AsymCommand::GetPublicKey, "");
-    commands = commands.item(AsymCommand::GetCertificate, AsymCommand::GetCertificate, "");
+    if capabilities.contains(&ObjectCapability::GetOpaque) {
+        commands = commands.item(AsymCommand::GetCertificate, AsymCommand::GetCertificate, "");
+    }
     if HashSet::from([ObjectCapability::SignPkcs,
         ObjectCapability::SignPss,
         ObjectCapability::SignEcdsa,
