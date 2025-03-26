@@ -4,6 +4,27 @@ on: [push]
 
 jobs:
 
+  source:
+    name: Build dist with Linux
+    runs-on: ubuntu-latest
+    env:
+      VERSION: 0.2.0
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: Create tar.gz
+        run: |
+          set -x
+          ./resources/release/make_src_dist.sh $VERSION
+          mkdir $GITHUB_WORKSPACE/artifact
+          mv $GITHUB_WORKSPACE/../yubihsm-manager-$VERSION.tar.gz $GITHUB_WORKSPACE/artifact/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yubihsm-manager-src
+          path: artifact
+
+
   debian_based:
     strategy:
       fail-fast: false
