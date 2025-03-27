@@ -124,10 +124,6 @@ jobs:
             dpkg-buildpackage
           fi
           dpkg -i ../libyubihsm*_amd64.deb
-          
-          pwd
-          
-          ls ..
 
       - name: clone yubihsmrs
         working-directory: yubihsm-manager
@@ -158,6 +154,10 @@ jobs:
           strip --strip-all target/release/yubihsm-manager
           cargo deb --no-build
           cp target/debian/*.deb $OUTPUT/
+          
+          cp $GITHUB_WORKSPACE/libyubihsm1_*.deb $OUTPUT/
+          cp $GITHUB_WORKSPACE/libyubihsm-http1_*.deb $OUTPUT/
+          cp $GITHUB_WORKSPACE/libyubihsm-usb1_*.deb $OUTPUT/
 
           cd $OUTPUT
           rm -f yubihsm-manager-$PLATFORM-amd64.tar.gz
@@ -253,8 +253,6 @@ jobs:
           YUBIHSM_LIB_DIR=$GITHUB_WORKSPACE/yubihsm-shell/build/lib cargo build --release
           YUBIHSM_LIB_DIR=$GITHUB_WORKSPACE/yubihsm-shell/build/lib cargo rpm build
           cp target/release/rpmbuild/RPMS/x86_64/*.rpm $OUTPUT/
-          
-          ls $GITHUB_WORKSPACE/yubihsm-shell/build/lib
 
       - name: upload artifacts
         uses: actions/upload-artifact@v4
