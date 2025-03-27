@@ -17,7 +17,7 @@
 [package]
 name = "yubihsm-manager"
 version = "0.2.0"
-description = "[BETA VERSION] Command line tool for YubiHSM 2"
+description = "Command line tool for YubiHSM 2"
 authors = ["Aveen Ismail <aveen.ismail@yubico.com>"]
 license = "Apache-2.0"
 
@@ -28,6 +28,7 @@ clap = "4.5.26"
 serde = "1.0.164"
 pem = "2.0.1"
 openssl = "0.10.54"
+#openssl = { version = "0.10.54", features = ["vendored"] }
 regex = "1.8.4"
 rusty_secrets = "0.0.2"
 hex = "0.4.3"

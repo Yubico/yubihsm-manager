@@ -1,6 +1,6 @@
 == YubiHSM Manager
 
-[BETA VERSION] Command line tool for YubiHSM 2
+Command line tool for YubiHSM 2
 
 YubiHSM Manger is mainly used to manage asymmetric and symmetric keys, authentication keys and wrap keys as well as
 setting up the YubiHSM2 for specific usecases.

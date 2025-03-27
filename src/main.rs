@@ -48,7 +48,7 @@ macro_rules! unwrap_or_exit1 {
 const YH_EC_P256_PUBKEY_LEN: usize = 65;
 const YH_EC_P256_PRIVKEY_LEN: usize = 32;
 
-pub const MAIN_STRING: &str = "[BETA VERSION] YubiHSM Manager";
+pub const MAIN_STRING: &str = "YubiHSM Manager";
 
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
 enum MainCommand {

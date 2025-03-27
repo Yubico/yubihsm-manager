@@ -124,6 +124,10 @@ jobs:
             dpkg-buildpackage
           fi
           dpkg -i ../libyubihsm*_amd64.deb
+          
+          pwd
+          
+          ls ..
 
       - name: clone yubihsmrs
         working-directory: yubihsm-manager
@@ -249,6 +253,8 @@ jobs:
           YUBIHSM_LIB_DIR=$GITHUB_WORKSPACE/yubihsm-shell/build/lib cargo build --release
           YUBIHSM_LIB_DIR=$GITHUB_WORKSPACE/yubihsm-shell/build/lib cargo rpm build
           cp target/release/rpmbuild/RPMS/x86_64/*.rpm $OUTPUT/
+          
+          ls $GITHUB_WORKSPACE/yubihsm-shell/build/lib
 
       - name: upload artifacts
         uses: actions/upload-artifact@v4
