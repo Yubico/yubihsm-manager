@@ -12,7 +12,8 @@ key to cancel current operation.
 
 To build the tool a normal Rust toolchain is required, stable Rust will suffice.
 
-The tools uses the `yubihsmrs` crate, which in turn requires `libyubihsm` to be available.
+The tools uses the `yubihsmrs` crate as obtained from https://github.com/Yubico/yubihsmrs/tree/yubihsm-manager (note
+the `yubihsm-manager` branch), which in turn requires `libyubihsm` to be available.
 
 Set the environment variable `YUBIHSM_LIB_DIR` to point to the directory containing the libyubihsm library then run:
 
