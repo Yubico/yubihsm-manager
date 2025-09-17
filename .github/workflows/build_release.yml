@@ -30,14 +30,13 @@ jobs:
       fail-fast: false
       matrix:
         environment: [
-          "ubuntu:24.10",
+          "ubuntu:25.04",
           "ubuntu:24.04",
           "ubuntu:22.04",
-          "ubuntu:20.04",
           "debian:12",
           "debian:11",
         ]
-        libyubihsm_tag : [ "2.6.0" ]
+        libyubihsm_tag : [ "2.7.0" ]
 
     name: build on ${{ matrix.environment }}
     runs-on: ubuntu-latest
@@ -84,7 +83,8 @@ jobs:
                                   libpcsclite-dev      \
                                   file                 \
                                   curl                 \
-                                  jq
+                                  jq                   \
+                                  zlib1g-dev 
 
           curl -o rustup.sh https://sh.rustup.rs
           bash ./rustup.sh -y
@@ -104,16 +104,16 @@ jobs:
 
           cd ..
 
-          #git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
-          git clone https://github.com/Yubico/yubihsm-shell.git
+          git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
+          #git clone https://github.com/Yubico/yubihsm-shell.git
           cd yubihsm-shell
 
-          if [ "$PLATFORM" = "ubuntu2404" ] || [ "$PLATFORM" = "ubuntu2410" ]; then
-            # ubuntu 24.04 comes with _FORTIFY_SOURCE already set
+          if [ "$PLATFORM" = "ubuntu2404" ] || [ "$PLATFORM" = "ubuntu2504" ]; then
+            # ubuntu 24.04 and newer come with _FORTIFY_SOURCE already set
             sed -i 's/add_definitions (-D_FORTIFY_SOURCE=2)/add_definitions (-D_FORTIFY_SOURCE=3)/' cmake/SecurityFlags.cmake
           fi
 
-          if [ "$PLATFORM" = "ubuntu2410" ]; then
+          if [ "$PLATFORM" = "ubuntu2504" ]; then
             # Set PCSC flags
             sed -i 's/#SET(CMAKE_C_FLAGS/SET(CMAKE_C_FLAGS/' ykhsmauth/CMakeLists.txt
           fi
@@ -177,7 +177,7 @@ jobs:
       matrix:
         environment: [
           "fedora:41",
-          "fedora:40",
+          "fedora:42",
         ]
 
     name: build on ${{ matrix.environment }}
@@ -344,7 +344,7 @@ jobs:
     name: Windows
     runs-on: windows-latest
     env:
-      LIBYUBIHSM_VERSION: 2.6.0
+      LIBYUBIHSM_VERSION: 2.7.0
 
     steps:
       - name: Checkout repository
@@ -379,7 +379,11 @@ jobs:
           mkdir artifact
           
           C:/vcpkg/vcpkg.exe install openssl:x64-windows
+          C:/vcpkg/vcpkg.exe install openssl:x64-windows-static
+          C:/vcpkg/vcpkg.exe integrate install
+          $env:VCPKGRS_DYNAMIC=1
           $env:OPENSSL_ROOT_DIR ="C:/vcpkg/packages/openssl_x64-windows"
+          $env:OPENSSL_LIBS="ssl:crypto"
 
           $env:OPENSSL_LIB_DIR="$env:OPENSSL_ROOT_DIR\lib"
           $env:OPENSSL_INCLUDE_DIR="$env:OPENSSL_ROOT_DIR\include"
@@ -392,8 +396,8 @@ jobs:
           ls $env:OPENSSL_DIR/
           ls $env:OPENSSL_DIR/bin
 
-          rustup target add x86_64-pc-windows-gnu
-          rustup default stable-x86_64-pc-windows-gnu
+          rustup target add x86_64-pc-windows-msvc
+          rustup default stable-x86_64-pc-windows-msvc
 
           $env:RUST_BACKTRACE=1
           $env:YUBIHSM_LIB_DIR="C:\Program Files\Yubico\YubiHSM Shell\bin"
