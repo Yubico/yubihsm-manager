@@ -16,9 +16,9 @@
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
 use yubihsmrs::Session;
-use error::MgmError;
-use util::{contains_all, get_directory, get_domains, get_id, get_password};
-use wrap_commands::{get_shares, get_threshold, object_to_file, split_wrapkey};
+use crate::error::MgmError;
+use crate::util::{contains_all, get_directory, get_domains, get_id, get_password};
+use crate::wrap_commands::{get_shares, get_threshold, object_to_file, split_wrapkey};
 
 const KSP_WRAPKEY_LEN: usize = 32;
 

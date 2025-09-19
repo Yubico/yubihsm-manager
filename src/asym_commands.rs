@@ -27,9 +27,9 @@ use openssl::pkey::PKey;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectOrigin, ObjectType};
 use yubihsmrs::Session;
 
-use error::MgmError;
-use MAIN_STRING;
-use util::{convert_handlers, get_ec_pubkey_from_pem_string, get_file_path, get_new_object_basics, get_op_key, list_objects, print_object_properties, read_input_bytes, read_input_string, read_pem_file, read_string_from_file, select_one_object, write_bytes_to_file};
+use crate::error::MgmError;
+use crate::MAIN_STRING;
+use crate::util::{convert_handlers, get_ec_pubkey_from_pem_string, get_file_path, get_new_object_basics, get_op_key, list_objects, print_object_properties, read_input_bytes, read_input_string, read_pem_file, read_string_from_file, select_one_object, write_bytes_to_file};
 
 use crate::util::{delete_objects};
 

@@ -19,9 +19,9 @@ use std::fmt::Display;
 use std::sync::LazyLock;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
-use error::MgmError;
-use MAIN_STRING;
-use util::{delete_objects, get_new_object_basics, get_op_key, list_objects, print_object_properties, read_input_bytes,
+use crate::error::MgmError;
+use crate::MAIN_STRING;
+use crate::util::{delete_objects, get_new_object_basics, get_op_key, list_objects, print_object_properties, read_input_bytes,
            write_bytes_to_file};
 
 static SYM_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Symmetric keys", MAIN_STRING));

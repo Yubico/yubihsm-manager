@@ -23,11 +23,11 @@ use std::sync::LazyLock;
 use openssl::base64;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
-use error::MgmError;
-use util::{convert_handlers, delete_objects, get_delegated_capabilities, get_directory, get_label, get_new_object_basics, list_objects, print_object_properties, select_capabilities, select_multiple_objects, select_one_object, write_bytes_to_file};
+use crate::error::MgmError;
+use crate::util::{convert_handlers, delete_objects, get_delegated_capabilities, get_directory, get_label, get_new_object_basics, list_objects, print_object_properties, select_capabilities, select_multiple_objects, select_one_object, write_bytes_to_file};
 use regex::Regex;
 use rusty_secrets::recover_secret;
-use MAIN_STRING;
+use crate::MAIN_STRING;
 
 static WRAP_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Wrap keys", MAIN_STRING));
 

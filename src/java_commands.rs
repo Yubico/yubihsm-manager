@@ -19,11 +19,11 @@ use std::fmt::{Display};
 use std::sync::LazyLock;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
-use asym_commands::{gen_asym_key, get_attestation_cert, import_asym_key};
+use crate::asym_commands::{gen_asym_key, get_attestation_cert, import_asym_key};
 
-use error::MgmError;
-use MAIN_STRING;
-use util::{contains_all, convert_handlers, get_file_path, list_objects, read_pem_file, select_multiple_objects};
+use crate::error::MgmError;
+use crate::MAIN_STRING;
+use crate::util::{contains_all, convert_handlers, get_file_path, list_objects, read_pem_file, select_multiple_objects};
 
 static JAVA_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > SunPKCS11 keys", MAIN_STRING));
 

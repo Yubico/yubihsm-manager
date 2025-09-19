@@ -31,7 +31,7 @@ use openssl::nid::Nid;
 use pem::Pem;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::{Session};
-use error::MgmError;
+use crate::error::MgmError;
 use comfy_table::{Table,ContentArrangement};
 
 const MULTI_SELECT_PROMPT_HELP: &str = ". Press the space button to select and unselect item. Press 'Enter' when done.";
