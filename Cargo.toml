@@ -20,7 +20,7 @@ version = "0.2.0"
 description = "Command line tool for YubiHSM 2"
 authors = ["Aveen Ismail <aveen.ismail@yubico.com>"]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
