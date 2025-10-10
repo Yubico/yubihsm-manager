@@ -18,6 +18,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::fmt::Display;
 use std::sync::LazyLock;
+use base64::Engine;
 use openssl::pkey;
 use openssl::bn::{BigNum, BigNumContext};
 use openssl::ec::{EcGroup, EcKey, EcPoint};
@@ -26,6 +27,17 @@ use openssl::nid::Nid;
 use openssl::pkey::PKey;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectOrigin, ObjectType};
 use yubihsmrs::Session;
+
+use rsa::{RsaPublicKey, traits::PublicKeyParts};
+use p224::{ecdsa::VerifyingKey as VerifyingKeyP224, EncodedPoint as EncodedPointP224};
+use k256::{ecdsa::VerifyingKey as VerifyingKeyK256, EncodedPoint as EncodedPointK256};
+use p256::{ecdsa::VerifyingKey as VerifyingKeyP256, EncodedPoint as EncodedPointP256};
+use p384::{ecdsa::VerifyingKey as VerifyingKeyP384, EncodedPoint as EncodedPointP384};
+use p521::{PublicKey as PublicKeyP521, EncodedPoint as EncodedPointP521, elliptic_curve::sec1::FromEncodedPoint};
+
+use spki::{
+    der::pem::LineEnding, EncodePublicKey,
+};
 
 use crate::error::MgmError;
 use crate::MAIN_STRING;
@@ -502,125 +514,149 @@ fn get_public_key(session: &Session) -> Result<(), MgmError> {
         }
     };
 
-    let pem_pubkey;
+    let pem_pubkey: String;
     let key_algo = pubkey.1;
     if RSA_KEY_ALGORITHM.contains(&key_algo) {
-        let e = match BigNum::from_slice(&[0x01, 0x00, 0x01]) {
-            Ok(bn) => bn,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to construct exponent for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
+        let modulus = rsa::BigUint::from_bytes_be(pubkey.0.clone().as_slice());
+        let exponent = rsa::BigUint::from_bytes_be(&[0x01, 0x00, 0x01]);
+        let rsa_pubkey:RsaPublicKey = RsaPublicKey::new(modulus, exponent).unwrap();
+        pem_pubkey = rsa_pubkey.to_public_key_pem(rsa::pkcs8::LineEnding::LF).unwrap();
 
-        let n = match BigNum::from_slice(pubkey.0.as_slice()) {
-            Ok(bn) => bn,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to construct n for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
-
-        let rsa_pubkey = match openssl::rsa::Rsa::from_public_components(n, e) {
-            Ok(rsa) => rsa,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to parse RSA public key for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
-
-        pem_pubkey = match rsa_pubkey.public_key_to_pem() {
-            Ok(pem) => pem,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to convert RSA public key to PEM format for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
     } else if EC_KEY_ALGORITHM.contains(&key_algo) {
-        let nid = match key_algo {
-            ObjectAlgorithm::EcP256 => Nid::X9_62_PRIME256V1,
-            ObjectAlgorithm::EcK256 => Nid::SECP256K1,
-            ObjectAlgorithm::EcP384 => Nid::SECP384R1,
-            ObjectAlgorithm::EcP521 => Nid::SECP521R1,
-            ObjectAlgorithm::EcP224 => Nid::SECP224R1,
-            ObjectAlgorithm::EcBp256 => Nid::BRAINPOOL_P256R1,
-            ObjectAlgorithm::EcBp384 => Nid::BRAINPOOL_P384R1,
-            ObjectAlgorithm::EcBp512 => Nid::BRAINPOOL_P512R1,
-            _ => unreachable!()
-        };
-        let ec_group = match EcGroup::from_curve_name(nid) {
-            Ok(group) => group,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to get EC group from key algorithm for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
+        let mut ec_pubkey_bytes_1: Vec<u8> = Vec::new();
+        ec_pubkey_bytes_1.push(0x04);
+        ec_pubkey_bytes_1.extend(pubkey.0.clone());
+
+        pem_pubkey = match key_algo {
+            ObjectAlgorithm::EcK256 => {
+                // Repeat the process for k256
+                let point = EncodedPointK256::from_bytes(&ec_pubkey_bytes_1)
+                    .map_err(|e| MgmError::Error(format!("Failed to create encoded point for K256: {}", e)))?;
+                let key = VerifyingKeyK256::from_encoded_point(&point)
+                    .map_err(|e| MgmError::Error(format!("Failed to parse K256 public key: {}", e)))?;
+                key.to_public_key_pem(Default::default())
+                             .map_err(|e| MgmError::Error(format!("Failed to encode K256 key to PEM: {}", e)))?
             }
+            ObjectAlgorithm::EcP224 => {
+                let point = EncodedPointP224::from_bytes(&ec_pubkey_bytes_1).map_err(|e| MgmError::Error(e.to_string()))?;
+                let key = VerifyingKeyP224::from_encoded_point(&point).map_err(|e| MgmError::Error(e.to_string()))?;
+                key.to_public_key_pem(Default::default()).map_err(|e| MgmError::Error(e.to_string()))?
+            }
+            ObjectAlgorithm::EcP256 => {
+                let point = EncodedPointP256::from_bytes(&ec_pubkey_bytes_1)
+                    .map_err(|e| MgmError::Error(e.to_string()))?;
+                let key = VerifyingKeyP256::from_encoded_point(&point)
+                    .map_err(|e| MgmError::Error(e.to_string()))?;
+                key.to_public_key_pem(Default::default())
+                             .map_err(|e| MgmError::Error(e.to_string()))?
+            }
+            ObjectAlgorithm::EcP384 => {
+                let point = EncodedPointP384::from_bytes(&ec_pubkey_bytes_1).map_err(|e| MgmError::Error(e.to_string()))?;
+                let key = VerifyingKeyP384::from_encoded_point(&point).map_err(|e| MgmError::Error(e.to_string()))?;
+                key.to_public_key_pem(Default::default()).map_err(|e| MgmError::Error(e.to_string()))?
+            }
+            ObjectAlgorithm::EcP521 => {
+                let point = EncodedPointP521::from_bytes(&ec_pubkey_bytes_1).unwrap();
+                let key = PublicKeyP521::from_encoded_point(&point).unwrap();
+
+                // The EncodePublicKey trait handles OIDs and SPKI structure automatically
+                let spki = key.to_public_key_der().unwrap();
+                let pem = spki.to_pem("PUBLIC KEY", LineEnding::LF).unwrap();
+                String::from_utf8(pem.as_bytes().to_vec()).unwrap()
+            }
+            ObjectAlgorithm::EcBp256 | ObjectAlgorithm::EcBp384 | ObjectAlgorithm::EcBp512 => {
+                    // Pre-encoded OIDs (DER TLVs)
+                    const OID_EC_PUB_KEY: &[u8] = &[0x06, 0x07, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01];
+                    let oid_brainpool: &[u8] = match key_algo {
+                        ObjectAlgorithm::EcBp256 => &[0x06, 0x0A, 0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x07],
+                        ObjectAlgorithm::EcBp384 => &[0x06, 0x09, 0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0B],
+                        ObjectAlgorithm::EcBp512 => &[0x06, 0x09, 0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0D],
+                        _ => unreachable!(),
+                    };
+
+                    // AlgorithmIdentifier = SEQUENCE { id-ecPublicKey, brainpoolP256r1 }
+                    // We'll build: 30 <len> <ID_EC_PUB_KEY> <OID_BRAINPOOL_P256R1>
+                    let mut alg_id = Vec::new();
+                    alg_id.push(0x30);
+                    push_der_length(&mut alg_id, OID_EC_PUB_KEY.len() + oid_brainpool.len());
+                    alg_id.extend_from_slice(OID_EC_PUB_KEY);
+                    alg_id.extend_from_slice(oid_brainpool);
+
+                    get_spki_pem_string(ec_pubkey_bytes_1.as_slice(), alg_id)
+            }
+            _ => {"Unsupported curve".to_string()}
         };
 
-        let mut ctx = match BigNumContext::new() {
-            Ok(bnc) => bnc,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to create BigNumContext for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
-
-        let mut ec_pubkey_bytes: Vec<u8> = Vec::new();
-        ec_pubkey_bytes.push(0x04);
-        ec_pubkey_bytes.extend(pubkey.0);
-        let ec_point = match EcPoint::from_bytes(&ec_group, ec_pubkey_bytes.as_slice(), &mut ctx) {
-            Ok(p) => p,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to parse EC point for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
-
-        let ec_pubkey = match EcKey::from_public_key(&ec_group, &ec_point) {
-            Ok(pk) => pk,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to parse EC public key for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
-
-        pem_pubkey = match ec_pubkey.public_key_to_pem() {
-            Ok(pem) => pem,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to convert EC public key to PEM format for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
     } else if key_algo == ObjectAlgorithm::Ed25519 {
-        let ed_pubkey = match PKey::public_key_from_raw_bytes(pubkey.0.as_slice(), pkey::Id::ED25519) {
-            Ok(pk) => pk,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to parse ED public key for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(());
-            }
-        };
+        let ED25519_OID: &[u8] = &[0x06, 0x03, 0x2B, 0x65, 0x70];
+        let mut algo_seq = Vec::new();
+        algo_seq.push(0x30);
+        push_der_length(&mut algo_seq, ED25519_OID.len());
+        algo_seq.extend_from_slice(ED25519_OID);
+        pem_pubkey = get_spki_pem_string(pubkey.0.as_slice(), algo_seq);
 
-        pem_pubkey = match ed_pubkey.public_key_to_pem() {
-            Ok(pem) => pem,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to convert ED public key to PEM format for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
     } else {
         cliclack::log::error(format!("Object 0x{:04x} is not an asymmetric key", key.id))?;
         return Ok(())
     }
 
-    if let Ok(str) = String::from_utf8(pem_pubkey.clone()) { println!("{}\n", str) }
+    println!("{}\n", pem_pubkey);
 
     if cliclack::confirm("Write to file?").interact()? {
         let filename = format!("0x{:04x}.pubkey.pem", key.id);
-        if let Err(err) = write_bytes_to_file(pem_pubkey, "", filename.as_str()) {
+        if let Err(err) = write_bytes_to_file(pem_pubkey.into_bytes(), "", filename.as_str()) {
             cliclack::log::error(
                 format!("Failed to write public key 0x{:04x} to file. {}", key.id, err))?;
         }
     }
     Ok(())
+}
+
+fn get_spki_pem_string(pubkey_raw: &[u8], algorithm_seq: Vec<u8>) -> String {
+    let mut bit_string = Vec::new();
+    {
+        bit_string.push(0x03);
+        push_der_length(&mut bit_string, 1 + pubkey_raw.len());
+        bit_string.push(0x00); // unused bits
+        bit_string.extend_from_slice(pubkey_raw);
+    }
+
+    // Outer SEQUENCE
+    let mut spki = Vec::new();
+    {
+        spki.push(0x30);
+        push_der_length(&mut spki, algorithm_seq.len() + bit_string.len());
+        spki.extend_from_slice(&algorithm_seq);
+        spki.extend_from_slice(&bit_string);
+    }
+
+    // Base64 encode and format lines (typically 64-char lines)
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&spki);
+    let mut pem_body = String::new();
+    for chunk in b64.as_bytes().chunks(64) {
+        pem_body.push_str(std::str::from_utf8(chunk).unwrap());
+        pem_body.push('\n');
+    }
+
+    let mut pem = String::new();
+    pem.push_str("-----BEGIN PUBLIC KEY-----\n");
+    pem.push_str(&pem_body);
+    pem.push_str("-----END PUBLIC KEY-----\n");
+    pem
+}
+
+/// Encode DER length (definite, short or long form)
+fn push_der_length(buf: &mut Vec<u8>, len: usize) {
+    if len < 0x80 {
+        buf.push(len as u8);
+    } else if len < 0x100 {
+        buf.push(0x81);
+        buf.push(len as u8);
+    } else {
+        buf.push(0x82);
+        buf.push(((len >> 8) & 0xFF) as u8);
+        buf.push((len & 0xFF) as u8);
+    }
 }
 
 fn get_cert(session: &Session) -> Result<(), MgmError> {
