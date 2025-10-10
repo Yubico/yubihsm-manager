@@ -28,6 +28,12 @@ extern crate serde;
 extern crate yubihsmrs;
 extern crate comfy_table;
 
+extern crate rsa;
+extern crate k256;
+extern crate p224;
+extern crate p256;
+extern crate p384;
+extern crate p521;
 
 use std::fs;
 use std::str::FromStr;
