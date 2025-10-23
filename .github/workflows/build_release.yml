@@ -379,22 +379,22 @@ jobs:
           mkdir artifact
           
           C:/vcpkg/vcpkg.exe install openssl:x64-windows
-          C:/vcpkg/vcpkg.exe install openssl:x64-windows-static
-          C:/vcpkg/vcpkg.exe integrate install
-          $env:VCPKGRS_DYNAMIC=1
-          $env:OPENSSL_ROOT_DIR ="C:/vcpkg/packages/openssl_x64-windows"
-          $env:OPENSSL_LIBS="ssl:crypto"
+          #C:/vcpkg/vcpkg.exe install openssl:x64-windows-static
+          #C:/vcpkg/vcpkg.exe integrate install
+          #$env:VCPKGRS_DYNAMIC=1
+          #$env:OPENSSL_ROOT_DIR ="C:/vcpkg/packages/openssl_x64-windows"
+          #$env:OPENSSL_LIBS="ssl:crypto"
 
-          $env:OPENSSL_LIB_DIR="$env:OPENSSL_ROOT_DIR\lib"
-          $env:OPENSSL_INCLUDE_DIR="$env:OPENSSL_ROOT_DIR\include"
-          $env:OPENSSL_DIR="$env:OPENSSL_ROOT_DIR"
+          #$env:OPENSSL_LIB_DIR="$env:OPENSSL_ROOT_DIR\lib"
+          #$env:OPENSSL_INCLUDE_DIR="$env:OPENSSL_ROOT_DIR\include"
+          $env:OPENSSL_DIR="C:/vcpkg/packages/openssl_x64-windows"
           
           #$env:OPENSSL_LIB_DIR="C:\Strawberry\c\lib"
           #$env:OPENSSL_INCLUDE_DIR="C:\Strawberry\c\include"
           #$env:OPENSSL_DIR="C:\Strawberry\c"
           
-          ls $env:OPENSSL_DIR/
-          ls $env:OPENSSL_DIR/bin
+          #ls $env:OPENSSL_DIR/
+          #ls $env:OPENSSL_DIR/bin
 
           rustup target add x86_64-pc-windows-msvc
           rustup default stable-x86_64-pc-windows-msvc
@@ -402,7 +402,7 @@ jobs:
           $env:RUST_BACKTRACE=1
           $env:YUBIHSM_LIB_DIR="C:\Program Files\Yubico\YubiHSM Shell\bin"
           #$env:PATH+=";C:\Program Files\Yubico\YubiHSM Shell\bin;C:\rtools44\x86_64-w64-mingw32.static.posix\bin"
-          $env:PATH+=";C:\Program Files\Yubico\YubiHSM Shell\bin"
+          $env:PATH+=";C:\Program Files\Yubico\YubiHSM Shell\bin;C:/vcpkg/packages/openssl_x64-windows/bin"
           cargo.exe update
           cargo.exe build --release
           ./target/release/yubihsm-manager.exe --help
