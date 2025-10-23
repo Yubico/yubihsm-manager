@@ -15,37 +15,54 @@
  */
 
 use std::collections::HashSet;
+use std::convert::TryFrom;
 use std::fmt;
 use std::fmt::Display;
 use std::sync::LazyLock;
 use base64::Engine;
-use openssl::pkey;
-use openssl::bn::{BigNum, BigNumContext};
-use openssl::ec::{EcGroup, EcKey, EcPoint};
-use openssl::hash::{MessageDigest};
-use openssl::nid::Nid;
-use openssl::pkey::PKey;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectOrigin, ObjectType};
 use yubihsmrs::Session;
 
-use rsa::{RsaPublicKey, traits::PublicKeyParts};
+use rsa::{RsaPublicKey, traits::PublicKeyParts, traits::PrivateKeyParts, pkcs1::{DecodeRsaPrivateKey}};
 use p224::{ecdsa::VerifyingKey as VerifyingKeyP224, EncodedPoint as EncodedPointP224};
 use k256::{ecdsa::VerifyingKey as VerifyingKeyK256, EncodedPoint as EncodedPointK256};
 use p256::{ecdsa::VerifyingKey as VerifyingKeyP256, EncodedPoint as EncodedPointP256};
 use p384::{ecdsa::VerifyingKey as VerifyingKeyP384, EncodedPoint as EncodedPointP384};
-use p521::{PublicKey as PublicKeyP521, EncodedPoint as EncodedPointP521, elliptic_curve::sec1::FromEncodedPoint};
-
-use spki::{
-    der::pem::LineEnding, EncodePublicKey,
-};
+use p521::{PublicKey as PublicKeyP521, EncodedPoint as EncodedPointP521};
+use pkcs8::{ObjectIdentifier, PrivateKeyInfo};
+use pkcs8::der::Decode;
+use spki::{der::pem::LineEnding, EncodePublicKey, SubjectPublicKeyInfoRef};
+use x509_cert::Certificate;
+use sha1::Sha1;
+use sha2::{Sha256, Sha384, Sha512, Digest};
 
 use crate::error::MgmError;
 use crate::MAIN_STRING;
-use crate::util::{convert_handlers, get_ec_pubkey_from_pem_string, get_file_path, get_new_object_basics, get_op_key, list_objects, print_object_properties, read_input_bytes, read_input_string, read_pem_file, read_string_from_file, select_one_object, write_bytes_to_file};
+use crate::util::{convert_handlers, get_file_path, get_new_object_basics, get_op_key, list_objects, print_object_properties, read_input_bytes, read_input_string, read_pem_file, select_one_object, write_bytes_to_file};
 
 use crate::util::{delete_objects};
 
 static ASYM_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Asymmetric keys", MAIN_STRING));
+
+const OID_EC_PUB_KEY: &[u8] = &[0x06, 0x07, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01];
+const OID_ECBP256_PUB_KEY: &[u8] = &[0x06, 0x0A, 0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x07];
+const OID_ECBP384_PUB_KEY: &[u8] = &[0x06, 0x09, 0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0B];
+const OID_ECBP512_PUB_KEY: &[u8] = &[0x06, 0x09, 0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0D];
+const OID_ED25519_PUB_KEY: &[u8] = &[0x06, 0x03, 0x2B, 0x65, 0x70];
+
+const OID_RSA_KEY: &str = "1.2.840.113549.1.1.1";
+const OID_EC_KEY: &str = "1.2.840.10045.2.1";
+const OID_ED25519_KEY: &str = "1.3.101.112";
+
+const OID_ECK256_ALGORITHM: &str = "1.3.132.0.10";
+const OID_ECP224_ALGORITHM: &str = "1.3.132.0.33";
+const OID_ECP256_ALGORITHM: &str = "1.2.840.10045.3.1.7";
+const OID_ECP384_ALGORITHM: &str = "1.3.132.0.34";
+const OID_ECP521_ALGORITHM: &str = "1.3.132.0.35";
+const OID_ECBP256_ALGORITHM: &str = "1.3.36.3.3.2.8.1.1.7";
+const OID_ECBP384_ALGORITHM: &str = "1.3.36.3.3.2.8.1.1.11";
+const OID_ECBP512_ALGORITHM: &str = "1.3.36.3.3.2.8.1.1.13";
+
 
 const RSA_KEY_CAPABILITIES: [ObjectCapability; 6] = [
     ObjectCapability::SignPkcs,
@@ -242,22 +259,6 @@ fn get_command(authkey: &ObjectDescriptor) -> Result<AsymCommand, MgmError> {
     Ok(commands.interact()?)
 }
 
-fn get_algo_from_nid(nid: Nid) -> Result<ObjectAlgorithm, MgmError> {
-    match nid {
-        Nid::X9_62_PRIME256V1 => Ok(ObjectAlgorithm::EcP256),
-        Nid::SECP256K1 => Ok(ObjectAlgorithm::EcK256),
-        Nid::SECP384R1 => Ok(ObjectAlgorithm::EcP384),
-        Nid::SECP521R1 => Ok(ObjectAlgorithm::EcP521),
-        Nid::SECP224R1 => Ok(ObjectAlgorithm::EcP224),
-        Nid::BRAINPOOL_P256R1 => Ok(ObjectAlgorithm::EcBp256),
-        Nid::BRAINPOOL_P384R1 => Ok(ObjectAlgorithm::EcBp384),
-        Nid::BRAINPOOL_P512R1 => Ok(ObjectAlgorithm::EcBp512),
-        _ => {
-            Err(MgmError::InvalidInput(format!("Unsupported EC curve {:?}", nid)))
-        }
-    }
-}
-
 fn get_rsa_key_algo(size_in_bytes:u32) -> Result<ObjectAlgorithm, MgmError> {
     match size_in_bytes {
         256 => Ok(ObjectAlgorithm::Rsa2048),
@@ -271,9 +272,9 @@ fn get_rsa_key_algo(size_in_bytes:u32) -> Result<ObjectAlgorithm, MgmError> {
 
 fn get_new_key_note(key_desc: &ObjectDescriptor) -> String {
     key_desc.to_string()
-        .replace("Sequence:  0\t", "")
-        .replace("Origin: Generated\t", "")
-        .replace("\t", "\n")
+            .replace("Sequence:  0\t", "")
+            .replace("Origin: Generated\t", "")
+            .replace("\t", "\n")
 }
 
 fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
@@ -300,13 +301,13 @@ pub fn gen_asym_key(session: &Session, authkey: &ObjectDescriptor) -> Result<Obj
         .interact()?;
 
     let mut new_key =
-    if RSA_KEY_ALGORITHM.contains(&key_algo) {
-        get_new_object_basics(authkey, ObjectType::AsymmetricKey, &RSA_KEY_CAPABILITIES, &[])?
-    } else if EC_KEY_ALGORITHM.contains(&key_algo) {
-        get_new_object_basics(authkey, ObjectType::AsymmetricKey, &EC_KEY_CAPABILITIES, &[])?
-    } else {
-        get_new_object_basics(authkey, ObjectType::AsymmetricKey, &ED_KEY_CAPABILITIES, &[])?
-    };
+        if RSA_KEY_ALGORITHM.contains(&key_algo) {
+            get_new_object_basics(authkey, ObjectType::AsymmetricKey, &RSA_KEY_CAPABILITIES, &[])?
+        } else if EC_KEY_ALGORITHM.contains(&key_algo) {
+            get_new_object_basics(authkey, ObjectType::AsymmetricKey, &EC_KEY_CAPABILITIES, &[])?
+        } else {
+            get_new_object_basics(authkey, ObjectType::AsymmetricKey, &ED_KEY_CAPABILITIES, &[])?
+        };
     new_key.algorithm = key_algo;
 
     cliclack::note("Generating asymmetric key with:", get_new_key_note(&new_key))?;
@@ -332,142 +333,182 @@ fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError>
     }
 }
 
-pub fn import_asym_key(session: &Session, authkey: &ObjectDescriptor, filepath: String) -> Result<ObjectDescriptor, MgmError> {
-    let pem = read_pem_file(filepath)?;
-    let key_bytes = pem.contents();
-    let mut new_key = ObjectDescriptor::new();
-    match openssl::pkey::PKey::private_key_from_der(key_bytes) {
-        Ok(key) => {
-            match key.id() {
-                pkey::Id::RSA => {
-                    cliclack::log::info("Found RSA private key")?;
-                    let private_rsa = key.rsa()?;
+fn oid_to_ec_algorithm(oid: &ObjectIdentifier) -> Result<ObjectAlgorithm, MgmError> {
+    match oid.to_string().as_str() {
+        OID_ECK256_ALGORITHM => Ok(ObjectAlgorithm::EcK256),
+        OID_ECP224_ALGORITHM => Ok(ObjectAlgorithm::EcP224),
+        OID_ECP256_ALGORITHM => Ok(ObjectAlgorithm::EcP256),
+        OID_ECP384_ALGORITHM => Ok(ObjectAlgorithm::EcP384),
+        OID_ECP521_ALGORITHM => Ok(ObjectAlgorithm::EcP521),
+        OID_ECBP256_ALGORITHM => Ok(ObjectAlgorithm::EcBp256),
+        OID_ECBP384_ALGORITHM => Ok(ObjectAlgorithm::EcBp384),
+        OID_ECBP512_ALGORITHM => Ok(ObjectAlgorithm::EcBp512),
+        _ => Err(MgmError::Error("Unsupported curve".to_string())),
+    }
+}
 
-                    let Some(p) = private_rsa.p() else {
-                        cliclack::log::error("Failed to read p value".to_string())?;
-                        return Err(MgmError::InvalidInput("Failed to read p value".to_string()));
-                    };
-                    let Some(q) = private_rsa.q() else {
-                        cliclack::log::error("Failed to read q value".to_string())?;
-                        return Err(MgmError::InvalidInput("Failed to read q value".to_string()));
-                    };
+fn import_pkcs1_rsa(session: &Session, authkey: &ObjectDescriptor, der_bytes: &[u8]) -> Result<ObjectDescriptor, MgmError> {
+    let rsa = rsa::RsaPrivateKey::from_pkcs1_der(der_bytes)?;
+    if rsa.primes().len() != 2 {
+        return Err(MgmError::InvalidInput("RSA key does not have exactly two primes".to_string()));
+    }
+    let p = rsa.primes()[0].to_bytes_be();
+    let q = rsa.primes()[1].to_bytes_be();
+    let key_algorithm = get_rsa_key_algo((rsa.n().bits() / 8) as u32)?;
 
-                    let key_algorithm = get_rsa_key_algo(private_rsa.size())?;
-                    new_key = get_new_object_basics(
-                        authkey, ObjectType::AsymmetricKey, &RSA_KEY_CAPABILITIES, &[])?;
-                    new_key.algorithm = key_algorithm;
+    let mut new_key = get_new_object_basics(
+        authkey, ObjectType::AsymmetricKey, &RSA_KEY_CAPABILITIES, &[])?;
+    new_key.algorithm = key_algorithm;
 
-                    cliclack::note("Importing RSA key with: ", get_new_key_note(&new_key))?;
-                    if cliclack::confirm("Import RSA key?").interact()? {
-                        new_key.id = session
-                            .import_rsa_key(
-                                new_key.id,
-                                &new_key.label,
-                                &new_key.domains,
-                                &new_key.capabilities,
-                                new_key.algorithm,
-                                &p.to_vec(),
-                                &q.to_vec())?;
-                        cliclack::log::success(
-                            format!("Imported RSA keypair with ID 0x{:04x} on the device", new_key.id))?;
-                    }
-                    return Ok(new_key)
+    cliclack::note("Importing RSA key with: ", get_new_key_note(&new_key))?;
+    if cliclack::confirm("Import RSA key?").interact()? {
+        new_key.id = session
+            .import_rsa_key(
+                new_key.id,
+                &new_key.label,
+                &new_key.domains,
+                &new_key.capabilities,
+                new_key.algorithm,
+                &p.to_vec(),
+                &q.to_vec())?;
+        cliclack::log::success(
+            format!("Imported RSA keypair with ID 0x{:04x} on the device", new_key.id))?;
+    }
+    Ok(new_key)
+}
 
-                }
-                pkey::Id::EC => {
-                    cliclack::log::info("Found EC private key")?;
-                    let private_ec = key.ec_key()?;
-                    let s = private_ec.private_key();
-                    let group = private_ec.group();
-                    let Some(nid) = group.curve_name() else {
-                        cliclack::log::error("Failed to read EC curve name".to_string())?;
-                        return Err(MgmError::InvalidInput("Failed to read EC curve name".to_string()))
-                    };
+fn import_sec1_ec(session: &Session, authkey: &ObjectDescriptor, der_bytes: &[u8]) -> Result<ObjectDescriptor, MgmError> {
+    let sec1 = ::sec1::EcPrivateKey::from_der(der_bytes)?;
+    let s = sec1.private_key.to_vec();
 
-                    let key_algorithm = get_algo_from_nid(nid)?;
-                    new_key = get_new_object_basics(
-                        authkey, ObjectType::AsymmetricKey, &EC_KEY_CAPABILITIES, &[])?;
-                    new_key.algorithm = key_algorithm;
-
-                    cliclack::note("Importing EC key with: ", get_new_key_note(&new_key))?;
-
-                    if cliclack::confirm("Import EC key?").interact()? {
-                        new_key.id = session
-                            .import_ec_key(
-                                new_key.id,
-                                &new_key.label,
-                                &new_key.domains,
-                                &new_key.capabilities,
-                                new_key.algorithm,
-                                &s.to_vec())?;
-                        cliclack::log::success(
-                            format!("Imported EC keypair with ID 0x{:04x} on the device", new_key.id))?;
-                    }
-                }
-                pkey::Id::ED25519 => {
-                    cliclack::log::info("Found ED private key")?;
-                    let private_ed = PKey::private_key_from_raw_bytes(key_bytes, pkey::Id::ED25519)?;
-                    let k = private_ed.raw_private_key()?;
-
-                    new_key = get_new_object_basics(
-                        authkey, ObjectType::AsymmetricKey, &ED_KEY_CAPABILITIES, &[])?;
-                    new_key.algorithm = ObjectAlgorithm::Ed25519;
-
-                    cliclack::note("Importing ED key with: ", get_new_key_note(&new_key))?;
-
-                    if cliclack::confirm("Import ED key?").interact()? {
-                        new_key.id = session
-                            .import_ed_key(
-                                new_key.id,
-                                &new_key.label,
-                                &new_key.domains,
-                                &new_key.capabilities,
-                                &k.to_vec())?;
-                        cliclack::log::success(
-                            format!("Imported ED keypair with ID 0x{:04x} on the device", new_key.id))?;
-                    }
-                }
-                _ => cliclack::log::error("Unknown or unsupported key type")?,
-            }
-        }
-        Err(err) => {
-            let key_err = err;
-            match openssl::x509::X509::from_der(key_bytes) {
-                Ok(cert) => {
-                    cliclack::log::info("Found X509Certificate")?;
-
-                    new_key = get_new_object_basics(
-                        authkey, ObjectType::Opaque, &OPAQUE_CAPABILITIES, &[])?;
-                    new_key.algorithm = ObjectAlgorithm::OpaqueX509Certificate;
-
-                    cliclack::note("Importing X509Certificate with: ", get_new_key_note(&new_key))?;
-                    if cliclack::confirm("Import X509Certificate?").interact()? {
-                        new_key.id = session
-                            .import_cert(
-                                new_key.id,
-                                &new_key.label,
-                                &new_key.domains,
-                                &new_key.capabilities,
-                                &cert.to_pem()?)?;
-                        cliclack::log::success(format!("Imported X509Certificate with ID 0x{:04x} on the device", new_key.id))?;
-                    }
-                }
-                Err(cert_err) => {
-                    cliclack::log::error("Failed to find either private key or X509Certificate".to_string())?;
-                    cliclack::log::error(format!("{}", key_err))?;
-                    cliclack::log::error(format!("{}", cert_err))?;
-                }
-            }
+    let curve_oid = match sec1.parameters {
+        Some(::sec1::EcParameters::NamedCurve(oid)) => oid,
+        _ => {
+            return Err(MgmError::InvalidInput("EC key parameters are not a namedCurve OID (explicit or unsupported form)".to_string()));
         }
     };
+    let key_algo = oid_to_ec_algorithm(&curve_oid)?;
+
+    let mut new_key = get_new_object_basics(
+        authkey, ObjectType::AsymmetricKey, &EC_KEY_CAPABILITIES, &[])?;
+    new_key.algorithm = key_algo;
+
+    cliclack::note("Importing EC key with: ", get_new_key_note(&new_key))?;
+
+    if cliclack::confirm("Import EC key?").interact()? {
+        new_key.id = session
+            .import_ec_key(
+                new_key.id,
+                &new_key.label,
+                &new_key.domains,
+                &new_key.capabilities,
+                new_key.algorithm,
+                &s.to_vec())?;
+        cliclack::log::success(
+            format!("Imported EC keypair with ID 0x{:04x} on the device", new_key.id))?;
+    }
+    Ok(new_key)
+
+}
+
+
+pub fn import_pkcs8_ed25519(session: &Session, authkey: &ObjectDescriptor, der_bytes: &[u8]) -> Result<ObjectDescriptor, MgmError> {
+    // Parse PKCS#8 Ed25519 DER; extract 32-byte seed.
+    // Accepts 32, 34 (nested) or 64 (seed+public) lengths.
+    let seed:Vec<u8> = match der_bytes.len() {
+        32 => {
+            der_bytes.to_vec()
+        },
+        34 if der_bytes[0] == 0x04 && der_bytes[1] == 0x20 => {
+            der_bytes[2..34].to_vec()
+        },
+        64 => {
+            der_bytes[0..32].to_vec()
+        },
+        _ => {
+            return Err(MgmError::InvalidInput(format!(
+                "Unsupported Ed25519 private key length {} (expected 32, 34 or 64)",
+                der_bytes.len()
+            )));
+        }
+    };
+
+    let mut new_key = get_new_object_basics(
+        authkey, ObjectType::AsymmetricKey, &ED_KEY_CAPABILITIES, &[])?;
+    new_key.algorithm = ObjectAlgorithm::Ed25519;
+
+    cliclack::note("Importing ED25519 key with: ", get_new_key_note(&new_key))?;
+    if cliclack::confirm("Import EC key?").interact()? {
+        new_key.id = session
+            .import_ed_key(
+                new_key.id,
+                &new_key.label,
+                &new_key.domains,
+                &new_key.capabilities,
+                seed.as_slice())?;
+        cliclack::log::success(
+            format!("Imported EC keypair with ID 0x{:04x} on the device", new_key.id))?;
+    }
+    Ok(new_key)
+}
+
+pub fn import_asym_key(session: &Session, authkey: &ObjectDescriptor, filepath: String) -> Result<ObjectDescriptor, MgmError> {
+    let pem = read_pem_file(filepath)?;
+    let der_bytes = pem.contents();
+
+    if Certificate::from_der(der_bytes).is_ok() {
+        let mut new_obj = get_new_object_basics(authkey, ObjectType::Opaque, &OPAQUE_CAPABILITIES, &[])?;
+        new_obj.algorithm = ObjectAlgorithm::OpaqueX509Certificate;
+        cliclack::note("Importing X509Certificate with: ", get_new_key_note(&new_obj))?;
+        if cliclack::confirm("Import X509Certificate?").interact()? {
+            new_obj.id = session.import_cert(
+                new_obj.id,
+                &new_obj.label,
+                &new_obj.domains,
+                &new_obj.capabilities,
+                der_bytes
+            )?;
+            cliclack::log::success(
+                format!("Imported X509Certificate with ID 0x{:04x} on the device", new_obj.id)
+            )?;
+        }
+        return Ok(new_obj)
+    }
+
+    let new_key =
+        if let Ok(nk) = import_pkcs1_rsa(session, authkey, der_bytes) {
+            nk
+        } else if let Ok(nk) = import_sec1_ec(session, authkey, der_bytes) {
+            nk
+        } else if let Ok(privkey) = PrivateKeyInfo::try_from(der_bytes) {
+            // Continue to PKCS#8 parsing
+            let alg = privkey.algorithm;
+            let oid_str = alg.oid.to_string();
+            match oid_str.as_str() {
+                OID_RSA_KEY => {
+                    import_pkcs1_rsa(session, authkey, privkey.private_key)?
+                },
+                OID_EC_KEY => {
+                    import_sec1_ec(session, authkey, privkey.private_key)?
+                },
+                OID_ED25519_KEY => {
+                    import_pkcs8_ed25519(session, authkey, privkey.private_key)?
+                }
+                _ => {
+                    return Err(MgmError::InvalidInput(format!("Unsupported private key algorithm OID: {}", oid_str)))
+                },
+            }
+        } else {
+            return Err(MgmError::InvalidInput("Failed to parse private key: unsupported format".to_string()))
+        };
     Ok(new_key)
 }
 
 fn get_all_asym_objects(session: &Session) -> Result<Vec<ObjectHandle>, MgmError> {
     let mut keys = session.
-        list_objects_with_filter(0, ObjectType::AsymmetricKey, "", ObjectAlgorithm::ANY, &Vec::new())?;
+                              list_objects_with_filter(0, ObjectType::AsymmetricKey, "", ObjectAlgorithm::ANY, &Vec::new())?;
     keys.extend(session.
-        list_objects_with_filter(0, ObjectType::Opaque, "",ObjectAlgorithm::OpaqueX509Certificate, &Vec::new())?);
+                           list_objects_with_filter(0, ObjectType::Opaque, "",ObjectAlgorithm::OpaqueX509Certificate, &Vec::new())?);
     Ok(keys)
 }
 
@@ -481,11 +522,11 @@ fn list(session: &Session) -> Result<(), MgmError> {
     let mut keys = Vec::new();
     if types.contains(&AsymTypes::Keys) {
         keys.extend(session.
-            list_objects_with_filter(0, ObjectType::AsymmetricKey, "", ObjectAlgorithm::ANY, &Vec::new())?);
+                               list_objects_with_filter(0, ObjectType::AsymmetricKey, "", ObjectAlgorithm::ANY, &Vec::new())?);
     }
     if types.contains(&AsymTypes::X509Certificates) {
         keys.extend(session.
-            list_objects_with_filter(0, ObjectType::Opaque, "",ObjectAlgorithm::OpaqueX509Certificate, &Vec::new())?);
+                               list_objects_with_filter(0, ObjectType::Opaque, "",ObjectAlgorithm::OpaqueX509Certificate, &Vec::new())?);
     }
     list_objects(session, &keys)
 }
@@ -501,26 +542,18 @@ fn delete(session: &Session) -> Result<(), MgmError> {
 
 fn get_public_key(session: &Session) -> Result<(), MgmError> {
     let keys = session.
-        list_objects_with_filter(0, ObjectType::AsymmetricKey, "", ObjectAlgorithm::ANY, &Vec::new())?;
+                          list_objects_with_filter(0, ObjectType::AsymmetricKey, "", ObjectAlgorithm::ANY, &Vec::new())?;
     let key = select_one_object(
         "Select key" , convert_handlers(session, &keys)?)?;
-
-    let pubkey = match session.get_pubkey(key.id) {
-        Ok(pk) => pk,
-        Err(e) => {
-            cliclack::log::error(format!("Failed to get public key for asymmetric key 0x{:04x}. {}",
-                                         key.id, e))?;
-            return Ok(())
-        }
-    };
+    let pubkey = session.get_pubkey(key.id)?;
 
     let pem_pubkey: String;
     let key_algo = pubkey.1;
     if RSA_KEY_ALGORITHM.contains(&key_algo) {
         let modulus = rsa::BigUint::from_bytes_be(pubkey.0.clone().as_slice());
         let exponent = rsa::BigUint::from_bytes_be(&[0x01, 0x00, 0x01]);
-        let rsa_pubkey:RsaPublicKey = RsaPublicKey::new(modulus, exponent).unwrap();
-        pem_pubkey = rsa_pubkey.to_public_key_pem(rsa::pkcs8::LineEnding::LF).unwrap();
+        let rsa_pubkey:RsaPublicKey = RsaPublicKey::new(modulus, exponent)?;
+        pem_pubkey = rsa_pubkey.to_public_key_pem(rsa::pkcs8::LineEnding::LF)?;
 
     } else if EC_KEY_ALGORITHM.contains(&key_algo) {
         let mut ec_pubkey_bytes_1: Vec<u8> = Vec::new();
@@ -529,70 +562,58 @@ fn get_public_key(session: &Session) -> Result<(), MgmError> {
 
         pem_pubkey = match key_algo {
             ObjectAlgorithm::EcK256 => {
-                // Repeat the process for k256
-                let point = EncodedPointK256::from_bytes(&ec_pubkey_bytes_1)
-                    .map_err(|e| MgmError::Error(format!("Failed to create encoded point for K256: {}", e)))?;
-                let key = VerifyingKeyK256::from_encoded_point(&point)
-                    .map_err(|e| MgmError::Error(format!("Failed to parse K256 public key: {}", e)))?;
-                key.to_public_key_pem(Default::default())
-                             .map_err(|e| MgmError::Error(format!("Failed to encode K256 key to PEM: {}", e)))?
+                let point = EncodedPointK256::from_bytes(&ec_pubkey_bytes_1)?;
+                let key = VerifyingKeyK256::from_encoded_point(&point)?;
+                key.to_public_key_pem(Default::default())?
             }
             ObjectAlgorithm::EcP224 => {
-                let point = EncodedPointP224::from_bytes(&ec_pubkey_bytes_1).map_err(|e| MgmError::Error(e.to_string()))?;
-                let key = VerifyingKeyP224::from_encoded_point(&point).map_err(|e| MgmError::Error(e.to_string()))?;
-                key.to_public_key_pem(Default::default()).map_err(|e| MgmError::Error(e.to_string()))?
+                let point = EncodedPointP224::from_bytes(&ec_pubkey_bytes_1)?;
+                let key = VerifyingKeyP224::from_encoded_point(&point)?;
+                key.to_public_key_pem(Default::default())?
             }
             ObjectAlgorithm::EcP256 => {
-                let point = EncodedPointP256::from_bytes(&ec_pubkey_bytes_1)
-                    .map_err(|e| MgmError::Error(e.to_string()))?;
-                let key = VerifyingKeyP256::from_encoded_point(&point)
-                    .map_err(|e| MgmError::Error(e.to_string()))?;
-                key.to_public_key_pem(Default::default())
-                             .map_err(|e| MgmError::Error(e.to_string()))?
+                let point = EncodedPointP256::from_bytes(&ec_pubkey_bytes_1)?;
+                let key = VerifyingKeyP256::from_encoded_point(&point)?;
+                key.to_public_key_pem(Default::default())?
             }
             ObjectAlgorithm::EcP384 => {
-                let point = EncodedPointP384::from_bytes(&ec_pubkey_bytes_1).map_err(|e| MgmError::Error(e.to_string()))?;
-                let key = VerifyingKeyP384::from_encoded_point(&point).map_err(|e| MgmError::Error(e.to_string()))?;
-                key.to_public_key_pem(Default::default()).map_err(|e| MgmError::Error(e.to_string()))?
+                let point = EncodedPointP384::from_bytes(&ec_pubkey_bytes_1)?;
+                let key = VerifyingKeyP384::from_encoded_point(&point)?;
+                key.to_public_key_pem(Default::default())?
             }
             ObjectAlgorithm::EcP521 => {
-                let point = EncodedPointP521::from_bytes(&ec_pubkey_bytes_1).unwrap();
-                let key = PublicKeyP521::from_encoded_point(&point).unwrap();
-
-                // The EncodePublicKey trait handles OIDs and SPKI structure automatically
-                let spki = key.to_public_key_der().unwrap();
-                let pem = spki.to_pem("PUBLIC KEY", LineEnding::LF).unwrap();
-                String::from_utf8(pem.as_bytes().to_vec()).unwrap()
+                let point = EncodedPointP521::from_bytes(&ec_pubkey_bytes_1)?;
+                let key = PublicKeyP521::try_from(point)
+                    .map_err(|e| MgmError::InvalidInput(format!("Failed to parse ECP521 public key: {e}")))?;
+                let spki = key.to_public_key_der()?;
+                spki.to_pem("PUBLIC KEY", LineEnding::LF)?
             }
             ObjectAlgorithm::EcBp256 | ObjectAlgorithm::EcBp384 | ObjectAlgorithm::EcBp512 => {
-                    // Pre-encoded OIDs (DER TLVs)
-                    const OID_EC_PUB_KEY: &[u8] = &[0x06, 0x07, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01];
-                    let oid_brainpool: &[u8] = match key_algo {
-                        ObjectAlgorithm::EcBp256 => &[0x06, 0x0A, 0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x07],
-                        ObjectAlgorithm::EcBp384 => &[0x06, 0x09, 0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0B],
-                        ObjectAlgorithm::EcBp512 => &[0x06, 0x09, 0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0D],
-                        _ => unreachable!(),
-                    };
+                let curve_oid: &[u8] = match key_algo {
+                    ObjectAlgorithm::EcBp256 => OID_ECBP256_PUB_KEY,
+                    ObjectAlgorithm::EcBp384 => OID_ECBP384_PUB_KEY,
+                    ObjectAlgorithm::EcBp512 => OID_ECBP512_PUB_KEY,
+                    _ => unreachable!(),
+                };
 
-                    // AlgorithmIdentifier = SEQUENCE { id-ecPublicKey, brainpoolP256r1 }
-                    // We'll build: 30 <len> <ID_EC_PUB_KEY> <OID_BRAINPOOL_P256R1>
-                    let mut alg_id = Vec::new();
-                    alg_id.push(0x30);
-                    push_der_length(&mut alg_id, OID_EC_PUB_KEY.len() + oid_brainpool.len());
-                    alg_id.extend_from_slice(OID_EC_PUB_KEY);
-                    alg_id.extend_from_slice(oid_brainpool);
+                // AlgorithmIdentifier = SEQUENCE { id-ecPublicKey, brainpoolP256r1 }
+                // We'll build: 30 <len> <ID_EC_PUB_KEY> <OID_BRAINPOOL_P256R1>
+                let mut alg_id = Vec::new();
+                alg_id.push(0x30);
+                push_der_length(&mut alg_id, OID_EC_PUB_KEY.len() + curve_oid.len());
+                alg_id.extend_from_slice(OID_EC_PUB_KEY);
+                alg_id.extend_from_slice(curve_oid);
 
-                    get_spki_pem_string(ec_pubkey_bytes_1.as_slice(), alg_id)
+                get_spki_pem_string(ec_pubkey_bytes_1.as_slice(), alg_id)
             }
             _ => {"Unsupported curve".to_string()}
         };
 
     } else if key_algo == ObjectAlgorithm::Ed25519 {
-        let ED25519_OID: &[u8] = &[0x06, 0x03, 0x2B, 0x65, 0x70];
         let mut algo_seq = Vec::new();
         algo_seq.push(0x30);
-        push_der_length(&mut algo_seq, ED25519_OID.len());
-        algo_seq.extend_from_slice(ED25519_OID);
+        push_der_length(&mut algo_seq, OID_ED25519_PUB_KEY.len());
+        algo_seq.extend_from_slice(OID_ED25519_PUB_KEY);
         pem_pubkey = get_spki_pem_string(pubkey.0.as_slice(), algo_seq);
 
     } else {
@@ -630,19 +651,7 @@ fn get_spki_pem_string(pubkey_raw: &[u8], algorithm_seq: Vec<u8>) -> String {
         spki.extend_from_slice(&bit_string);
     }
 
-    // Base64 encode and format lines (typically 64-char lines)
-    let b64 = base64::engine::general_purpose::STANDARD.encode(&spki);
-    let mut pem_body = String::new();
-    for chunk in b64.as_bytes().chunks(64) {
-        pem_body.push_str(std::str::from_utf8(chunk).unwrap());
-        pem_body.push('\n');
-    }
-
-    let mut pem = String::new();
-    pem.push_str("-----BEGIN PUBLIC KEY-----\n");
-    pem.push_str(&pem_body);
-    pem.push_str("-----END PUBLIC KEY-----\n");
-    pem
+    get_pem_string(spki.as_slice(), "PUBLIC KEY")
 }
 
 /// Encode DER length (definite, short or long form)
@@ -659,19 +668,31 @@ fn push_der_length(buf: &mut Vec<u8>, len: usize) {
     }
 }
 
+fn get_pem_string(cert_bytes: &[u8], label: &str) -> String {
+    let b64 = base64::engine::general_purpose::STANDARD.encode(cert_bytes);
+    let mut pem = format!("-----BEGIN {}-----\n", label);
+    for chunk in b64.as_bytes().chunks(64) {
+        pem.push_str(std::str::from_utf8(chunk).unwrap());
+        pem.push('\n');
+    }
+    pem.push_str(format!("-----END {}-----\n", label).as_str());
+    pem
+}
+
+
 fn get_cert(session: &Session) -> Result<(), MgmError> {
     let certs = session.list_objects_with_filter(0, ObjectType::Opaque, "", ObjectAlgorithm::OpaqueX509Certificate, &Vec::new())?;
     let cert = select_one_object(
         "Select certificates", convert_handlers(session, &certs)?)?;
 
-
     let cert_bytes = session.get_opaque(cert.id)?;
-    let cert_pem = openssl::x509::X509::from_der(cert_bytes.as_slice())?.to_pem()?;
-    if let Ok(str) = String::from_utf8(cert_pem.clone()) { println!("{}\n", str) }
+    let pem = get_pem_string(cert_bytes.as_slice(), "CERTIFICATE");
+
+    println!("{}\n", pem);
 
     if cliclack::confirm("Write to file?").interact()? {
         let filename = format!("0x{:04x}.cert.pem", cert.id);
-        if let Err(err) = write_bytes_to_file(cert_pem, "", filename.as_str()) {
+        if let Err(err) = write_bytes_to_file(pem.into_bytes(), "", filename.as_str()) {
             cliclack::log::error(
                 format!("Failed to write certificate 0x{:04x} to file. {}", cert.id, err))?;
         }
@@ -684,19 +705,35 @@ fn get_hashed_bytes(algo: &ObjectAlgorithm, input: &[u8]) -> Result<Vec<u8>, Mgm
         ObjectAlgorithm::RsaPkcs1Sha1 |
         ObjectAlgorithm::RsaPssSha1 |
         ObjectAlgorithm::EcdsaSha1 |
-        ObjectAlgorithm::RsaOaepSha1 => Ok(openssl::hash::hash(MessageDigest::sha1(), input)?.to_vec()),
+        ObjectAlgorithm::RsaOaepSha1 => {
+            let mut h = Sha1::new();
+            h.update(input);
+            Ok(h.finalize().to_vec())
+        },
         ObjectAlgorithm::RsaPkcs1Sha256 |
         ObjectAlgorithm::RsaPssSha256 |
         ObjectAlgorithm::EcdsaSha256 |
-        ObjectAlgorithm::RsaOaepSha256 => Ok(openssl::hash::hash(MessageDigest::sha256(), input)?.to_vec()),
+        ObjectAlgorithm::RsaOaepSha256 => {
+            let mut h = Sha256::new();
+            h.update(input);
+            Ok(h.finalize().to_vec())
+        },
         ObjectAlgorithm::RsaPkcs1Sha384 |
         ObjectAlgorithm::RsaPssSha384 |
         ObjectAlgorithm::EcdsaSha384 |
-        ObjectAlgorithm::RsaOaepSha384 => Ok(openssl::hash::hash(MessageDigest::sha384(), input)?.to_vec()),
+        ObjectAlgorithm::RsaOaepSha384 => {
+            let mut h = Sha384::new();
+            h.update(input);
+            Ok(h.finalize().to_vec())
+        },
         ObjectAlgorithm::RsaPkcs1Sha512 |
         ObjectAlgorithm::RsaPssSha512 |
         ObjectAlgorithm::EcdsaSha512 |
-        ObjectAlgorithm::RsaOaepSha512 => Ok(openssl::hash::hash(MessageDigest::sha512(), input)?.to_vec()),
+        ObjectAlgorithm::RsaOaepSha512 => {
+            let mut h = Sha512::new();
+            h.update(input);
+            Ok(h.finalize().to_vec())
+        },
         _ => Err(MgmError::InvalidInput("Algorithm does not contain hash component".to_string()))
     }
 }
@@ -851,14 +888,11 @@ fn derive_ecdh(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmE
         ObjectType::AsymmetricKey,
         &EC_KEY_ALGORITHM)?;
 
-    let peer_key = read_string_from_file("Enter path to PEM file containing the peer public key: ")?;
-    let (peer_key, nid) = get_ec_pubkey_from_pem_string(peer_key)?;
-    let peer_key_algo = get_algo_from_nid(nid)?;
+    let peer_key = read_pem_file(get_file_path("Enter path to PEM file containing peer public key in PEM format:")?)?;
+    let peer_key = SubjectPublicKeyInfoRef::from_der(peer_key.contents())?;
+    let peer_key = peer_key.subject_public_key.raw_bytes();
 
-    if hsm_key.algorithm != peer_key_algo {
-        return Err(MgmError::Error("Peer EC public key has a different algorithm from the YubiHSM key".to_string()));
-    }
-    cliclack::log::success(hex::encode(session.derive_ecdh(hsm_key.id, peer_key.as_slice())?))?;
+    cliclack::log::success(hex::encode(session.derive_ecdh(hsm_key.id, peer_key)?))?;
 
     Ok(())
 }
@@ -891,11 +925,11 @@ fn sign_attestation(session: &Session, authkey:&ObjectDescriptor) -> Result<(), 
     let attesting_key = select_one_object("Select attesting key", attesting_keys)?;
 
     let cert_bytes = get_attestation_cert(session, authkey, attested_key.id, attesting_key.id)?;
-    let cert_pem = openssl::x509::X509::from_der(cert_bytes.as_slice())?.to_pem()?;
-    if let Ok(str) = String::from_utf8(cert_pem.clone()) { println!("{}\n", str) }
+    let cert_pem = get_pem_string(cert_bytes.as_slice(), "CERTIFICATE");
+    println!("{}\n", cert_pem.clone());
 
     if cliclack::confirm("Write to file?").interact()? {
-        if let Err(err) = write_bytes_to_file(cert_pem, "", "attestation_cert.pem") {
+        if let Err(err) = write_bytes_to_file(cert_pem.into_bytes(), "", "attestation_cert.pem") {
             cliclack::log::error(
                 format!("Failed to write attestation certificate to file. {}", err))?;
         }
@@ -938,8 +972,15 @@ fn import_template_cert(session:&Session, authkey:&ObjectDescriptor, key_id:u16)
 
                     let pem = read_pem_file(file_path)?;
                     let cert_bytes = pem.contents();
-                    let cert = openssl::x509::X509::from_der(cert_bytes)?;
-                    session.import_cert(key_id, "template_cert", &authkey.domains, &Vec::new(), &cert.to_pem()?)?;
+                    // let cert = openssl::x509::X509::from_der(cert_bytes)?;
+                    match Certificate::from_der(cert_bytes) {
+                        Ok(_) => {
+                            session.import_cert(key_id, "template_cert", &authkey.domains, &Vec::new(), cert_bytes)?;
+                        },
+                        Err(e) => {
+                            return Err(MgmError::InvalidInput(format!("Failed to parse X509Certificate from DER: {e}")));
+                        }
+                    }
                 }
             }
             delete_template_cert = true;

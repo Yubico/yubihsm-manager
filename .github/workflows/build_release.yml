@@ -248,6 +248,7 @@ jobs:
           RPM_DIR=$GITHUB_WORKSPACE/rpmbuild
           mkdir -p $RPM_DIR/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
           echo '%_topdir %(echo $HOME)/rpmbuild' > $GITHUB_WORKSPACE/.rpmmacros
+
           cp yubihsm-shell/resources/release/linux/yubihsm-shell.spec $RPM_DIR/SPECS/
           QA_SKIP_BUILD_ROOT=1 QA_RPATHS=$(( 0x0001|0x0010 )) rpmbuild -bb $RPM_DIR/SPECS/yubihsm-shell.spec
           yum install -y /github/home/rpmbuild/RPMS/x86_64/yubihsm-devel-*.rpm
@@ -421,20 +422,16 @@ jobs:
           Set-PSDebug -Trace 1
           mkdir artifact
           
-          C:/vcpkg/vcpkg.exe install openssl:x64-windows
-          $env:OPENSSL_DIR="C:/vcpkg/packages/openssl_x64-windows"
-
           rustup target add x86_64-pc-windows-msvc
           rustup default stable-x86_64-pc-windows-msvc
 
           $env:RUST_BACKTRACE=1
           $env:YUBIHSM_LIB_DIR="C:\Program Files\Yubico\YubiHSM Shell\lib"
-          #$env:PATH+=";C:\Program Files\Yubico\YubiHSM Shell\bin;C:\rtools44\x86_64-w64-mingw32.static.posix\bin"
-          $env:PATH+=";C:\Program Files\Yubico\YubiHSM Shell\bin;C:/vcpkg/packages/openssl_x64-windows/bin"
+          $env:PATH+=";C:\Program Files\Yubico\YubiHSM Shell\bin"
           cargo.exe update
           cargo.exe build --release
-          ./target/release/yubihsm-manager.exe --help
           ./target/release/yubihsm-manager.exe --version
+          ./target/release/yubihsm-manager.exe --help
           install target/release/yubihsm-manager $env:GITHUB_WORKSPACE/artifact/yubihsm-manager
 
       - name: Upload artifact

@@ -17,6 +17,8 @@
 use std::fmt;
 use std::fmt::{Display};
 use std::sync::LazyLock;
+use pkcs8::der::Decode;
+use x509_cert::Certificate;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::asym_commands::{gen_asym_key, get_attestation_cert, import_asym_key};
@@ -213,10 +215,10 @@ fn import(session: &Session, authkey: &ObjectDescriptor ) -> Result<(), MgmError
         get_file_path("Enter absolute path to PEM file containing X509Certificate:")?)?;
     let cert_bytes = pem.contents();
 
-    match openssl::x509::X509::from_der(cert_bytes) {
-        Ok(cert) => {
+    match Certificate::from_der(cert_bytes) {
+        Ok(_) => {
             match session
-                .import_cert(key.id, &key.label, &key.domains, &[ObjectCapability::ExportableUnderWrap], &cert.to_pem()?) {
+                .import_cert(key.id, &key.label, &key.domains, &[ObjectCapability::ExportableUnderWrap], cert_bytes) {
                 Ok(_) => cliclack::log::success(format!("Imported X509Certificate with ID 0x{:04x} on the device", key.id))?,
                 Err(err) => {
                     cliclack::log::error(
@@ -229,7 +231,7 @@ fn import(session: &Session, authkey: &ObjectDescriptor ) -> Result<(), MgmError
         Err(cert_err) => {
             cliclack::log::error(format!("No X509Certificate found. Deleting 0x{:04x} key", key.id))?;
             session.delete_object(key.id, ObjectType::AsymmetricKey)?;
-            return Err(MgmError::OpenSSLError(cert_err));
+            return Err(MgmError::InvalidInput(format!("Failed to parse X509Certificate from file. {}", cert_err)));
         }
     }
 

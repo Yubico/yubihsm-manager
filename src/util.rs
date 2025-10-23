@@ -25,9 +25,6 @@ use std::ops::Deref;
 use std::path::Path;
 use std::str::FromStr;
 use cliclack::MultiSelect;
-use openssl::bn::BigNumContext;
-use openssl::ec::PointConversionForm;
-use openssl::nid::Nid;
 use pem::Pem;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::{Session};
@@ -338,22 +335,6 @@ pub fn read_pem_file(file_path:String) -> Result<Pem, MgmError> {
             }
         }
     }
-}
-
-pub fn get_ec_pubkey_from_pem_string(pem_str:String) -> Result<(Vec<u8>, Nid), MgmError> {
-    let pubkey = openssl::ec::EcKey::public_key_from_pem(pem_str.as_bytes())?;
-    let mut ctx = BigNumContext::new()?;
-    let ec_point_ref = pubkey.public_key();
-    let ec_group_ref = pubkey.group();
-    let key = ec_point_ref.to_bytes(ec_group_ref, PointConversionForm::UNCOMPRESSED, &mut ctx)?;
-    let nid = ec_group_ref.curve_name().ok_or(MgmError::Error(String::from("Failed to find EC curve name")))?;
-    Ok((key, nid))
-}
-
-pub fn get_ec_privkey_from_pem_string(pem_str:String) -> Result<Vec<u8>, MgmError> {
-    let privkey = openssl::ec::EcKey::private_key_from_pem(pem_str.as_bytes())?;
-    let s = privkey.private_key();
-    Ok(s.to_vec())
 }
 
 pub fn write_bytes_to_file(content: Vec<u8>, directory: &str, filename:&str) -> Result<(), MgmError> {

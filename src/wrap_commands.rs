@@ -20,7 +20,7 @@ use std::fmt::Display;
 use std::fs::File;
 use std::io::{Read};
 use std::sync::LazyLock;
-use openssl::base64;
+use ::base64::Engine;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::error::MgmError;
@@ -352,7 +352,8 @@ fn backup_device(session: &Session) -> Result<(), MgmError> {
 
 pub fn object_to_file(dir: String, id: u16, object_type: ObjectType, data: &[u8]) -> Result<String, MgmError> {
     let filename = format!("0x{:04x}-{}.yhw", id, object_type);
-    write_bytes_to_file(base64::encode_block(data).as_bytes().to_vec(), &dir, filename.as_str())?;
+    let base64 = ::base64::engine::general_purpose::STANDARD.encode(data);
+    write_bytes_to_file(base64.as_bytes().to_vec(), &dir, filename.as_str())?;
     Ok(filename)
 }
 
@@ -394,7 +395,7 @@ fn restore_device(session: &Session) -> Result<(), MgmError> {
         let mut wrap = String::new();
         file.read_to_string(&mut wrap)?;
 
-        let data = match base64::decode_block(&wrap) {
+        let data = match ::base64::engine::general_purpose::STANDARD.decode(wrap) {
             Ok(decoded) => decoded,
             Err(err) => {
                 cliclack::log::warning(format!(
