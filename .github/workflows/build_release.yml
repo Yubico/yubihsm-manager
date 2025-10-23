@@ -33,8 +33,8 @@ jobs:
           "ubuntu:25.04",
           "ubuntu:24.04",
           "ubuntu:22.04",
+          "debian:13",
           "debian:12",
-          "debian:11",
         ]
         libyubihsm_tag : [ "2.7.0" ]
 
@@ -113,7 +113,7 @@ jobs:
             sed -i 's/add_definitions (-D_FORTIFY_SOURCE=2)/add_definitions (-D_FORTIFY_SOURCE=3)/' cmake/SecurityFlags.cmake
           fi
 
-          if [ "$PLATFORM" = "ubuntu2504" ]; then
+          if [ "$PLATFORM" = "ubuntu2504" ] || [ "$PLATFORM" = "debian13" ]; then
             # Set PCSC flags
             sed -i 's/#SET(CMAKE_C_FLAGS/SET(CMAKE_C_FLAGS/' ykhsmauth/CMakeLists.txt
           fi
@@ -132,7 +132,7 @@ jobs:
           cd ..
           git clone -b yubihsm-manager https://github.com/Yubico/yubihsmrs.git
 
-      - name: Build binary
+      - name: Build installer
         working-directory: yubihsm-manager
         env:
           PLATFORM: ${{ env.PLATFORM }}
@@ -153,13 +153,26 @@ jobs:
           YUBIHSM_LIB_DIR=/usr/lib/x86_64-linux-gnu  cargo build --release
           strip --strip-all target/release/yubihsm-manager
           cargo deb --no-build
-          cp target/debian/*.deb $OUTPUT/
+          #cp target/debian/*.deb $OUTPUT/
           
+          dpkg -i target/debian/*.deb
+          yubihsm-manager --version
+          yubihsm-manager --help
+
+      - name: Pack artifact
+        working-directory: yubihsm-manager
+        env:
+          PLATFORM: ${{ env.PLATFORM }}
+        run: |
+          set -x -e
+          OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
+          
+          cp target/debian/*.deb $OUTPUT/
           cp $GITHUB_WORKSPACE/libyubihsm1_*.deb $OUTPUT/
           cp $GITHUB_WORKSPACE/libyubihsm-http1_*.deb $OUTPUT/
           cp $GITHUB_WORKSPACE/libyubihsm-usb1_*.deb $OUTPUT/
-
-          cd $OUTPUT
+          
+          cd $OUTPUT/
           rm -f yubihsm-manager-$PLATFORM-amd64.tar.gz
           tar -C .. -zcvf ../yubihsm-manager-$PLATFORM-amd64.tar.gz yubihsm-manager
           rm -f *.deb
@@ -210,12 +223,15 @@ jobs:
                           git              \
                           chrpath          \
                           cmake            \
+                          gengetopt        \
                           openssl-devel    \
                           libedit-devel    \
                           libcurl-devel    \
                           rpmdevtools      \
                           pcsc-lite-devel  \
                           libusb1-devel    \
+                          help2man         \
+                          zlib-devel
 
           curl -o rustup.sh https://sh.rustup.rs
           bash ./rustup.sh -y
@@ -223,11 +239,18 @@ jobs:
       - name: install libyubihsm
         run: |
           git clone https://github.com/Yubico/yubihsm-shell.git
-          cd yubihsm-shell
-            mkdir build
-            cd build
-            cmake .. -DBUILD_ONLY_LIB=ON
-            make
+          # Set PCSC flags
+          sed -i 's/#SET(CMAKE_C_FLAGS/SET(CMAKE_C_FLAGS/' yubihsm-shell/ykhsmauth/CMakeLists.txt
+          
+          export INPUT=$GITHUB_WORKSPACE/yubihsm-shell
+          export CMAKE="cmake"
+          
+          RPM_DIR=$GITHUB_WORKSPACE/rpmbuild
+          mkdir -p $RPM_DIR/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+          echo '%_topdir %(echo $HOME)/rpmbuild' > $GITHUB_WORKSPACE/.rpmmacros
+          cp yubihsm-shell/resources/release/linux/yubihsm-shell.spec $RPM_DIR/SPECS/
+          QA_SKIP_BUILD_ROOT=1 QA_RPATHS=$(( 0x0001|0x0010 )) rpmbuild -bb $RPM_DIR/SPECS/yubihsm-shell.spec
+          yum install -y /github/home/rpmbuild/RPMS/x86_64/yubihsm-devel-*.rpm
 
       - name: clone yubihsmrs
         run: |
@@ -250,9 +273,30 @@ jobs:
 
           cargo install cargo-rpm
           cargo rpm init
-          YUBIHSM_LIB_DIR=$GITHUB_WORKSPACE/yubihsm-shell/build/lib cargo build --release
-          YUBIHSM_LIB_DIR=$GITHUB_WORKSPACE/yubihsm-shell/build/lib cargo rpm build
+          YUBIHSM_LIB_DIR=/usr/lib64 cargo build --release
+          YUBIHSM_LIB_DIR=/usr/lib64 cargo rpm build
+          #cp target/release/rpmbuild/RPMS/x86_64/*.rpm $OUTPUT/
+          #cp /github/home/rpmbuild/RPMS/x86_64/yubihsm-devel*.rpm $OUTPUT/
+          
+          yum install -y target/release/rpmbuild/RPMS/x86_64/yubihsm-manager-*.rpm
+          yubihsm-manager --version
+          yubihsm-manager --help
+
+      - name: Pack artifact
+        working-directory: yubihsm-manager
+        env:
+          PLATFORM: ${{ env.PLATFORM }}
+        run: |
+          OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
+          
           cp target/release/rpmbuild/RPMS/x86_64/*.rpm $OUTPUT/
+          cp /github/home/rpmbuild/RPMS/x86_64/yubihsm-devel*.rpm $OUTPUT/
+          
+          cd $OUTPUT
+          rm -f yubihsm-manager-$PLATFORM-amd64.tar.gz
+          tar -C .. -zcvf ../yubihsm-manager-$PLATFORM-amd64.tar.gz yubihsm-manager
+          rm -f *.deb
+          rm -rf ../yubihsm-manager   
 
       - name: upload artifacts
         uses: actions/upload-artifact@v4
@@ -267,7 +311,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          - os: macos-latest-large
             arch: amd
           - os: macos-latest-xlarge
             arch: arm
@@ -375,32 +419,16 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           Set-PSDebug -Trace 1
-
           mkdir artifact
           
           C:/vcpkg/vcpkg.exe install openssl:x64-windows
-          #C:/vcpkg/vcpkg.exe install openssl:x64-windows-static
-          #C:/vcpkg/vcpkg.exe integrate install
-          #$env:VCPKGRS_DYNAMIC=1
-          #$env:OPENSSL_ROOT_DIR ="C:/vcpkg/packages/openssl_x64-windows"
-          #$env:OPENSSL_LIBS="ssl:crypto"
-
-          #$env:OPENSSL_LIB_DIR="$env:OPENSSL_ROOT_DIR\lib"
-          #$env:OPENSSL_INCLUDE_DIR="$env:OPENSSL_ROOT_DIR\include"
           $env:OPENSSL_DIR="C:/vcpkg/packages/openssl_x64-windows"
-          
-          #$env:OPENSSL_LIB_DIR="C:\Strawberry\c\lib"
-          #$env:OPENSSL_INCLUDE_DIR="C:\Strawberry\c\include"
-          #$env:OPENSSL_DIR="C:\Strawberry\c"
-          
-          #ls $env:OPENSSL_DIR/
-          #ls $env:OPENSSL_DIR/bin
 
           rustup target add x86_64-pc-windows-msvc
           rustup default stable-x86_64-pc-windows-msvc
 
           $env:RUST_BACKTRACE=1
-          $env:YUBIHSM_LIB_DIR="C:\Program Files\Yubico\YubiHSM Shell\bin"
+          $env:YUBIHSM_LIB_DIR="C:\Program Files\Yubico\YubiHSM Shell\lib"
           #$env:PATH+=";C:\Program Files\Yubico\YubiHSM Shell\bin;C:\rtools44\x86_64-w64-mingw32.static.posix\bin"
           $env:PATH+=";C:\Program Files\Yubico\YubiHSM Shell\bin;C:/vcpkg/packages/openssl_x64-windows/bin"
           cargo.exe update
