@@ -19,7 +19,6 @@ extern crate clap;
 extern crate cliclack;
 extern crate console;
 extern crate hex;
-extern crate openssl;
 extern crate pem;
 extern crate regex;
 extern crate rusty_secrets;
@@ -28,17 +27,29 @@ extern crate serde;
 extern crate yubihsmrs;
 extern crate comfy_table;
 
+extern crate rsa;
+extern crate k256;
+extern crate p224;
+extern crate p256;
+extern crate p384;
+extern crate p521;
+extern crate pkcs8;
+extern crate sec1;
+extern crate x509_cert;
+extern crate spki;
+extern crate sha1;
+extern crate sha2;
 
-use std::fs;
 use std::str::FromStr;
 
 use clap::Arg;
+use pkcs8::der::Decode;
+use pkcs8::PrivateKeyInfo;
 use yubihsmrs::{Session, YubiHsm};
 use yubihsmrs::object::ObjectType;
 
 use error::MgmError;
-use util::get_ec_privkey_from_pem_string;
-use util::list_objects;
+use util::{list_objects, read_pem_file};
 
 pub mod error;
 pub mod util;
@@ -207,36 +218,52 @@ fn main() -> Result<(), MgmError>{
     cliclack::log::info(format!("Using authentication key 0x{:04x}", authkey))?;
 
     let session =
-    if matches.contains_id("privkey") {
-        let filename = match matches.get_one::<String>("privkey") {
-            Some(filename) => filename.to_owned(),
-            None => {
-                cliclack::log::error("Unable to read private key file name").unwrap();
+        if matches.contains_id("privkey") {
+            let filename = match matches.get_one::<String>("privkey") {
+                Some(filename) => filename.to_owned(),
+                None => {
+                    cliclack::log::error("Unable to read private key file name").unwrap();
+                    std::process::exit(1);
+                },
+            };
+            let pem = read_pem_file(filename)?;
+            let der_bytes = pem.contents();
+            let privkey =
+                if let Ok(eckey) = ::sec1::EcPrivateKey::from_der(der_bytes) {
+                    eckey.private_key.to_vec()
+                } else if let Ok(privkeyinfo) = PrivateKeyInfo::try_from(der_bytes) {
+                    if privkeyinfo.algorithm.oid.to_string() != "1.2.840.10045.2.1" {
+                        cliclack::log::error("Private key in PEM file is not EC key").unwrap();
+                        std::process::exit(1);
+                    }
+
+                    let eckey = ::sec1::EcPrivateKey::from_der(privkeyinfo.private_key)?;
+                    eckey.private_key.to_vec()
+                } else {
+                    cliclack::log::error("Unable to parse EC private key from PEM file").unwrap();
+                    std::process::exit(1);
+                };
+            if privkey.len() != YH_EC_P256_PRIVKEY_LEN {
+                cliclack::log::error("Wrong length of private key").unwrap();
                 std::process::exit(1);
-            },
+            }
+            let device_pubkey = h.get_device_pubkey()?;
+            if device_pubkey.len() != YH_EC_P256_PUBKEY_LEN {
+                cliclack::log::error("Wrong length of device public key").unwrap();
+                std::process::exit(1);
+            }
+            unwrap_or_exit1!(h.establish_session_asym(authkey, privkey.as_slice(), device_pubkey.as_slice()), "Unable to open asymmetric session")
+        } else {
+            let password = match matches.get_one::<String>("password") {
+                Some(password) => password.to_owned(),
+                None => {
+                    cliclack::password("Enter authentication password:")
+                        .mask('*')
+                        .interact()?
+                },
+            };
+            unwrap_or_exit1!(h.establish_session(authkey, &password, true), "Unable to open session")
         };
-        let privkey = get_ec_privkey_from_pem_string(fs::read_to_string(filename)?)?;
-        if privkey.len() != YH_EC_P256_PRIVKEY_LEN {
-            cliclack::log::error("Wrong length of private key").unwrap();
-            std::process::exit(1);
-        }
-        let device_pubkey = h.get_device_pubkey()?;
-        if device_pubkey.len() != YH_EC_P256_PUBKEY_LEN {
-            cliclack::log::error("Wrong length of device public key").unwrap();
-            std::process::exit(1);
-        }
-        unwrap_or_exit1!(h.establish_session_asym(authkey, privkey.as_slice(), device_pubkey.as_slice()), "Unable to open asymmetric session")
-    } else {
-        let password = match matches.get_one::<String>("password") {
-            Some(password) => password.to_owned(),
-            None => {
-                cliclack::password("Enter authentication password:")
-                    .mask('*')
-                    .interact()?
-            },
-        };
-        unwrap_or_exit1!(h.establish_session(authkey, &password, true), "Unable to open session")
-    };
 
     let authkey = session.get_object_info(authkey, ObjectType::AuthenticationKey)?;
 
@@ -244,7 +271,7 @@ fn main() -> Result<(), MgmError>{
         Some(subcommand) => {
             match subcommand.0 {
                 "asym" => asym_commands::exec_asym_command(&session, &authkey),
-                "sym" => sym_commands::exec_sym_command(&session, &authkey),
+                "sym" =>  sym_commands::exec_sym_command(&session, &authkey),
                 "auth" => auth_commands::exec_auth_command(&session, &authkey),
                 "wrap" => wrap_commands::exec_wrap_command(&session, &authkey),
                 "gen-pseudo-random" => get_random_number(&session),
