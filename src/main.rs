@@ -37,11 +37,12 @@ use yubihsmrs::{Session, YubiHsm};
 use yubihsmrs::object::ObjectType;
 
 use error::MgmError;
-use util::get_ec_privkey_from_pem_string;
-use util::list_objects;
+use utils::get_ec_privkey_from_pem_string;
+use utils::list_objects;
 
 pub mod error;
-pub mod util;
+pub mod utils;
+pub mod backend;
 pub mod asym_commands;
 pub mod java_commands;
 pub mod sym_commands;
@@ -249,7 +250,7 @@ fn main() -> Result<(), MgmError>{
                 "wrap" => wrap_commands::exec_wrap_command(&session, &authkey),
                 "gen-pseudo-random" => get_random_number(&session),
                 "reset" => reset_device(&session),
-                "ksp" => ksp_command::setup_ksp(&session, &authkey),
+                "ksp" => ksp_command::guided_ksp_setup(&session, &authkey),
                 "sunpkcs11" => java_commands::exec_java_command(&session, &authkey),
                 _ => unreachable!(),
             }
@@ -287,7 +288,7 @@ fn main() -> Result<(), MgmError>{
                     MainCommand::SymMgm => sym_commands::exec_sym_command(&session, &authkey),
                     MainCommand::AuthMgm => auth_commands::exec_auth_command(&session, &authkey),
                     MainCommand::WrapMgm => wrap_commands::exec_wrap_command(&session, &authkey),
-                    MainCommand::Ksp => ksp_command::setup_ksp(&session, &authkey),
+                    MainCommand::Ksp => ksp_command::guided_ksp_setup(&session, &authkey),
                     MainCommand::Java => java_commands::exec_java_command(&session, &authkey),
                     MainCommand::Random => get_random_number(&session),
                     MainCommand::Reset => reset_device(&session),

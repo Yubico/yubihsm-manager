@@ -17,9 +17,8 @@
 use std::fmt;
 use std::fmt::Display;
 
-use std::fs::File;
-use std::io::{Read};
 use std::sync::LazyLock;
+use regex::Regex;
 use openssl::base64;
 use openssl::bn::BigNum;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
@@ -33,6 +32,10 @@ use crate::asym_commands::{get_hashed_bytes, RSA_KEY_CAPABILITIES, EC_KEY_CAPABI
 use crate::MAIN_STRING;
 
 static WRAP_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Wrap keys", MAIN_STRING));
+static SHARE_RE_256: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{70}$").unwrap());
+static SHARE_RE_192: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{59}$").unwrap());
+static SHARE_RE_128: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{48}$").unwrap());
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum WrapKeyType {
@@ -106,15 +109,6 @@ impl Display for WrapCommand {
     }
 }
 
-// const ACCEPTED_WRAP_KEY_LEN: [u32;3] = [128, 192, 256];
-const WRAP_SPLIT_PREFIX_LEN: usize = 20; // 2 object ID bytes + 2 domains bytes +
-                                         // 8 capabilities bytes +
-                                         // 8 delegated capabilities bytes
-
-static SHARE_RE_256: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{70}$").unwrap());
-static SHARE_RE_192: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{59}$").unwrap());
-static SHARE_RE_128: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{48}$").unwrap());
-
 pub fn exec_wrap_command(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     loop {
 
@@ -181,12 +175,20 @@ fn get_wrap_command(authkey: &ObjectDescriptor) -> Result<WrapCommand, MgmError>
     }
     commands = commands.item(WrapCommand::GetPublicKey, WrapCommand::GetPublicKey, "");
     if capabilities.contains(&ObjectCapability::ExportWrapped) {
-        commands = commands.item(WrapCommand::Backup, WrapCommand::Backup,
-                                 "Writes files ending with .yhw to backup directory");
+        commands = commands.item(WrapCommand::ExportWrapped, WrapCommand::ExportWrapped,
+                                 "Writes files ending with .yhw to specified directory");
     }
     if capabilities.contains(&ObjectCapability::ImportWrapped) {
-        commands = commands.item(WrapCommand::Restore, WrapCommand::Restore,
-                                 "Reads files ending with .yhw from backup directory");
+        commands = commands.item(WrapCommand::ImportWrapped, WrapCommand::ImportWrapped,
+                                 "Reads one file ending with .yhw");
+    }
+    if capabilities.contains(&ObjectCapability::ExportWrapped) {
+        commands = commands.item(WrapCommand::BackupDevice, WrapCommand::BackupDevice,
+                                 "Export all exportable objects to a backup directory");
+    }
+    if capabilities.contains(&ObjectCapability::ImportWrapped) {
+        commands = commands.item(WrapCommand::RestoreDevice, WrapCommand::RestoreDevice,
+                                 "Import objects from all files ending with .yhw from backup directory");
     }
     commands = commands.item(WrapCommand::ReturnToMainMenu, WrapCommand::ReturnToMainMenu, "");
     commands = commands.item(WrapCommand::Exit, WrapCommand::Exit, "");
@@ -202,11 +204,11 @@ fn get_all_wrap_key(session: &Session) -> Result<Vec<ObjectHandle>, MgmError> {
 }
 
 fn list(session: &Session) -> Result<(), MgmError> {
-    list_objects(session, &get_all_wrap_key(session)?)
+    list_objects(session, &get_wrap_keys(session)?)
 }
 
 fn print_key_properties(session: &Session) -> Result<(), MgmError> {
-    print_object_properties(session, get_all_wrap_key(session)?)
+    print_object_properties(session, get_wrap_keys(session)?)
 }
 
 fn delete(session: &Session) -> Result<(), MgmError> {
@@ -234,9 +236,8 @@ fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmErro
     let delegated = select_capabilities(
         "Select delegated capabilities", authkey, get_delegated_capabilities(authkey).as_slice(), get_delegated_capabilities(authkey).as_slice())?;
     new_key.delegated_capabilities = if delegated.is_empty() {None} else {Some(delegated)};
-    new_key.algorithm = algorithm;
 
-    cliclack::note("Generating wrap key with:",get_new_key_note(&new_key))?;
+    cliclack::note("Generating wrap key with:",get_new_object_note(&new_key))?;
 
     if cliclack::confirm("Generate wrap key?").interact()? {
         let mut spinner = cliclack::spinner();
@@ -327,9 +328,8 @@ fn import_full_key(session:&Session, authkey: &ObjectDescriptor) -> Result<(), M
     let mut new_key = get_new_object_basics(authkey, ObjectType::WrapKey, caps, &[])?;
     let delegated = select_capabilities("Select delegated capabilities", authkey, get_delegated_capabilities(authkey).as_slice(), get_delegated_capabilities(authkey).as_slice())?;
     new_key.delegated_capabilities = if delegated.is_empty() {None} else {Some(delegated)};
-    new_key.algorithm = algorithm;
 
-    cliclack::note("Import wrap key with:", get_new_key_note(&new_key))?;
+    cliclack::note("Import wrap key with:", get_new_object_note(&new_key))?;
 
     let key_id = if cliclack::confirm("Import wrap key?").interact()? {
         match key_type {
@@ -376,25 +376,16 @@ fn import_full_key(session:&Session, authkey: &ObjectDescriptor) -> Result<(), M
 }
 
 fn import_from_shares(session:&Session) -> Result<(), MgmError> {
-    let (mut new_key, key) = recover_wrapkey()?;
-
+    let shares = recover_wrapkey_shares()?;
+    let (mut new_key, key) = get_wrapkey_from_shares(shares)?;
     new_key.label = get_label()?;
 
-    cliclack::note("Import wrap key with:", get_new_key_note(&new_key))?;
+    cliclack::note("Import wrap key with:", get_new_object_note(&new_key))?;
 
     if cliclack::confirm("Import wrap key?").interact()? {
-        let key_id = session
-            .import_wrap_key(
-                new_key.id,
-                &new_key.label,
-                &new_key.domains,
-                &new_key.capabilities,
-                new_key.algorithm,
-                get_delegated_capabilities(&new_key).as_slice(),
-                &key,
-            )?;
+        new_key.id = import_wrap_key(session, &new_key, &key)?;
         cliclack::log::success(
-            format!("Imported wrap key with ID 0x{:04x} on the device", key_id))?;
+            format!("Imported wrap key with ID 0x{:04x} on the device", new_key.id))?;
     }
     Ok(())
 }
@@ -698,82 +689,93 @@ pub fn split_wrapkey(
 
     let _str: String = cliclack::input("Press Enter to start saving key shares").required(false).interact()?;
 
-    let shares = rusty_secrets::generate_shares(threshold as u8, shares as u8, &data)?;
-
     for share in shares {
-        cliclack::clear_screen()?;
-        cliclack::note("", share)?;
-        if cliclack::confirm("Have you saved the key share?").interact()? {
+        loop {
             cliclack::clear_screen()?;
-            let _str: String = cliclack::input(
-                "Press any key to display next key share or to return to menu").required(false).interact()?;
+            cliclack::note("", share.clone())?;
+            if cliclack::confirm("Have you saved the key share?").interact()? {
+                break;
+            }
         }
+        cliclack::clear_screen()?;
+        let _str: String = cliclack::input(
+            "Press any key to display next key share or to return to menu").required(false).interact()?;
+
     }
 
     cliclack::clear_screen()?;
     Ok(())
 }
 
-fn recover_wrapkey() -> Result<(ObjectDescriptor, Vec<u8>), MgmError> {
+fn recover_wrapkey_shares() -> Result<Vec<String>, MgmError> {
 
-    let shares = get_shares()?;
+    let n_shares = get_shares()?;
 
     let mut shares_vec = Vec::new();
+    let mut share_len = 0;
 
-    let mut key_len = 0;
-    let mut key_algorithm:ObjectAlgorithm = ObjectAlgorithm::Aes256CcmWrap;
-    while shares_vec.len() != shares as usize {
-        let share: String = cliclack::input(format!("Enter share number {}:", shares_vec.len() + 1)).interact()?;
-        cliclack::log::info(format!("Received share {} with length {}", share, share.len()))?;
-
-        match share.len() {
-            74 => {
-                if !SHARE_RE_256.is_match(&share) || (key_len != 0 && key_len != 256) {
-                    cliclack::log::warning("Malformed share. Continuing...")?;
-                    continue;
-                }
-                key_len = 256;
-                key_algorithm = ObjectAlgorithm::Aes256CcmWrap;
-            }
-            63 => {
-                if !SHARE_RE_192.is_match(&share) || (key_len != 0 && key_len != 192) {
-                    cliclack::log::warning("Malformed share. Continuing...")?;
-                    continue;
-                }
-                key_len = 192;
-                key_algorithm = ObjectAlgorithm::Aes192CcmWrap;
+    while shares_vec.len() != n_shares as usize {
+        cliclack::clear_screen()?;
+        loop {
+            let share: String = cliclack::input(format!("Enter share number {}:", shares_vec.len() + 1)).interact()?;
+            if share_len == 0 && ([52,63,74].contains(&share.len())) {
+                share_len = share.len();
             }
 
-            52 => {
-                if !SHARE_RE_128.is_match(&share) || (key_len != 0 && key_len != 128) {
-                    cliclack::log::warning("Malformed share. Continuing...")?;
-                    continue;
-                }
-                key_len = 128;
-                key_algorithm = ObjectAlgorithm::Aes128CcmWrap;
-
-            }
-            _ => {
+            if share.len() != share_len ||
+                (!SHARE_RE_256.is_match(&share) && !SHARE_RE_192.is_match(&share) && !SHARE_RE_128.is_match(&share)) {
                 cliclack::log::warning("Malformed share. Continuing...")?;
-                continue;
+            } else {
+                shares_vec.push(share);
+                break;
             }
         }
-
-        shares_vec.push(share);
         cliclack::clear_screen()?;
     }
 
-    let secret = match recover_secret(shares_vec) {
-        Ok(sec) => sec,
-        Err(err) => return Err(MgmError::Error(format!("Unable to recover wrap key: {}", err))),
-    };
+    Ok(shares_vec)
+}
 
-    if secret.len() != WRAP_SPLIT_PREFIX_LEN + (key_len/8) {
-        return Err(MgmError::Error(format!(
-            "Wrong length for recovered secret: expected {}, found {}",
-            WRAP_SPLIT_PREFIX_LEN + (key_len/8),
-            secret.len()
-        )));
+pub fn get_shares() -> Result<u8, MgmError> {
+    let n: String = cliclack::input("Enter the number of shares:")
+        .placeholder("Must be greater than 0 and less than 256")
+        .validate(|input: &String| {
+            if input.parse::<u16>().is_err() {
+                Err("Must be a positive number")
+            } else if input.parse::<u16>().unwrap() == 0 || input.parse::<u16>().unwrap() > 0xFF {
+                Err("Must be greater than zero and less than 256")
+            } else {
+                Ok(())
+            }
+        })
+        .interact()?;
+    let n = n.parse::<u16>().unwrap();
+    Ok(n as u8)
+}
+
+pub fn get_threshold(shares:u8) -> Result<u8, MgmError> {
+    let n = shares as u16;
+    let t: String = cliclack::input("Enter the number of shared necessary to re-create:")
+        .placeholder(format!("Must be greater than 0 and less than {}", n).as_str())
+        .validate(move |input: &String| {
+            if input.parse::<u16>().is_err() {
+                Err("Must be a positive number")
+            } else if input.parse::<u16>().unwrap() == 0 || input.parse::<u16>().unwrap() > n {
+                Err("Must be greater than zero and less than the number of shares")
+            } else {
+                Ok(())
+            }
+        })
+        .interact()?;
+    let t = t.parse::<u16>().unwrap();
+
+    if t == 1 {
+        cliclack::log::warning("You have chosen a privacy threshold of one.\n\
+                 The resulting share(s) will contain the unmodified raw wrap key in plain text.\n\
+                 Make sure you understand the implications.")?;
+        if !cliclack::confirm("Continue anyway?").interact()? {
+            return  get_threshold(shares);
+        }
     }
 
     let mut new_key = ObjectDescriptor::new();

@@ -19,64 +19,18 @@ use std::fmt;
 use std::fmt::Display;
 use std::sync::LazyLock;
 
-use crate::util::{delete_objects};
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
+use crate::backend::asym_utils::get_asym_object_from_der;
 use crate::error::MgmError;
-use crate::util::{get_delegated_capabilities, get_ec_pubkey_from_pem_string, get_new_object_basics, get_password,
-           list_objects, print_object_properties, read_string_from_file, select_capabilities};
-use crate::{MAIN_STRING, YH_EC_P256_PUBKEY_LEN};
+use crate::utils::{get_new_object_basics, get_password, delete_objects,
+                   list_objects, print_object_properties, select_capabilities, select_delete_objects,
+                   get_file_path, read_pem_file};
+use crate::backend::common::{get_new_object_note, get_delegated_capabilities};
+use crate::backend::auth_utils::{AuthenticationType, AuthenticationKey, ASYM_ADMIN_CAPABILITIES, ASYM_USER_CAPABILITIES, AUDITOR_CAPABILITIES, UserType, get_auth_keys, import_authkey};
+use crate::MAIN_STRING;
 
 static AUTH_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Authentication keys", MAIN_STRING));
-
-const ASYM_USER_CAPABILITIES: [ObjectCapability; 13] = [
-    ObjectCapability::SignPkcs,
-    ObjectCapability::SignPss,
-    ObjectCapability::SignEcdsa,
-    ObjectCapability::SignEddsa,
-    ObjectCapability::DecryptPkcs,
-    ObjectCapability::DecryptOaep,
-    ObjectCapability::DeriveEcdh,
-    ObjectCapability::SignAttestationCertificate,
-    ObjectCapability::EncryptEcb,
-    ObjectCapability::EncryptCbc,
-    ObjectCapability::DecryptEcb,
-    ObjectCapability::DecryptCbc,
-    ObjectCapability::ExportableUnderWrap,
-];
-
-const ASYM_ADMIN_CAPABILITIES: [ObjectCapability; 9] = [
-    ObjectCapability::GenerateAsymmetricKey,
-    ObjectCapability::PutAsymmetricKey,
-    ObjectCapability::DeleteAsymmetricKey,
-    ObjectCapability::PutOpaque,
-    ObjectCapability::DeleteOpaque,
-    ObjectCapability::GenerateSymmetricKey,
-    ObjectCapability::PutSymmetricKey,
-    ObjectCapability::DeleteSymmetricKey,
-    ObjectCapability::ExportableUnderWrap,
-];
-
-const AUDITOR_CAPABILITIES: [ObjectCapability; 2] = [
-    ObjectCapability::GetLogEntries,
-    ObjectCapability::ExportableUnderWrap,
-];
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum AuthKeyType {
-    #[default]
-    PasswordDerived,
-    Ecp256,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum UserType {
-    #[default]
-    AsymUser,
-    AsymAdmin,
-    Auditor,
-    BackupAdmin,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum AuthCommand {
@@ -184,25 +138,17 @@ fn get_auth_command(authkey: &ObjectDescriptor) -> Result<AuthCommand, MgmError>
     Ok(commands.interact()?)
 }
 
-fn get_all_auth_keys(session: &Session) -> Result<Vec<ObjectHandle>, MgmError> {
-    Ok(session.list_objects_with_filter(
-        0,
-        ObjectType::AuthenticationKey,
-        "",
-        ObjectAlgorithm::ANY,
-        &Vec::new())?)
-}
-
 fn list(session: &Session) -> Result<(), MgmError> {
-    list_objects(session, &get_all_auth_keys(session)?)
+    list_objects(session, &get_auth_keys(session)?)
 }
 
 fn print_key_properties(session: &Session) -> Result<(), MgmError> {
-    print_object_properties(session, get_all_auth_keys(session)?)
+    print_object_properties(session, get_auth_keys(session)?)
 }
 
 fn delete(session: &Session) -> Result<(), MgmError> {
-    delete_objects(session, get_all_auth_keys(session)?)
+    let objects = select_delete_objects(session, &get_auth_keys(session)?)?;
+    delete_objects(session, &objects)
 }
 
 fn create_authkey(
@@ -210,54 +156,49 @@ fn create_authkey(
     new_authkey: &ObjectDescriptor,
 ) -> Result<(), MgmError> {
 
-    let auth_string = new_authkey.to_string()
-        .replace("Algorithm: Unknown\t", "")
-        .replace("Sequence:  0\t", "")
-        .replace("Origin: Generated\t", "")
-        .replace("\t", "\n");
-
     let auth_type = cliclack::select("Select authentication type:")
-        .item(AuthKeyType::PasswordDerived, "Password derived", "Session keys are derived from a password")
-        .item(AuthKeyType::Ecp256, "EC P256", "Session authenticated using EC key with curve secp256r1")
+        .item(AuthenticationType::PasswordDerived, "Password derived", "Session keys are derived from a password")
+        .item(AuthenticationType::Ecp256, "EC P256", "Session authenticated using EC key with curve secp256r1")
         .interact()?;
 
-    let mut id: u16 = 0;
+    let mut authkey = AuthenticationKey {
+        descriptor: new_authkey.clone(),
+        auth_type,
+        key: Vec::new(),
+    };
+
+    let mut new_key_note = get_new_object_note(new_authkey);
+
     match auth_type {
-        AuthKeyType::PasswordDerived => {
+        AuthenticationType::PasswordDerived => {
+            new_key_note = new_key_note.replace("Algorithm: Unknown", "Authentication Type: Password Derived");
+
             let pwd = get_password("Enter user password:")?;
-
-            cliclack::note("Creating new authentication key with:",
-                           auth_string)?;
-            if cliclack::confirm("Create key?").interact()? {
-                id = session.import_authentication_key(
-                    new_authkey.id,
-                    &new_authkey.label,
-                    &new_authkey.domains,
-                    &new_authkey.capabilities,
-                    get_delegated_capabilities(new_authkey).as_slice(),
-                    pwd.as_bytes())?
-            }
+            authkey.key = pwd.as_bytes().to_vec();
         },
-        AuthKeyType::Ecp256 => {
-            let (pubkey, _) = get_ec_pubkey_from_pem_string(
-                read_string_from_file("Enter path to ECP256 public key PEM file: ")?)?;
-            if pubkey.len() != YH_EC_P256_PUBKEY_LEN {
-                return Err(MgmError::Error("Invalid public key".to_string()))
-            }
+        AuthenticationType::Ecp256 => {
+            new_key_note = new_key_note.replace("Algorithm: Unknown", "Authentication Type: Asymmetric");
 
-            cliclack::note("Creating new authentication key with:",
-                           str::replace(&new_authkey.to_string(), "\t", "\n"))?;
-            if cliclack::confirm("Create key?").interact()? {
-                id = session.import_authentication_publickey(
-                    new_authkey.id,
-                    &new_authkey.label,
-                    &new_authkey.domains,
-                    &new_authkey.capabilities,
-                    get_delegated_capabilities(new_authkey).as_slice(), &pubkey)?
+            loop {
+                let pubkey = read_pem_file(get_file_path("Enter path to ECP256 public key PEM file: ")?)?;
+                let pubkey = pubkey.contents();
+
+                let (_type, _algo, _value) = get_asym_object_from_der(pubkey)?;
+                if _type == ObjectType::PublicKey && _algo == ObjectAlgorithm::EcP256 {
+                    authkey.key = _value;
+                    break;
+                }
+                cliclack::log::info(
+                    "Invalid public key. Found object is either not a public key or not of curve secp256r1. Please try again or press ESC to go back to menu")?;
             }
         }
     };
-    cliclack::log::success(format!("Created new authentication key with ID 0x{id:04x}"))?;
+
+    cliclack::note("Creating new authentication key with:", new_key_note)?;
+    if cliclack::confirm("Create key?").interact()? {
+        let id = import_authkey(session, &authkey)?;
+        cliclack::log::success(format!("Created new authentication key with ID 0x{id:04x}"))?;
+    }
     Ok(())
 }
 
