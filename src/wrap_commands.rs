@@ -481,7 +481,13 @@ fn backup_device(session: &Session, authkey: &ObjectDescriptor) -> Result<(), Mg
     match wrapkey_type {
         WrapKeyType::Aes => {
             for object in export_objects {
-                match session.export_wrapped(wrapping_key.id, object.object_type, object.id) {
+                let format: u8 = if object.algorithm == ObjectAlgorithm::Ed25519  &&
+                    cliclack::confirm("Object is an ED25519 key. If available, include seed in the export? (if not available, seed of value '0' will be included)").interact()? {
+                    1
+                } else {
+                    0
+                };
+                match session.export_wrapped_ex(wrapping_key.id, object.object_type, object.id, format) {
                     Ok(bytes) => {
                         object_to_file(dir.clone(), object.id, object.object_type, &bytes)?;
                     }
