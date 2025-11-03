@@ -35,7 +35,7 @@ use crate::util::{delete_objects};
 
 static ASYM_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Asymmetric keys", MAIN_STRING));
 
-const RSA_KEY_CAPABILITIES: [ObjectCapability; 6] = [
+pub const RSA_KEY_CAPABILITIES: [ObjectCapability; 6] = [
     ObjectCapability::SignPkcs,
     ObjectCapability::SignPss,
     ObjectCapability::DecryptPkcs,
@@ -43,13 +43,13 @@ const RSA_KEY_CAPABILITIES: [ObjectCapability; 6] = [
     ObjectCapability::ExportableUnderWrap,
     ObjectCapability::SignAttestationCertificate];
 
-const EC_KEY_CAPABILITIES: [ObjectCapability; 4] = [
+pub const EC_KEY_CAPABILITIES: [ObjectCapability; 4] = [
     ObjectCapability::SignEcdsa,
     ObjectCapability::DeriveEcdh,
     ObjectCapability::ExportableUnderWrap,
     ObjectCapability::SignAttestationCertificate];
 
-const ED_KEY_CAPABILITIES: [ObjectCapability; 3] = [
+pub const ED_KEY_CAPABILITIES: [ObjectCapability; 3] = [
     ObjectCapability::SignEddsa,
     ObjectCapability::ExportableUnderWrap,
     ObjectCapability::SignAttestationCertificate];
@@ -57,12 +57,12 @@ const ED_KEY_CAPABILITIES: [ObjectCapability; 3] = [
 const OPAQUE_CAPABILITIES: [ObjectCapability; 1] = [
     ObjectCapability::ExportableUnderWrap];
 
-const RSA_KEY_ALGORITHM: [ObjectAlgorithm; 3] = [
+pub const RSA_KEY_ALGORITHM: [ObjectAlgorithm; 3] = [
     ObjectAlgorithm::Rsa2048,
     ObjectAlgorithm::Rsa3072,
     ObjectAlgorithm::Rsa4096];
 
-const EC_KEY_ALGORITHM: [ObjectAlgorithm; 8] = [
+pub const EC_KEY_ALGORITHM: [ObjectAlgorithm; 8] = [
     ObjectAlgorithm::EcP224,
     ObjectAlgorithm::EcP256,
     ObjectAlgorithm::EcP384,
@@ -246,7 +246,7 @@ fn get_algo_from_nid(nid: Nid) -> Result<ObjectAlgorithm, MgmError> {
     }
 }
 
-fn get_rsa_key_algo(size_in_bytes:u32) -> Result<ObjectAlgorithm, MgmError> {
+pub fn get_rsa_key_algo(size_in_bytes:u32) -> Result<ObjectAlgorithm, MgmError> {
     match size_in_bytes {
         256 => Ok(ObjectAlgorithm::Rsa2048),
         384 => Ok(ObjectAlgorithm::Rsa3072),
@@ -493,7 +493,7 @@ fn get_public_key(session: &Session) -> Result<(), MgmError> {
     let key = select_one_object(
         "Select key" , convert_handlers(session, &keys)?)?;
 
-    let pubkey = match session.get_pubkey(key.id) {
+    let pubkey = match session.get_pubkey(key.id, ObjectType::AsymmetricKey) {
         Ok(pk) => pk,
         Err(e) => {
             cliclack::log::error(format!("Failed to get public key for asymmetric key 0x{:04x}. {}",
@@ -643,7 +643,7 @@ fn get_cert(session: &Session) -> Result<(), MgmError> {
     Ok(())
 }
 
-fn get_hashed_bytes(algo: &ObjectAlgorithm, input: &[u8]) -> Result<Vec<u8>, MgmError> {
+pub fn get_hashed_bytes(algo: &ObjectAlgorithm, input: &[u8]) -> Result<Vec<u8>, MgmError> {
     match algo {
         ObjectAlgorithm::RsaPkcs1Sha1 |
         ObjectAlgorithm::RsaPssSha1 |
