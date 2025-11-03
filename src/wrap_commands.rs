@@ -21,6 +21,7 @@ use std::fs::File;
 use std::io::{Read};
 use std::sync::LazyLock;
 use openssl::base64;
+use openssl::bn::BigNum;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::error::MgmError;
@@ -81,6 +82,7 @@ enum WrapCommand {
     Generate,
     Import,
     Delete,
+    GetPublicKey,
     Backup,
     Restore,
     ReturnToMainMenu,
@@ -95,6 +97,7 @@ impl Display for WrapCommand {
             WrapCommand::Generate => write!(f, "Generate"),
             WrapCommand::Import => write!(f, "Import"),
             WrapCommand::Delete => write!(f, "Delete"),
+            WrapCommand::GetPublicKey => write!(f, "Get public RSA wrap key"),
             WrapCommand::Backup => write!(f, "Backup YubiHSM objects"),
             WrapCommand::Restore => write!(f, "Restore YubiHSM objects"),
             WrapCommand::ReturnToMainMenu => write!(f, "Return to main menu"),
@@ -139,6 +142,10 @@ pub fn exec_wrap_command(session: &Session, authkey: &ObjectDescriptor) -> Resul
                 println!("\n{} > {}\n", *WRAP_STRING, WrapCommand::Delete);
                 delete(session)
             },
+            WrapCommand::GetPublicKey => {
+                println!("\n{} > {}\n", *WRAP_STRING, WrapCommand::GetPublicKey);
+                get_public_key(session)
+            },
             WrapCommand::Backup => {
                 println!("\n{} > {}\n", *WRAP_STRING, WrapCommand::Backup);
                 backup_device(session, authkey)
@@ -172,6 +179,7 @@ fn get_wrap_command(authkey: &ObjectDescriptor) -> Result<WrapCommand, MgmError>
     if capabilities.contains(&ObjectCapability::DeleteWrapKey) {
         commands = commands.item(WrapCommand::Delete, WrapCommand::Delete, "");
     }
+    commands = commands.item(WrapCommand::GetPublicKey, WrapCommand::GetPublicKey, "");
     if capabilities.contains(&ObjectCapability::ExportWrapped) {
         commands = commands.item(WrapCommand::Backup, WrapCommand::Backup,
                                  "Writes files ending with .yhw to backup directory");
@@ -387,6 +395,36 @@ fn import_from_shares(session:&Session) -> Result<(), MgmError> {
             )?;
         cliclack::log::success(
             format!("Imported wrap key with ID 0x{:04x} on the device", key_id))?;
+    }
+    Ok(())
+}
+
+fn get_public_key(session: &Session) -> Result<(), MgmError> {
+    let keys = session.
+                          list_objects_with_filter(0, ObjectType::PublicWrapKey, "", ObjectAlgorithm::ANY, &Vec::new())?;
+    let key = select_one_object(
+        "Select key" , convert_handlers(session, &keys)?)?;
+
+    let pubkey = session.get_pubkey(key.id, ObjectType::PublicWrapKey)?;
+
+    let key_algo = pubkey.1;
+    if !RSA_KEY_ALGORITHM.contains(&key_algo) {
+        return Err(MgmError::Error(format!("Object 0x{:04x} is not an RSA public wrap key", key.id)))
+    }
+
+    let e = BigNum::from_slice(&[0x01, 0x00, 0x01])?;
+    let n = BigNum::from_slice(pubkey.0.as_slice())?;
+    let pubkey = openssl::rsa::Rsa::from_public_components(n, e)?;
+    let pubkey = pubkey.public_key_to_pem()?;
+
+    if let Ok(str) = String::from_utf8(pubkey.clone()) { println!("{}\n", str) }
+
+    if cliclack::confirm("Write to file?").interact()? {
+        let filename = format!("0x{:04x}.pubkey.pem", key.id);
+        if let Err(err) = write_bytes_to_file(pubkey, "", filename.as_str()) {
+            cliclack::log::error(
+                format!("Failed to write public key 0x{:04x} to file. {}", key.id, err))?;
+        }
     }
     Ok(())
 }
