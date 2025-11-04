@@ -26,7 +26,7 @@ use crate::util::{delete_objects, get_new_object_basics, get_op_key, list_object
 
 static SYM_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Symmetric keys", MAIN_STRING));
 
-const AES_KEY_CAPABILITIES: [ObjectCapability; 5] = [
+pub const AES_KEY_CAPABILITIES: [ObjectCapability; 5] = [
     ObjectCapability::EncryptCbc,
     ObjectCapability::DecryptCbc,
     ObjectCapability::EncryptEcb,
