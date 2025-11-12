@@ -18,6 +18,7 @@ extern crate yubihsmrs;
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
+use crate::backend::types::YhAlgorithm;
 use crate::error::MgmError;
 
 pub fn get_descriptors_from_handlers(session:&Session, handlers: &[ObjectHandle]) -> Result<Vec<ObjectDescriptor>, MgmError> {
@@ -52,37 +53,60 @@ pub fn get_delegated_capabilities(object: &ObjectDescriptor) -> Vec<ObjectCapabi
     }
 }
 
-pub fn get_operation_key_options(
-    session:&Session,
-    authkey: &ObjectDescriptor,
-    op_capabilities: &[ObjectCapability],
-    key_type: ObjectType,
-    key_algos: &[ObjectAlgorithm]) -> Result<Vec<ObjectDescriptor>, MgmError> {
+// pub fn get_authorized_keys(
+//     session:&Session,
+//     main_authorized_key: &ObjectDescriptor,
+//     target_key_capabilities: &[ObjectCapability],
+//     target_key_type: ObjectType,
+//     target_key_algos: &[ObjectAlgorithm]) -> Result<Vec<ObjectDescriptor>, MgmError> {
+//
+//     let mut effective_caps = target_key_capabilities.to_vec();
+//     effective_caps.retain(|c| main_authorized_key.capabilities.contains(c));
+//     if effective_caps.is_empty() {
+//         return Err(MgmError::Error("Authentication/Wrap key is missing necessary capabilities".to_string()))
+//     }
+//
+//     let keys = session.list_objects_with_filter(
+//         0,
+//         target_key_type,
+//         "",
+//         ObjectAlgorithm::ANY,
+//         &effective_caps)?;
+//     if keys.is_empty() {
+//         return Err(MgmError::Error("There are no keys available for operation. No keys with necessary capabilities are found".to_string()))
+//     }
+//     let mut keys = get_descriptors_from_handlers(session, &keys)?;
+//
+//     if !target_key_algos.is_empty() {
+//         keys.retain(|desc| target_key_algos.contains(&desc.algorithm));
+//     }
+//     if keys.is_empty() {
+//         return Err(MgmError::Error("There are no keys available for operation. No keys of expected algorithms are found".to_string()))
+//     }
+//
+//     Ok(keys)
+// }
 
-    let mut key_capabilities = op_capabilities.to_vec();
-    key_capabilities.retain(|c| authkey.capabilities.contains(c));
-    if key_capabilities.is_empty() {
-        return Err(MgmError::Error("There are no keys available for operation. Authentication key is missing necessary capabilities".to_string()))
-    }
+pub fn get_op_keys(
+    session: &Session,
+    authkey: &ObjectDescriptor,
+    op_key_capabilities: &[ObjectCapability],
+    op_key_type: ObjectType,
+    op_key_algorithms: Option<&[ObjectAlgorithm]>) -> Result<Vec<ObjectDescriptor>, MgmError> {
+    let mut caps = op_key_capabilities.to_vec();
+    caps.retain(|c| authkey.capabilities.contains(c));
 
     let keys = session.list_objects_with_filter(
         0,
-        key_type,
+        op_key_type,
         "",
         ObjectAlgorithm::ANY,
-        &key_capabilities)?;
-    if keys.is_empty() {
-        return Err(MgmError::Error("There are no keys available for operation. No keys with necessary capabilities are found".to_string()))
-    }
+        &caps)?;
     let mut keys = get_descriptors_from_handlers(session, &keys)?;
 
-    if !key_algos.is_empty() {
-        keys.retain(|desc| key_algos.contains(&desc.algorithm));
+    if let Some(item) = op_key_algorithms {
+        keys.retain(|desc| item.contains(&desc.algorithm));
     }
-    if keys.is_empty() {
-        return Err(MgmError::Error("There are no keys available for operation. No keys of expected algorithms are found".to_string()))
-    }
-
     Ok(keys)
 }
 
@@ -92,5 +116,13 @@ pub fn contains_all(set: &[ObjectCapability], subset: &[ObjectCapability]) -> bo
             return false
         }
     }
-    return true
+    true
+}
+
+pub fn extract_algorithms(algorithms: &[YhAlgorithm]) -> Vec<ObjectAlgorithm> {
+    let mut algos = Vec::new();
+    for a in algorithms {
+        algos.push(a.algorithm);
+    }
+    algos
 }

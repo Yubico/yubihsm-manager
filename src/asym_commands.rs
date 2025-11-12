@@ -20,17 +20,26 @@ use std::fmt::Display;
 use std::path::Path;
 use std::sync::LazyLock;
 
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectOrigin, ObjectType};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectOrigin, ObjectType};
 use yubihsmrs::Session;
+use crate::backend::wrap::WrapOps;
+use crate::utils::select_algorithm;
+use crate::backend::object_ops::Deletable;
+use crate::utils::print_failed_delete;
+use crate::backend::asym::AttestationType;
+use crate::backend::object_ops::Importable;
+use crate::backend::types::ImportObjectSpec;
+use crate::backend::object_ops::Generatable;
+use crate::backend::types::ObjectSpec;
+use crate::utils::fill_object_spec;
+use crate::utils::{list_objects, print_object_properties};
+use crate::backend::asym::AsymmetricType;
+use crate::backend::asym::AsymOps;
+use crate::backend::object_ops::Obtainable;
 
-use crate::backend::asym_utils::{AsymTypes, RSA_KEY_ALGORITHM, EC_KEY_ALGORITHM, RSA_KEY_CAPABILITIES, EC_KEY_CAPABILITIES,
-                                 ED_KEY_CAPABILITIES, OPAQUE_CAPABILITIES, RSA_OAEP_ALGORITHM, AttestationTypes,
-                                 get_asymmetric_objects, generate_asym_key, import_asym_object, get_asym_object_from_der,
-                                 get_der_pubkey_as_pem, get_certificate, get_attestation_cert};
-use crate::backend::common::{get_descriptors_from_handlers, get_new_object_note};
-use crate::utils::{get_file_path, get_new_object_basics, get_operation_key, list_objects, print_object_properties,
-                   read_input_bytes, read_input_string, read_pem_file, select_one_object, write_bytes_to_file,
-                   delete_objects, select_delete_objects, fill_new_object_properties};
+use crate::utils::{get_file_path,
+                   read_input_bytes, read_input_string, read_pem_from_file, select_one_object, write_bytes_to_file,
+                   select_delete_objects};
 
 use crate::error::MgmError;
 use crate::MAIN_STRING;
@@ -142,7 +151,7 @@ pub fn exec_asym_command(session: &Session, authkey: &ObjectDescriptor) -> Resul
             },
             AsymCommand::GetPublicKey => {
                 println!("\n{} > {}\n", *ASYM_STRING, AsymCommand::GetPublicKey);
-                get_public_key(session)
+                get_public_key(session, ObjectType::AsymmetricKey)
             },
             AsymCommand::GetCertificate => {
                 println!("\n{} > {}\n", *ASYM_STRING, AsymCommand::GetCertificate);
@@ -236,153 +245,84 @@ pub fn get_rsa_key_algo(size_in_bytes:u32) -> Result<ObjectAlgorithm, MgmError> 
 }
 
 fn print_key_properties(session: &Session) -> Result<(), MgmError> {
-    print_object_properties(session, get_asymmetric_objects(session, &[AsymTypes::Keys, AsymTypes::X509Certificates])?)
+    print_object_properties(&AsymOps::get_asymmetric_objects(session, &[AsymmetricType::Key, AsymmetricType::X509Certificate])?)
 }
 
 fn delete(session: &Session) -> Result<(), MgmError> {
-    let objects = select_delete_objects(session, &get_all_asym_objects(session)?)?;
-    delete_objects(session, &objects)
+    let objects = select_delete_objects(&AsymOps.get_all_objects(session)?)?;
+    let failed = AsymOps.delete_multiple(session, &objects);
+    print_failed_delete(&failed)
+}
+
+pub fn fill_asym_spec(authkey: &ObjectDescriptor, spec: &mut ObjectSpec) -> Result<(), MgmError> {
+    if spec.algorithm == ObjectAlgorithm::ANY {
+        let mut key_algo = cliclack::select("Select key type");
+        for algo in &AsymOps::get_object_algorithms() {
+            key_algo = key_algo.item(algo.algorithm, algo.label, algo.description);
+        }
+        spec.algorithm = key_algo.interact()?;
+    }
+    fill_object_spec(authkey, spec, &AsymOps::get_object_capabilities(&spec.algorithm), &[])?;
+    Ok(())
 }
 
 fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    match get_new_key_for_generation(authkey) {
-        Ok(Some(new_key)) => {
-            let mut spinner = cliclack::spinner();
-            spinner.start("Generating key...");
-            let id = generate_asym_key(session, &new_key)?;
-            spinner.stop("");
-            cliclack::log::success(
-                format!("Generated asymmetric keypair with ID 0x{:04x} on the device", id))?;
-            Ok(())
-        },
-        Ok(None) => return Ok(()),
-        Err(e) => return Err(e),
-    }
-}
+    let key_algo = select_algorithm("Select key algorithm", &AsymOps::get_object_algorithms(), None)?;
 
-pub fn get_new_key_for_generation(authkey: &ObjectDescriptor) -> Result<Option<ObjectDescriptor>, MgmError> {
-    let key_algo = cliclack::select("Select key type")
-        .item(ObjectAlgorithm::Rsa2048, "RSA 2048", format!("yubihsm-shell name: {}", ObjectAlgorithm::Rsa2048))
-        .item(ObjectAlgorithm::Rsa3072, "RSA 3072", format!("yubihsm-shell name: {}", ObjectAlgorithm::Rsa3072))
-        .item(ObjectAlgorithm::Rsa4096, "RSA 4096", format!("yubihsm-shell name: {}", ObjectAlgorithm::Rsa4096))
-        .item(ObjectAlgorithm::EcP224, "EC P224", format!("curve: secp224r1. yubihsm-shell name: {}", ObjectAlgorithm::EcP224))
-        .item(ObjectAlgorithm::EcP256, "EC P256", format!("curve: secp256r1. yubihsm-shell name: {}", ObjectAlgorithm::EcP256))
-        .item(ObjectAlgorithm::EcP384, "EC P384", format!("curve: secp384r1. yubihsm-shell name: {}", ObjectAlgorithm::EcP384))
-        .item(ObjectAlgorithm::EcP521, "EC P521", format!("curve: secp521r1. yubihsm-shell name: {}", ObjectAlgorithm::EcP521))
-        .item(ObjectAlgorithm::EcK256, "EC K256", format!("curve: secp256k1. yubihsm-shell name: {}", ObjectAlgorithm::EcK256))
-        .item(ObjectAlgorithm::EcBp256, "EC BP256", format!("curve: brainpool256r1. yubihsm-shell name: {}", ObjectAlgorithm::EcBp256))
-        .item(ObjectAlgorithm::EcBp384, "EC BP384", format!("curve: brainpool384r1. yubihsm-shell name: {}", ObjectAlgorithm::EcBp384))
-        .item(ObjectAlgorithm::EcBp512, "EC BP512", format!("curve: brainpool512r1. yubihsm-shell name: {}", ObjectAlgorithm::EcBp512))
-        .item(ObjectAlgorithm::Ed25519, "ED 25519", format!("yubihsm-shell name: {}", ObjectAlgorithm::Ed25519))
-        .interact()?;
-
-    let mut new_key =
-    if RSA_KEY_ALGORITHM.contains(&key_algo) {
-        get_new_object_basics(authkey, ObjectType::AsymmetricKey, &RSA_KEY_CAPABILITIES, &[])?
-    } else if EC_KEY_ALGORITHM.contains(&key_algo) {
-        get_new_object_basics(authkey, ObjectType::AsymmetricKey, &EC_KEY_CAPABILITIES, &[])?
-    } else {
-        get_new_object_basics(authkey, ObjectType::AsymmetricKey, &ED_KEY_CAPABILITIES, &[])?
-    };
+    let mut new_key = ObjectSpec::empty();
     new_key.algorithm = key_algo;
+    fill_object_spec(authkey, &mut new_key, &AsymOps::get_object_capabilities(&key_algo), &[])?;
 
-    cliclack::note("Generating asymmetric key with:", get_new_object_note(&new_key))?;
+    cliclack::note("Generating asymmetric key with:", new_key.to_string())?;
     if cliclack::confirm("Generate key?").interact()? {
-        return Ok(Some(new_key));
+        let mut spinner = cliclack::spinner();
+        spinner.start("Generating key...");
+        new_key.id = AsymOps.generate(session, &new_key)?;
+        spinner.stop("");
+        cliclack::log::success(
+            format!("Generated asymmetric keypair with ID 0x{:04x} on the device", new_key.id))?;
     }
-    Ok(None)
+    Ok(())
 }
 
-fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    match import_asym_key(session, authkey, get_file_path("Enter path to PEM file containing private key or X509Certificate: ")?) {
-        Ok(_) => Ok(()),
-        Err(e) => Err(e)
-    }
-}
-
-pub fn import_asym_key(session: &Session, authkey: &ObjectDescriptor, filepath: String) -> Result<ObjectDescriptor, MgmError> {
-    let pem = read_pem_file(filepath)?;
-    let key_bytes = pem.contents();
-    let (_type, _algo, _bytes) = get_asym_object_from_der(key_bytes)?;
+pub fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    let filepath = get_file_path("Enter path to PEM file containing private key or X509Certificate: ")?;
+    let pem = read_pem_from_file(filepath)?;
+    let (_type, _algo, _bytes) = AsymOps::parse_asym_pem(pem)?;
 
     if _type != ObjectType::AsymmetricKey && _type != ObjectType::Opaque {
         return Err(MgmError::InvalidInput("PEM file contains neither a private key nor an X509 certificate".to_string()));
     }
 
-    let mut new_key =
-        if RSA_KEY_ALGORITHM.contains(&_algo) {
-            get_new_object_basics(authkey, ObjectType::AsymmetricKey, &RSA_KEY_CAPABILITIES, &[])?
-        } else if EC_KEY_ALGORITHM.contains(&_algo) {
-            get_new_object_basics(authkey, ObjectType::AsymmetricKey, &EC_KEY_CAPABILITIES, &[])?
-        } else if _algo == ObjectAlgorithm::Ed25519 {
-            get_new_object_basics(authkey, ObjectType::AsymmetricKey, &ED_KEY_CAPABILITIES, &[])?
-        } else if _algo == ObjectAlgorithm::OpaqueX509Certificate {
-            get_new_object_basics(authkey, ObjectType::Opaque, &OPAQUE_CAPABILITIES, &[])?
-        } else {
-            cliclack::log::error("Unsupported key algorithm for import".to_string())?;
-            return Err(MgmError::InvalidInput("Unsupported key algorithm for import".to_string()));
-        };
+    let mut new_key = ObjectSpec::empty();
     new_key.algorithm = _algo;
+    fill_object_spec(authkey, &mut new_key, &AsymOps::get_object_capabilities(&_algo), &[])?;
+    let new_key = ImportObjectSpec {
+        object: new_key,
+        data: vec![_bytes],
+    };
 
-    cliclack::note("Importing asymmetric object with: ", get_new_object_note(&new_key))?;
+    cliclack::note("Importing asymmetric object with: ", new_key.object.to_string())?;
     if cliclack::confirm("Import key?").interact()? {
-        import_asym_object(session, &mut new_key, &_bytes)?;
+        let id = AsymOps.import(session, &new_key)?;
+        // import_asym_object(session, &mut new_key, &_bytes)?;
         cliclack::log::success(
-            format!("Imported object with ID 0x{:04x} on the device", new_key.id))?;
+            format!("Imported object with ID 0x{:04x} on the device", id))?;
     }
-    Ok(new_key)
+    Ok(())
 }
 
-pub fn get_new_key_descriptor(authkey: &ObjectDescriptor, generate:bool, der_bytes:&[u8]) -> Result<(ObjectDescriptor, Vec<u8>), MgmError> {
-    let mut new_key = ObjectDescriptor::new();
-    let mut new_key_value = Vec::new();
-
-    if generate {
-        new_key.object_type = ObjectType::AsymmetricKey;
-        new_key.algorithm = cliclack::select("Select key type")
-            .item(ObjectAlgorithm::Rsa2048, "RSA 2048", format!("yubihsm-shell name: {}", ObjectAlgorithm::Rsa2048))
-            .item(ObjectAlgorithm::Rsa3072, "RSA 3072", format!("yubihsm-shell name: {}", ObjectAlgorithm::Rsa3072))
-            .item(ObjectAlgorithm::Rsa4096, "RSA 4096", format!("yubihsm-shell name: {}", ObjectAlgorithm::Rsa4096))
-            .item(ObjectAlgorithm::EcP224, "EC P224", format!("curve: secp224r1. yubihsm-shell name: {}", ObjectAlgorithm::EcP224))
-            .item(ObjectAlgorithm::EcP256, "EC P256", format!("curve: secp256r1. yubihsm-shell name: {}", ObjectAlgorithm::EcP256))
-            .item(ObjectAlgorithm::EcP384, "EC P384", format!("curve: secp384r1. yubihsm-shell name: {}", ObjectAlgorithm::EcP384))
-            .item(ObjectAlgorithm::EcP521, "EC P521", format!("curve: secp521r1. yubihsm-shell name: {}", ObjectAlgorithm::EcP521))
-            .item(ObjectAlgorithm::EcK256, "EC K256", format!("curve: secp256k1. yubihsm-shell name: {}", ObjectAlgorithm::EcK256))
-            .item(ObjectAlgorithm::EcBp256, "EC BP256", format!("curve: brainpool256r1. yubihsm-shell name: {}", ObjectAlgorithm::EcBp256))
-            .item(ObjectAlgorithm::EcBp384, "EC BP384", format!("curve: brainpool384r1. yubihsm-shell name: {}", ObjectAlgorithm::EcBp384))
-            .item(ObjectAlgorithm::EcBp512, "EC BP512", format!("curve: brainpool512r1. yubihsm-shell name: {}", ObjectAlgorithm::EcBp512))
-            .item(ObjectAlgorithm::Ed25519, "ED 25519", format!("yubihsm-shell name: {}", ObjectAlgorithm::Ed25519))
-            .interact()?;
+pub fn get_public_key(session: &Session, object_type: ObjectType) -> Result<(), MgmError> {
+    let keys = if object_type == ObjectType::AsymmetricKey {
+        AsymOps::get_asymmetric_objects(session, &[AsymmetricType::Key])?
+    } else if object_type == ObjectType::WrapKey {
+        WrapOps::get_rsa_wrapkeys(session)?
     } else {
-        let (_type, _algo, _bytes) = get_asym_object_from_der(der_bytes)?;
+        return Err(MgmError::InvalidInput("Object type is not asymmetric key or public key".to_string()));
+    };
 
-        if _type != ObjectType::AsymmetricKey && _type != ObjectType::Opaque {
-            return Err(MgmError::InvalidInput("PEM file contains neither a private key nor an X509 certificate".to_string()));
-        }
-        new_key.algorithm = _algo;
-        new_key.object_type = _type;
-        new_key_value = _bytes;
-    }
-
-    if RSA_KEY_ALGORITHM.contains(&new_key.algorithm) {
-        fill_new_object_properties(&mut new_key, authkey, &RSA_KEY_CAPABILITIES, &[])?;
-    } else if EC_KEY_ALGORITHM.contains(&new_key.algorithm) {
-        fill_new_object_properties(&mut new_key, authkey, &EC_KEY_CAPABILITIES, &[])?;
-    } else if new_key.algorithm == ObjectAlgorithm::Ed25519 {
-        fill_new_object_properties(&mut new_key, authkey, &ED_KEY_CAPABILITIES, &[])?;
-    } else if new_key.algorithm == ObjectAlgorithm::OpaqueX509Certificate {
-        fill_new_object_properties(&mut new_key, authkey, &OPAQUE_CAPABILITIES, &[])?;
-    } else {
-        cliclack::log::error("Unsupported key algorithm for import".to_string())?;
-        return Err(MgmError::InvalidInput("Unsupported key algorithm for import".to_string()));
-    }
-    Ok((new_key, new_key_value))
-}
-
-fn get_public_key(session: &Session) -> Result<(), MgmError> {
-    let keys = get_asymmetric_objects(session, &[AsymTypes::Keys])?;
     let key = select_one_object(
-        "Select key" , &get_descriptors_from_handlers(session, &keys)?)?;
+        "Select key" , &keys)?;
 
     let pubkey = match session.get_pubkey(key.id, ObjectType::AsymmetricKey) {
         Ok(pk) => pk,
@@ -502,11 +442,12 @@ fn get_public_key(session: &Session) -> Result<(), MgmError> {
         return Ok(())
     }
 
-    if let Ok(str) = String::from_utf8(pem_pubkey.clone()) { println!("{}\n", str) }
+    let pubkey = AsymOps::get_pubkey_pem(session, key.id, key.object_type)?;
+    println!("{}\n",pubkey);
 
     if cliclack::confirm("Write to file?").interact()? {
         let filename = format!("0x{:04x}.pubkey.pem", key.id);
-        if let Err(err) = write_bytes_to_file(pem_pubkey, "", filename.as_str()) {
+        if let Err(err) = write_bytes_to_file(&pubkey.to_string().into_bytes(), "", filename.as_str()) {
             cliclack::log::error(
                 format!("Failed to write public key 0x{:04x} to file. {}", key.id, err))?;
         }
@@ -515,16 +456,16 @@ fn get_public_key(session: &Session) -> Result<(), MgmError> {
 }
 
 fn get_cert(session: &Session) -> Result<(), MgmError> {
-    let certs = get_asymmetric_objects(session, &[AsymTypes::X509Certificates])?;
+    let certs = AsymOps::get_asymmetric_objects(session, &[AsymmetricType::X509Certificate])?;
     let cert = select_one_object(
-        "Select certificates", &get_descriptors_from_handlers(session, &certs)?)?;
+        "Select certificates", &certs)?;
 
-    let cert_pem = get_certificate(session, cert.id)?;
-    if let Ok(str) = String::from_utf8(cert_pem.clone()) { println!("{}\n", str) }
+    let cert_pem = AsymOps::get_certificate(session, cert.id)?;
+    println!("{}\n", cert_pem);
 
     if cliclack::confirm("Write to file?").interact()? {
         let filename = format!("0x{:04x}.cert.pem", cert.id);
-        if let Err(err) = write_bytes_to_file(cert_pem, "", filename.as_str()) {
+        if let Err(err) = write_bytes_to_file(&cert_pem.to_string().into_bytes(), "", filename.as_str()) {
             cliclack::log::error(
                 format!("Failed to write certificate 0x{:04x} to file. {}", cert.id, err))?;
         }
@@ -567,58 +508,15 @@ fn get_mgf1_algorithm(algo: &ObjectAlgorithm) -> Result<ObjectAlgorithm, MgmErro
 fn sign(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     let input = read_input_string("Enter data to sign or absolut path to binary file containing data to sign")?;
 
-    let key = get_operation_key(
-        session, authkey,
-        [ObjectCapability::SignPkcs, ObjectCapability::SignPss, ObjectCapability::SignEcdsa, ObjectCapability::SignEddsa].to_vec().as_ref(),
-        ObjectType::AsymmetricKey,
-        &[])?;
+    let key = select_one_object(
+        "Select signing key", &AsymOps::get_signing_keys(session, authkey)?)?;
 
-    let sig_algo =
-        if RSA_KEY_ALGORITHM.contains(&key.algorithm) {
-        let mut algorithm = cliclack::select("Select RSA signing algorithm");
-        if key.capabilities.contains(&ObjectCapability::SignPkcs) &&
-            authkey.capabilities.contains(&ObjectCapability::SignPkcs) {
-            algorithm = algorithm.item(ObjectAlgorithm::RsaPkcs1Sha1, "RSA-PKCS#1v1.5 with SHA1","");
-            algorithm = algorithm.item(ObjectAlgorithm::RsaPkcs1Sha256, "RSA-PKCS#1v1.5 with SHA256", "");
-            algorithm = algorithm.item(ObjectAlgorithm::RsaPkcs1Sha384, "RSA-PKCS#1v1.5 with SHA384", "");
-            algorithm = algorithm.item(ObjectAlgorithm::RsaPkcs1Sha512, "RSA-PKCS#1v1.5 with SHA512", "");
-        }
-        if key.capabilities.contains(&ObjectCapability::SignPss) &&
-            authkey.capabilities.contains(&ObjectCapability::SignPss) {
-            algorithm = algorithm.item(ObjectAlgorithm::RsaPssSha1, "RSA-PSS with SHA1", "");
-            algorithm = algorithm.item(ObjectAlgorithm::RsaPssSha256, "RSA-PSS with SHA256", "");
-            algorithm = algorithm.item(ObjectAlgorithm::RsaPssSha384, "RSA-PSS with SHA384", "");
-            algorithm = algorithm.item(ObjectAlgorithm::RsaPssSha512, "RSA-PSS with SHA512", "");
-        }
-        algorithm.interact()?
-    } else if EC_KEY_ALGORITHM.contains(&key.algorithm) {
-        if key.capabilities.contains(&ObjectCapability::SignEcdsa) &&
-            authkey.capabilities.contains(&ObjectCapability::SignEcdsa) {
-            cliclack::select("Select ECDSA signing algorithm")
-                .item(ObjectAlgorithm::EcdsaSha1, "ECDSA with SHA1", "")
-                .item(ObjectAlgorithm::EcdsaSha256, "ECDSA with SHA256", "")
-                .item(ObjectAlgorithm::EcdsaSha384, "ECDSA with SHA384", "")
-                .item(ObjectAlgorithm::EcdsaSha512, "ECDSA with SHA512", "")
-                .interact()?
-        } else {
-            return Err(MgmError::Error("Selected key has no ECDSA signing capabilities".to_string()))
-        }
-    } else if key.algorithm == ObjectAlgorithm::Ed25519 {
-        if key.capabilities.contains(&ObjectCapability::SignEddsa) &&
-            authkey.capabilities.contains(&ObjectCapability::SignEddsa) {
-            ObjectAlgorithm::Ed25519
-        } else {
-            return Err(MgmError::Error("Selected key has no EDDSA signin capabilities".to_string()))
-        }
-    } else {
-        return Err(MgmError::Error("Selected key has no asymmetric signing capabilities".to_string()))
-    };
-
-    let sig = crate::backend::asym_utils::sign(session, &key, &sig_algo, input.as_bytes())?;
-    cliclack::log::success(format!("Signed data using {} and key 0x{:04x}:\n{}", sig_algo, key.id, hex::encode(&sig)))?;
+    let sign_algo = select_algorithm("Select RSA signing algorithm", &AsymOps::get_signing_algorithms(authkey, &key), None)?;
+    let sig = AsymOps::sign(session, key.id, &sign_algo, input.as_bytes())?;
+    cliclack::log::success(format!("Signed data using {} and key 0x{:04x}:\n{}", sign_algo, key.id, hex::encode(&sig)))?;
 
     if cliclack::confirm("Write to binary file?").interact()? {
-        if let Err(err) = write_bytes_to_file(sig, "", "data.sig") {
+        if let Err(err) = write_bytes_to_file(&sig, "", "data.sig") {
             cliclack::log::error(format!("Failed to write signature to file. {}", err))?;
         }
     }
@@ -630,40 +528,10 @@ fn decrypt(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError
         "Enter data to decrypt in Hex format or absolut path to file containing data to decrypt in binary format",
         true)?;
 
-    let key = get_operation_key(
-        session, authkey,
-        [ObjectCapability::DecryptPkcs, ObjectCapability::DecryptOaep].to_vec().as_ref(),
-        ObjectType::AsymmetricKey,
-        &RSA_KEY_ALGORITHM)?;
-
-
-    let mut algorithm = cliclack::select("Select RSA decryption algorithm");
-    if key.capabilities.contains(&ObjectCapability::DecryptPkcs) &&
-        authkey.capabilities.contains(&ObjectCapability::DecryptPkcs) {
-        algorithm = algorithm.item(ObjectAlgorithm::RsaPkcs1Decrypt, "RSA-PKCS#1v1.5", "");
-    }
-    if key.capabilities.contains(&ObjectCapability::DecryptOaep) &&
-        authkey.capabilities.contains(&ObjectCapability::DecryptOaep) {
-        algorithm = algorithm.item(ObjectAlgorithm::RsaOaepSha1, "RSA-OAEP with SHA1", "");
-        algorithm = algorithm.item(ObjectAlgorithm::RsaOaepSha256, "RSA-OAEP with SHA256", "");
-        algorithm = algorithm.item(ObjectAlgorithm::RsaOaepSha384, "RSA-OAEP with SHA384", "");
-        algorithm = algorithm.item(ObjectAlgorithm::RsaOaepSha512, "RSA-OAEP with SHA512", "");
-    }
-    let algorithm = algorithm.interact()?;
-
-    let label = if RSA_OAEP_ALGORITHM.contains(&algorithm) {
-        cliclack::input("Enter OAEP label in HEX format (Default is empty): ").default_input("").validate(|input: &String| {
-            if hex::decode(input).is_err() {
-                Err("Input must be in hex format")
-            } else {
-                Ok(())
-            }
-        }).interact()?
-    } else {
-        String::new()
-    };
-
-    let data = crate::backend::asym_utils::decrypt(session, &key, &algorithm, label, enc.as_slice())?;
+    let key = select_one_object(
+        "Select decryption key", &AsymOps::get_decryption_keys(session, authkey)?)?;
+    let algorithm = select_algorithm("Select RSA decryption algorithm", &AsymOps::get_decryption_algorithms(authkey, &key), None)?;
+    let data = AsymOps::decrypt(session, key.id, &algorithm, enc.as_slice())?;
     cliclack::log::success(format!("Decrypted data using {} and key 0x{:04x}", algorithm, key.id))?;
 
     if let Ok(data_str) = std::str::from_utf8(data.as_slice()) {
@@ -671,7 +539,7 @@ fn decrypt(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError
     }
 
     if cliclack::confirm("Write to binary file?").interact()? {
-        if let Err(err) = write_bytes_to_file(data, "", "data.dec") {
+        if let Err(err) = write_bytes_to_file(&data, "", "data.dec") {
             cliclack::log::error(format!("Failed to write decrypted data to file. {}", err))?;
         }
     }
@@ -680,14 +548,11 @@ fn decrypt(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError
 }
 
 fn derive_ecdh(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let hsm_key = get_operation_key(
-        session, authkey,
-        [ObjectCapability::DeriveEcdh].to_vec().as_ref(),
-        ObjectType::AsymmetricKey,
-        &EC_KEY_ALGORITHM)?;
+    let hsm_key = select_one_object(
+        "Select ECDH key", &AsymOps::get_derivation_keys(session, authkey)?)?;
 
-    let peer_key = read_pem_file(get_file_path("Enter path to PEM file containing the peer public key: ")?)?;
-    let shared_secret = crate::backend::asym_utils::derive_ecdh(session, &hsm_key, peer_key)?;
+    let peer_key = read_pem_from_file(get_file_path("Enter path to PEM file containing the peer public key: ")?)?;
+    let shared_secret = AsymOps::derive_ecdh(session, &hsm_key, peer_key)?;
     cliclack::log::success(hex::encode(shared_secret))?;
 
     Ok(())
@@ -698,66 +563,59 @@ fn sign_attestation(session: &Session, authkey:&ObjectDescriptor) -> Result<(), 
         return Err(MgmError::Error("User does not have signing attestation certificates capabilities".to_string()));
     }
 
-    let keys = session.list_objects_with_filter(
-        0,
-        ObjectType::AsymmetricKey,
-        "",
-        ObjectAlgorithm::ANY,
-        &Vec::new())?;
+    let mut keys = AsymOps::get_asymmetric_objects(session, &[AsymmetricType::Key])?;
     if keys.is_empty() {
         return Err(MgmError::Error("There are no asymmetric keys to attest".to_string()));
     }
 
-    let cert_pem =
-        match cliclack::select("")
-            .item(AttestationTypes::DeviceSigned, AttestationTypes::DeviceSigned, "")
-            .item(AttestationTypes::SelfSigned, AttestationTypes::SelfSigned, "")
-            .item(AttestationTypes::AsymSigned, AttestationTypes::AsymSigned, "").interact()? {
+    let attest_type = cliclack::select("")
+        .item(AttestationType::DeviceSigned, AttestationType::DeviceSigned, "")
+        .item(AttestationType::SelfSigned, AttestationType::SelfSigned, "")
+        .item(AttestationType::AsymSigned, AttestationType::AsymSigned, "")
+        .interact()?;
 
-                AttestationTypes::DeviceSigned => {
-                    let mut keys = get_descriptors_from_handlers(session, &keys)?;
-                    keys.retain(|k| k.origin == ObjectOrigin::Generated);
-                    let attested_key = select_one_object("Select key to attest", &keys)?;
-                    get_attestation_cert(session, attested_key.id, 0, &[])?
-                },
-                AttestationTypes::SelfSigned => {
-                    let mut keys = get_descriptors_from_handlers(session, &keys)?;
-                    keys.retain(|k| k.capabilities.contains(&ObjectCapability::SignAttestationCertificate) && k.origin == ObjectOrigin::Generated);
-                    let key = select_one_object("Select key to self-attest", &keys)?;
-                    get_attestation_cert(session, key.id, key.id, &[])?
-                },
-                AttestationTypes::AsymSigned => {
-                    let keys = get_descriptors_from_handlers(session, &keys)?;
+    let mut attested_keys = keys.clone();
+    attested_keys.retain(|k| k.origin == ObjectOrigin::Generated);
 
-                    let mut attested_keys = keys.clone();
-                    attested_keys.retain(|k| k.origin == ObjectOrigin::Generated);
-                    let attested_key = select_one_object("Select key to attest", &attested_keys)?;
+    let (attested_key, attesting_key, template_cert) = match attest_type {
+        AttestationType::DeviceSigned => {
+            let key = select_one_object("Select key to attest", &attested_keys)?;
+            (key.id, 0, None)
+        },
+        AttestationType::SelfSigned => {
+            attested_keys.retain(|k| k.capabilities.contains(&ObjectCapability::SignAttestationCertificate));
+            let key = select_one_object("Select key to self-attest", &attested_keys)?;
+            (key.id, key.id, None)
+        },
+        AttestationType::AsymSigned => {
+            let attested_key = select_one_object("Select key to attest", &attested_keys)?;
 
-                    let mut attesting_keys = keys;
-                    attesting_keys.retain(|k| k.capabilities.contains(&ObjectCapability::SignAttestationCertificate));
-                    let attesting_key = select_one_object("Select attesting key", &attesting_keys)?;
+            keys.retain(|k| k.capabilities.contains(&ObjectCapability::SignAttestationCertificate));
+            let attesting_key = select_one_object("Select attesting key", &keys)?;
 
-                    // let template_cert = get_attestation_template_cert()?;
-                    let template_cert: String = cliclack::input("Enter path to PEM file containing an X509Certificate to use as a template for the attestation certificate. Template certificate will be deleted after successful execution: ").required(false).placeholder("Empty default is using device attestation as certificate template").validate(|input: &String| {
-                        if !input.is_empty() && !Path::new(input).exists() {
-                            Err("File does not exist")
-                        } else {
-                            Ok(())
-                        }
-                    }).interact()?;
-                    let template_cert = if !template_cert.is_empty() {
-                        read_pem_file(template_cert)?.contents().to_vec()
-                    } else {
-                        Vec::new()
-                    };
-                    get_attestation_cert(session, attested_key.id, attesting_key.id, template_cert.as_slice())?
+            let template_file: String = cliclack::input("Enter path to PEM file containing an X509Certificate to use as a template for the attestation certificate. Template certificate will be deleted after successful execution: ").required(false).placeholder("Empty default is using device attestation as certificate template").validate(|input: &String| {
+                if !input.is_empty() && !Path::new(input).exists() {
+                    Err("File does not exist")
+                } else {
+                    Ok(())
                 }
-        };
+            }).interact()?;
 
-    if let Ok(str) = String::from_utf8(cert_pem.clone()) { println!("{}\n", str) }
+            let template_cert = if template_file.is_empty() {
+                None
+            } else {
+                Some(read_pem_from_file(template_file)?)
+            };
+            (attested_key.id, attesting_key.id, template_cert)
+        }
+    };
+
+    let cert = AsymOps::get_attestation_cert(session, attested_key, attesting_key, template_cert)?;
+    println!("{}\n", cert);
 
     if cliclack::confirm("Write to file?").interact()? {
-        if let Err(err) = write_bytes_to_file(cert_pem, "", "attestation_cert.pem") {
+        let filename = format!("0x{:04x}.attestation_cert.pem", attested_key);
+        if let Err(err) = write_bytes_to_file(&cert.to_string().into_bytes(), "", filename.as_str()) {
             cliclack::log::error(
                 format!("Failed to write attestation certificate to file. {}", err))?;
         }

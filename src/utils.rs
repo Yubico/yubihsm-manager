@@ -19,22 +19,20 @@ extern crate yubihsmrs;
 use std::{env, fs};
 use std::convert::TryFrom;
 use std::fs::File;
-use std::io::{Write};
-use std::ops::Deref;
+use std::io::Write;
 use std::path::Path;
 use std::str::FromStr;
 use cliclack::MultiSelect;
-use openssl::bn::BigNumContext;
-use openssl::ec::PointConversionForm;
-use openssl::nid::Nid;
 use pem::Pem;
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
-use yubihsmrs::{Session};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain};
 use crate::error::MgmError;
-use comfy_table::{Table,ContentArrangement};
-use crate::backend::common::{get_descriptors_from_handlers, get_delegated_capabilities, get_operation_key_options};
+use comfy_table::{ContentArrangement, Table};
+use crate::backend::types::{ObjectSpec, YhAlgorithm};
+use crate::backend::common::{get_delegated_capabilities};
 
 const MULTI_SELECT_PROMPT_HELP: &str = ". Press the space button to select and unselect item. Press 'Enter' when done.";
+
+
 
 pub fn get_password(prompt: &str) -> Result<String, MgmError> {
     let pwd = cliclack::password(prompt)
@@ -145,32 +143,32 @@ pub fn select_capabilities(
     }
 }
 
-pub fn get_new_object_basics(
-    authkey: &ObjectDescriptor,
-    object_type: ObjectType,
-    capability_options: &[ObjectCapability],
-    capabilities_preselected: &[ObjectCapability]) -> Result<ObjectDescriptor, MgmError> {
-    let mut desc = ObjectDescriptor::new();
-    desc.object_type = object_type;
-    desc.id = get_id()?;
-    desc.label = get_label()?;
-    desc.domains = select_domains(&authkey.domains)?;
-    desc.capabilities = select_capabilities(
-        "Select object capabilities", authkey, capability_options, capabilities_preselected)?;
-    Ok(desc)
+pub fn select_algorithm(
+    prompt:&str,
+    algorithms:&[YhAlgorithm], default_algorithm: Option<ObjectAlgorithm>) -> Result<ObjectAlgorithm, MgmError> {
+
+    let mut algo = cliclack::select(prompt);
+    if let Some(item) = default_algorithm {
+        algo = algo.initial_value(item);
+    }
+    for a in algorithms {
+        algo = algo.item(a.algorithm, a.label, a.description);
+    }
+    let algo = algo.interact()?;
+    Ok(algo)
 }
 
-pub fn fill_new_object_properties(
-    new_object: &mut ObjectDescriptor,
+pub fn fill_object_spec(
     authkey: &ObjectDescriptor,
-    capability_options: &[ObjectCapability],
-    capabilities_preselected: &[ObjectCapability]) -> Result<(), MgmError> {
+    object_spec: &mut ObjectSpec,
+    object_capabilities: &[ObjectCapability],
+    preselected_capabilities: &[ObjectCapability]) -> Result<(), MgmError> {
 
-    new_object.id = get_id()?;
-    new_object.label = get_label()?;
-    new_object.domains = select_domains(&authkey.domains)?;
-    new_object.capabilities = select_capabilities(
-        "Select object capabilities", authkey, capability_options, capabilities_preselected)?;
+    object_spec.id = get_id()?;
+    object_spec.label = get_label()?;
+    object_spec.domains = select_domains(&authkey.domains)?;
+    object_spec.capabilities = select_capabilities(
+        "Select object capabilities", authkey, object_capabilities, preselected_capabilities)?;
     Ok(())
 }
 
@@ -181,13 +179,13 @@ fn get_descriptor_basic_display(desc: &ObjectDescriptor) -> String {
 
 pub fn select_one_object(
     prompt:&str,
-    objects:&Vec<ObjectDescriptor>) -> Result<ObjectDescriptor, MgmError> {
+    objects:&[ObjectDescriptor]) -> Result<ObjectDescriptor, MgmError> {
     if objects.is_empty() {
         cliclack::log::info("No objects available")?;
         return Err(MgmError::Error("No objects to select from".to_string()));
     }
 
-    let mut options = objects.clone();
+    let mut options = objects.to_vec();
     options.sort_by(|a, b| a.label.cmp(&b.label));
     let mut selected_object = cliclack::select(prompt);
     for o in options {
@@ -200,7 +198,7 @@ pub fn select_one_object(
 
 pub fn select_multiple_objects(
     prompt:&str,
-    objects:&Vec<ObjectDescriptor>,
+    objects:&[ObjectDescriptor],
     default_select_all:bool) -> Result<Vec<ObjectDescriptor>, MgmError> {
 
     if objects.is_empty() {
@@ -208,7 +206,7 @@ pub fn select_multiple_objects(
         return Ok(Vec::new());
     }
 
-    let mut options = objects.clone();
+    let mut options = objects.to_vec();
     options.sort_by(|a, b| a.label.cmp(&b.label));
     let mut selected = cliclack::multiselect(format!("{}{}", prompt, MULTI_SELECT_PROMPT_HELP));
     selected = selected.required(false);
@@ -224,9 +222,9 @@ pub fn select_multiple_objects(
     Ok(selected.interact()?)
 }
 
-pub fn select_delete_objects(session: &Session, handles: &[ObjectHandle]) -> Result<Vec<ObjectDescriptor>, MgmError> {
+pub fn select_delete_objects(objects: &[ObjectDescriptor]) -> Result<Vec<ObjectDescriptor>, MgmError> {
     let objects = select_multiple_objects(
-        "Select key(s) to delete", &get_descriptors_from_handlers(session, handles)?,false)?;
+        "Select key(s) to delete", objects,false)?;
 
     if !objects.is_empty() {
         cliclack::log::warning("Selected object(s) will be deleted and cannot be recovered")?;
@@ -237,22 +235,17 @@ pub fn select_delete_objects(session: &Session, handles: &[ObjectHandle]) -> Res
     Ok(Vec::new())
 }
 
-pub fn delete_objects(session: &Session, objects: &Vec<ObjectDescriptor>) -> Result<(), MgmError> {
-    if objects.is_empty() {
-        cliclack::log::info("No keys were selected")?;
+pub fn print_failed_delete(failed: &[(ObjectDescriptor, MgmError)]) -> Result<(), MgmError> {
+    if failed.is_empty() {
+        cliclack::log::success("Selected objects deleted successfully")?;
     } else {
-        let failed = crate::backend::common::delete_objects(session, &objects);
-        if failed.is_empty() {
-            cliclack::log::success("Selected objects deleted successfully")?;
-        } else {
-            let fail = failed
-                .iter()
-                .map(|d| format!("0x{:04x}:{}", d.id, d.object_type))
-                .collect::<Vec<_>>()
-                .join(", ");
+        let fail = failed
+            .iter()
+            .map(|(d, e)| format!("0x{:04x}:{}:{}\n", d.id, d.object_type, e))
+            .collect::<Vec<_>>()
+            .join(", ");
 
-            cliclack::log::error(format!("Failed to delete {} objects: {}", failed.len(), fail))?;
-        }
+        cliclack::log::error(format!("Failed to delete {} objects: \n{}\n", failed.len(), fail))?;
     }
     Ok(())
 }
@@ -320,14 +313,14 @@ pub fn read_input_string(prompt: &str) -> Result<String, MgmError> {
 }
 
 
-pub fn read_file_bytes(prompt:&str) -> Result<Vec<u8>, MgmError> {
+pub fn read_bytes_from_file(prompt:&str) -> Result<Vec<u8>, MgmError> {
     let file_path = get_file_path(prompt)?;
     match fs::read(file_path) {
         Ok(content) => Ok(content),
         Err(err) => {
             cliclack::log::error("Failed to read file to bytes")?;
             if cliclack::confirm("Try again?").interact()? {
-                read_file_bytes(prompt)
+                read_bytes_from_file(prompt)
             } else {
                 Err(MgmError::StdIoError(err))
             }
@@ -335,14 +328,14 @@ pub fn read_file_bytes(prompt:&str) -> Result<Vec<u8>, MgmError> {
     }
 }
 
-pub fn read_pem_file(file_path:String) -> Result<Pem, MgmError> {
+pub fn read_pem_from_file(file_path:String) -> Result<Pem, MgmError> {
     let content = fs::read_to_string(file_path)?;
     match pem::parse(content) {
         Ok(pem) => Ok(pem),
         Err(err) => {
             cliclack::log::error("Failed to parse file content as PEM")?;
             if cliclack::confirm("Try again?").interact()? {
-                read_pem_file(get_file_path("")?)
+                read_pem_from_file(get_file_path("")?)
             } else {
                 Err(MgmError::PemError(err))
             }
@@ -350,7 +343,7 @@ pub fn read_pem_file(file_path:String) -> Result<Pem, MgmError> {
     }
 }
 
-pub fn get_pem_from_file(file_path:String) -> Result<Vec<Pem>, MgmError> {
+pub fn read_pems_from_file(file_path:String) -> Result<Vec<Pem>, MgmError> {
     loop {
         let content = fs::read_to_string(file_path.clone())?;
         match pem::parse_many(content) {
@@ -381,23 +374,7 @@ pub fn read_aes_key_hex(prompt:&str) -> Result<Vec<u8>, MgmError> {
     Ok(hex::decode(key_hex)?)
 }
 
-pub fn get_ec_pubkey_from_pem_string(pem_str:String) -> Result<(Vec<u8>, Nid), MgmError> {
-    let pubkey = openssl::ec::EcKey::public_key_from_pem(pem_str.as_bytes())?;
-    let mut ctx = BigNumContext::new()?;
-    let ec_point_ref = pubkey.public_key();
-    let ec_group_ref = pubkey.group();
-    let key = ec_point_ref.to_bytes(ec_group_ref, PointConversionForm::UNCOMPRESSED, &mut ctx)?;
-    let nid = ec_group_ref.curve_name().ok_or(MgmError::Error(String::from("Failed to find EC curve name")))?;
-    Ok((key, nid))
-}
-
-pub fn get_ec_privkey_from_pem_string(pem_str:String) -> Result<Vec<u8>, MgmError> {
-    let privkey = openssl::ec::EcKey::private_key_from_pem(pem_str.as_bytes())?;
-    let s = privkey.private_key();
-    Ok(s.to_vec())
-}
-
-pub fn write_bytes_to_file(content: Vec<u8>, directory: &str, filename:&str) -> Result<(), MgmError> {
+pub fn write_bytes_to_file(content: &[u8], directory: &str, filename:&str) -> Result<(), MgmError> {
     let dir = if directory.is_empty() {
         env::current_dir()?.to_str().unwrap_or_default().to_owned()
     } else {
@@ -420,30 +397,70 @@ pub fn write_bytes_to_file(content: Vec<u8>, directory: &str, filename:&str) -> 
             }
         }
     };
-    file.write_all(content.deref())?;
+    file.write_all(content)?;
     cliclack::log::success(format!("Wrote file {}", &filepath))?;
     Ok(())
 }
 
-pub fn print_object_properties(session: &Session, objects:Vec<ObjectHandle>) -> Result<(), MgmError> {
+pub fn print_object_properties(objects: &[ObjectDescriptor]) -> Result<(), MgmError> {
     if objects.is_empty() {
         cliclack::log::info("No objects to display")?;
         return Ok(());
     }
 
-    let result = select_one_object("", &get_descriptors_from_handlers(session, &objects)?)?;
-    cliclack::log::success(result.to_string().replace('\t', "\n"))?;
-    Ok(())
-}
-
-pub fn list_objects(session: &Session, objects: &[ObjectHandle]) -> Result<(), MgmError> {
-    let mut descs = get_descriptors_from_handlers(session, objects)?;
-    descs.sort_by(|a, b| a.label.cmp(&b.label));
+    let object = select_one_object("", objects)?;
 
     let mut table = Table::new();
     table.set_content_arrangement(ContentArrangement::Dynamic);
-    table.set_header(vec!["ID", "Label", "Algorithm", "Domains", "Capabilities"]);
-    for d in descs {
+    table.set_header(vec!["ID", "Type", "Label", "Algorithm", "Sequence", "Origin", "Domains", "Capabilities", "Delegated Capabilities"]);
+
+    let id = format!("0x{:04x}", object.id);
+    let origin = format!("{:?}", object.origin);
+
+    let mut domains = String::new().to_owned();
+    object.domains.iter().for_each(
+        |domain| domains.push_str(format!("{:160},", domain).as_str()));
+    domains.pop();
+
+    let mut capabilities = String::new().to_owned();
+    object.capabilities.iter().for_each(|cap| capabilities.push_str(format!("{:?},", cap).as_str()));
+    capabilities.pop();
+
+    let delegated_capabilities = {
+        let mut delegated = String::new().to_owned();
+        let caps = get_delegated_capabilities(&object);
+        caps.iter().for_each(|cap| delegated.push_str(format!("{:?},", cap).as_str()));
+        if !delegated.is_empty() {
+            delegated.pop();
+        }
+        delegated
+    };
+
+    table.add_row(vec![
+        id,
+        object.object_type.to_string(),
+        object.label.to_string(),
+        object.algorithm.to_string(),
+        object.sequence.to_string(),
+        origin,
+        domains,
+        capabilities,
+        delegated_capabilities]);
+
+    println!("{table}");
+
+    Ok(())
+}
+
+pub fn list_objects(objects: &[ObjectDescriptor]) -> Result<(), MgmError> {
+    let mut objects = objects.to_vec();
+    objects.sort_by(|a, b| a.label.cmp(&b.label));
+
+    let mut table = Table::new();
+    table.set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_header(vec!["ID", "Type", "Label", "Algorithm", "Domains", "Capabilities"]);
+
+    for d in objects {
         let id = format!("0x{:04x}", d.id);
         let mut domains = String::new().to_owned();
         d.domains.iter().for_each(
@@ -454,19 +471,8 @@ pub fn list_objects(session: &Session, objects: &[ObjectHandle]) -> Result<(), M
         d.capabilities.iter().for_each(|cap| capabilities.push_str(format!("{:?},", cap).as_str()));
         capabilities.pop();
 
-        table.add_row(vec![id, d.label.to_string(), d.algorithm.to_string(), domains, capabilities]);
+        table.add_row(vec![id, d.object_type.to_string(), d.label.to_string(), d.algorithm.to_string(), domains, capabilities]);
     }
     println!("{table}");
     Ok(())
-}
-
-pub fn get_operation_key(
-    session:&Session,
-    authkey: &ObjectDescriptor,
-    op_capabilities: &[ObjectCapability],
-    key_type: ObjectType,
-    key_algos: &[ObjectAlgorithm]) -> Result<ObjectDescriptor, MgmError> {
-
-    let keys = get_operation_key_options(session, authkey, op_capabilities, key_type, key_algos)?;
-    select_one_object("Select operation key", &keys)
 }

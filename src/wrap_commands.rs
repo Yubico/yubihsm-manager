@@ -16,6 +16,8 @@
 
 use std::fmt;
 use std::fmt::Display;
+use std::fs::File;
+use std::io::Read;
 
 use std::sync::LazyLock;
 use regex::Regex;
@@ -23,6 +25,19 @@ use openssl::base64;
 use openssl::bn::BigNum;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
+use crate::backend::wrap::{WrapKeyType};
+use crate::{asym_commands};
+use crate::backend::asym::AsymOps;
+use crate::backend::object_ops::Importable;
+use crate::backend::sym::SymOps;
+use crate::backend::types::ImportObjectSpec;
+use crate::backend::wrap::{WrapOpSpec, WrapType};
+use crate::utils::{get_id, select_algorithm, select_domains, select_one_object};
+use crate::utils::read_pem_from_file;
+use crate::backend::object_ops::{Deletable, Generatable, Obtainable};
+use crate::backend::types::ObjectSpec;
+use crate::backend::wrap::WrapOps;
+use crate::utils::{fill_object_spec, list_objects, print_failed_delete, print_object_properties, select_delete_objects};
 use crate::error::MgmError;
 use crate::util::{convert_handlers, delete_objects, get_delegated_capabilities, get_directory, get_label, get_new_object_basics, list_objects, print_object_properties, select_capabilities, select_multiple_objects, select_one_object, write_bytes_to_file, read_pem_file, contains_all};
 use regex::Regex;
@@ -35,7 +50,6 @@ static WRAP_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Wrap keys"
 static SHARE_RE_256: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{70}$").unwrap());
 static SHARE_RE_192: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{59}$").unwrap());
 static SHARE_RE_128: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{48}$").unwrap());
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum WrapKeyType {
@@ -74,7 +88,6 @@ const RSA_WRAP_KEY_CAPABILITIES: [ObjectCapability; 2] = [
 const PUBLIC_WRAP_KEY_CAPABILITIES: [ObjectCapability; 2] = [
     ObjectCapability::ExportWrapped,
     ObjectCapability::ExportableUnderWrap];
-
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -204,11 +217,11 @@ fn get_all_wrap_key(session: &Session) -> Result<Vec<ObjectHandle>, MgmError> {
 }
 
 fn list(session: &Session) -> Result<(), MgmError> {
-    list_objects(session, &get_wrap_keys(session)?)
+    list_objects(&WrapOps.get_all_objects(session)?)
 }
 
 fn print_key_properties(session: &Session) -> Result<(), MgmError> {
-    print_object_properties(session, get_wrap_keys(session)?)
+    print_object_properties(&WrapOps.get_all_objects(session)?)
 }
 
 fn delete(session: &Session) -> Result<(), MgmError> {
@@ -221,6 +234,20 @@ fn get_new_key_note(key_desc: &ObjectDescriptor) -> String {
             .replace("Origin: Generated\t", "")
             .replace("\t", "\n")
 }
+
+// pub fn fill_wrap_spec(authkey: &ObjectDescriptor, spec: &mut ObjectSpec) -> Result<(), MgmError> {
+//     if spec.algorithm == ObjectAlgorithm::ANY {
+//         let mut key_algo = cliclack::select("Select key type");
+//         for algo in &WrapOps::get_object_algorithms() {
+//             key_algo = key_algo.item(algo.algorithm, algo.label, algo.description);
+//         }
+//         spec.algorithm = key_algo.interact()?;
+//     }
+//     fill_object_spec(authkey, spec, &WrapOps::get_wrapkey_capabilities(WrapKeyType::from((ObjectType::WrapKey, spec.algorithm))), &[])?;
+//     spec.delegated_capabilities = select_capabilities(
+//         "Select delegated capabilities", authkey, get_delegated_capabilities(authkey).as_slice(), get_delegated_capabilities(authkey).as_slice())?;
+//     Ok(())
+// }
 
 fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     let algorithm = cliclack::select("Choose key algorithm:")
@@ -235,10 +262,9 @@ fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmErro
     let mut new_key = get_new_object_basics(authkey, ObjectType::WrapKey, &AES_WRAP_KEY_CAPABILITIES, &[])?;
     let delegated = select_capabilities(
         "Select delegated capabilities", authkey, get_delegated_capabilities(authkey).as_slice(), get_delegated_capabilities(authkey).as_slice())?;
-    new_key.delegated_capabilities = if delegated.is_empty() {None} else {Some(delegated)};
 
-    cliclack::note("Generating wrap key with:",get_new_object_note(&new_key))?;
 
+    cliclack::note("Generating wrap key with:",new_key.to_string())?;
     if cliclack::confirm("Generate wrap key?").interact()? {
         let mut spinner = cliclack::spinner();
         spinner.start("Generating key...");
@@ -253,6 +279,7 @@ fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmErro
         spinner.stop("");
         cliclack::log::success(
             format!("Generated wrap key with ID 0x{:04x} on the device", new_key.id))?;
+        spinner.stop("");
     }
     Ok(())
 }
@@ -329,7 +356,28 @@ fn import_full_key(session:&Session, authkey: &ObjectDescriptor) -> Result<(), M
     let delegated = select_capabilities("Select delegated capabilities", authkey, get_delegated_capabilities(authkey).as_slice(), get_delegated_capabilities(authkey).as_slice())?;
     new_key.delegated_capabilities = if delegated.is_empty() {None} else {Some(delegated)};
 
-    cliclack::note("Import wrap key with:", get_new_object_note(&new_key))?;
+        let (_type, _algo, _bytes) = parsed;
+        match _type {
+            ObjectType::AsymmetricKey => {
+                (WrapKeyType::Rsa, _algo, _bytes)
+            },
+            ObjectType::PublicKey => {
+                (WrapKeyType::RsaPublic, _algo, _bytes)
+            },
+            _ => unreachable!()
+        }
+    } else {
+        return Err(MgmError::InvalidInput("Input must be in HEX format or valid PEM file path".to_string()));
+    };
+
+    let mut spec = ImportObjectSpec::empty();
+    spec.object.object_type = if key_type == WrapKeyType::RsaPublic {ObjectType::PublicWrapKey} else {ObjectType::WrapKey};
+    spec.object.algorithm = key_algo;
+    spec.data.push(key_bytes);
+    fill_object_spec(authkey, &mut spec.object, &WrapOps::get_wrapkey_capabilities(key_type), &[])?;
+    spec.object.delegated_capabilities = select_capabilities("Select delegated capabilities", authkey, get_delegated_capabilities(authkey).as_slice(), get_delegated_capabilities(authkey).as_slice())?;
+
+    cliclack::note("Import wrap key with:", spec.object.to_string())?;
 
     let key_id = if cliclack::confirm("Import wrap key?").interact()? {
         match key_type {
@@ -377,15 +425,15 @@ fn import_full_key(session:&Session, authkey: &ObjectDescriptor) -> Result<(), M
 
 fn import_from_shares(session:&Session) -> Result<(), MgmError> {
     let shares = recover_wrapkey_shares()?;
-    let (mut new_key, key) = get_wrapkey_from_shares(shares)?;
-    new_key.label = get_label()?;
+    let mut key_spec = WrapOps::get_wrapkey_from_shares(shares)?;
+    key_spec.object.label = get_label()?;
 
-    cliclack::note("Import wrap key with:", get_new_object_note(&new_key))?;
+    cliclack::note("Import wrap key with:", key_spec.object.to_string())?;
 
     if cliclack::confirm("Import wrap key?").interact()? {
-        new_key.id = import_wrap_key(session, &new_key, &key)?;
+        key_spec.object.id = WrapOps.import(session, &key_spec)?;
         cliclack::log::success(
-            format!("Imported wrap key with ID 0x{:04x} on the device", new_key.id))?;
+            format!("Imported wrap key with ID 0x{:04x} on the device", key_spec.object.id))?;
     }
     Ok(())
 }
@@ -509,6 +557,18 @@ fn restore_device(session: &Session, authkey: &ObjectDescriptor) -> Result<(), M
     let wrapkey_type = get_wrapkey_type(wrapping_key.object_type, wrapping_key.algorithm);
 
     let dir = get_directory("Enter backup directory:")?;
+    let files: Vec<_> = match scan_dir::ScanDir::files()
+        .read(dir.clone(), |iter| {
+            iter.filter(|(_, name)| name.ends_with(".yhw"))
+                .map(|(entry, _)| entry.path())
+                .collect()
+        }) {
+        Ok(f) => f,
+        Err(err) => {
+            cliclack::log::error(err)?;
+            return Err(MgmError::Error("Failed to read files".to_string()))
+        }
+    };
 
     let files: Vec<_> = match scan_dir::ScanDir::files()
         .read(dir.clone(), |iter| {

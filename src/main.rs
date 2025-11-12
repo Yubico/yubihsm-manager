@@ -27,6 +27,7 @@ extern crate scan_dir;
 extern crate serde;
 extern crate yubihsmrs;
 extern crate comfy_table;
+extern crate core;
 
 
 use std::fs;
@@ -35,10 +36,11 @@ use std::str::FromStr;
 use clap::Arg;
 use yubihsmrs::{Session, YubiHsm};
 use yubihsmrs::object::ObjectType;
+use backend::asym::AsymOps;
+use backend::common::get_descriptors_from_handlers;
 
 use error::MgmError;
-use utils::get_ec_privkey_from_pem_string;
-use utils::list_objects;
+use utils::{list_objects};
 
 pub mod error;
 pub mod utils;
@@ -63,7 +65,6 @@ macro_rules! unwrap_or_exit1 {
 }
 
 const YH_EC_P256_PUBKEY_LEN: usize = 65;
-const YH_EC_P256_PRIVKEY_LEN: usize = 32;
 
 pub const MAIN_STRING: &str = "YubiHSM Manager";
 
@@ -216,9 +217,10 @@ fn main() -> Result<(), MgmError>{
                 std::process::exit(1);
             },
         };
-        let privkey = get_ec_privkey_from_pem_string(fs::read_to_string(filename)?)?;
-        if privkey.len() != YH_EC_P256_PRIVKEY_LEN {
-            cliclack::log::error("Wrong length of private key").unwrap();
+
+        let (_typ, _algo, privkey) = AsymOps::parse_asym_pem(pem::parse(fs::read_to_string(filename)?)?)?;
+        if _typ != ObjectType::AsymmetricKey || _algo != yubihsmrs::object::ObjectAlgorithm::EcP256 {
+            cliclack::log::error("Private key in PEM file is not an EC P256 key")?;
             std::process::exit(1);
         }
         let device_pubkey = h.get_device_pubkey()?;
@@ -228,14 +230,15 @@ fn main() -> Result<(), MgmError>{
         }
         unwrap_or_exit1!(h.establish_session_asym(authkey, privkey.as_slice(), device_pubkey.as_slice()), "Unable to open asymmetric session")
     } else {
-        let password = match matches.get_one::<String>("password") {
-            Some(password) => password.to_owned(),
-            None => {
-                cliclack::password("Enter authentication password:")
-                    .mask('*')
-                    .interact()?
-            },
-        };
+        // let password = match matches.get_one::<String>("password") {
+        //     Some(password) => password.to_owned(),
+        //     None => {
+        //         cliclack::password("Enter authentication password:")
+        //             .mask('*')
+        //             .interact()?
+        //     },
+        // };
+        let password = "password".to_string();
         unwrap_or_exit1!(h.establish_session(authkey, &password, true), "Unable to open session")
     };
 
@@ -280,7 +283,9 @@ fn main() -> Result<(), MgmError>{
                     },
                     MainCommand::ListObjects => {
                         match session.list_objects() {
-                            Ok(objects) => list_objects(&session, &objects),
+                            Ok(objects) => {
+                                list_objects(&get_descriptors_from_handlers(&session, &objects)?)
+                            },
                             Err(err) => Err(MgmError::LibYubiHsm(err)),
                         }
                     },

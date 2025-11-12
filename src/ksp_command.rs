@@ -14,13 +14,16 @@
  * limitations under the License.
  */
 
+use openssl::base64;
 use yubihsmrs::object::{ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::backend::ksp_utils;
-use crate::backend::wrap_utils;
+use crate::backend::ksp::KspOps;
+use crate::backend::wrap;
+use crate::backend::wrap::{WrapKeyType, WrapOps, WrapType};
+use crate::utils::write_bytes_to_file;
 use crate::error::MgmError;
-use crate::utils::{get_directory, select_domains, get_id, get_password};
-use crate::wrap_commands::{get_shares, get_threshold, object_to_file, wrapkey_shares_display};
+use crate::utils::{get_directory, get_id, get_password, select_domains};
+use crate::wrap_commands::{display_wrapkey_shares, get_shares, get_threshold};
 
 pub fn guided_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     cliclack::log::info("This guided setup will help you configure the YubiHSM for KSP use case.")?;
@@ -28,7 +31,7 @@ pub fn guided_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result
     cliclack::log::info("Please ensure you have the necessary permissions and that you record the wrap key shares securely.")?;
     cliclack::log::info("Let's begin the setup process.")?;
 
-    ksp_utils::check_privileges(authkey)?;
+    KspOps::check_privileges(authkey)?;
     let rsa_decrypt = cliclack::confirm("Add RSA decryption capabilities?").interact()?;
 
     cliclack::log::step("Importing KSP wrap key...")?;
@@ -36,7 +39,7 @@ pub fn guided_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result
     let domains = select_domains(&authkey.domains)?;
     let shares = get_shares()?;
     let threshold = get_threshold(shares)?;
-    let (wrapkey_id, wrapkey_shares) = ksp_utils::import_ksp_wrapkey(
+    let (wrapkey_id, wrapkey_shares) = KspOps::import_ksp_wrapkey(
         session, id, &domains, rsa_decrypt, shares, threshold)?;
     cliclack::log::success(format!("Successfully imported wrap key with ID  0x{:04x}", wrapkey_id))?;
     loop {
@@ -44,11 +47,11 @@ pub fn guided_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result
             break;
         }
     }
-    wrapkey_shares_display(wrapkey_shares.shares)?;
-    cliclack::log::step("All key shares have been recorded and cannot be displayed again")?;
+    display_wrapkey_shares(wrapkey_shares.shares_data)?;
+    cliclack::log::step("All key shares have been recorded and cannot be displayed again\n")?;
 
     cliclack::log::step("Importing application authentication key...")?;
-    let appkey_desc = crate::backend::ksp_utils::import_app_authkey(
+    let appkey_desc = KspOps::import_app_authkey(
         session,
         get_id()?,
         &domains,
@@ -60,7 +63,7 @@ pub fn guided_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result
     let auditkey_desc =
         if cliclack::confirm("Create an audit key? ").interact()? {
             cliclack::log::step("Importing audit key...")?;
-            let auditkey = crate::backend::ksp_utils::import_audit_authkey(
+            let auditkey = KspOps::import_audit_authkey(
                 session,
                 get_id()?,
                 &domains,
@@ -78,53 +81,49 @@ pub fn guided_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result
 
     cliclack::log::step("KSP setup completed successfully!")?;
 
+    if cliclack::confirm("Delete the current authentication key (strongly recommended)?").interact()? {
+        session.delete_object(authkey.id, ObjectType::AuthenticationKey)?;
+    }
+
     Ok(())
 }
 
 pub fn full_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError>{
     let rsa_decrypt = cliclack::confirm("Add RSA decryption capabilities?").interact()?;
+    let domains = select_domains(&authkey.domains)?;
 
     cliclack::log::step("Enter values for wrap key:")?;
-    let id = get_id()?;
-    let domains = select_domains(&authkey.domains)?;
+    let wrap_id = get_id()?;
     cliclack::log::info("The wrap key will be split into shares. Please enter the number of shares and the threshold for reconstruction.")?;
     let shares = get_shares()?;
     let threshold = get_threshold(shares)?;
-    let wrap_key = ksp_utils::KspWrapKeyInput {
-        id,
-        domains,
-        shares,
-        threshold,
-    };
 
     // Create an authentication key for usage with the above wrap key
     cliclack::log::step("Enter values for application authentication key:")?;
-    let app_key = ksp_utils::KspAuthKeyInput {
-        id: get_id()?,
-        password: get_password("Enter application authentication key password:")?,
-    };
+    let appkey_id = get_id()?;
+    let appkey_pwd = get_password("Enter application authentication key password:")?;
 
-    let audit_key =
+    let (audit_id, audit_pwd) =
         if cliclack::confirm("Create an audit key? ").interact()? {
             cliclack::log::step("Enter values for audit key:")?;
-            Some(ksp_utils::KspAuthKeyInput {
-                id: get_id()?,
-                password: get_password("Enter audit key password:")?,
-            })
+            (Some(get_id()?), Some(get_password("Enter audit key password:")?))
         } else {
-            None
+            (None, None)
         };
 
-
-
-
-    let ksp_setup= crate::backend::ksp_utils::setup_ksp(
+    let ksp_setup= KspOps::setup_ksp(
         session,
         authkey,
+        false,
         rsa_decrypt,
-        &wrap_key,
-        &app_key,
-        audit_key, /* std::option::Option<backend::ksp_utils::KspAuthKeyInput> */
+        &domains,
+        wrap_id,
+        threshold,
+        shares,
+        appkey_id,
+        appkey_pwd,
+        audit_id,
+        audit_pwd,
     )?;
 
     cliclack::log::success(format!(
@@ -133,9 +132,9 @@ pub fn full_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result<(
         Created application authentication Key with ID: 0x{:04x}\
         {}",
         ksp_setup.wrapkey_id,
-        ksp_setup.appkey_desc.id,
-        if ksp_setup.auditkey_desc.is_some() {
-            format!("\nCreated audit key with ID: 0x{:04x}", ksp_setup.auditkey_desc.clone().unwrap().id)
+        ksp_setup.appkey.id,
+        if ksp_setup.auditkey.is_some() {
+            format!("\nCreated audit key with ID: 0x{:04x}", ksp_setup.auditkey.clone().unwrap().id)
         } else {
             "".to_string()
         }
@@ -147,12 +146,12 @@ pub fn full_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result<(
             break;
         }
     }
-    wrapkey_shares_display(ksp_setup.wrapkey.shares)?;
+    display_wrapkey_shares(ksp_setup.wrapkey.shares_data)?;
 
     cliclack::log::step("All key shares have been recorded and cannot be displayed again")?;
 
     if cliclack::confirm("Export keys? ").interact()? {
-        export_keys(session, ksp_setup.wrapkey_id, ksp_setup.appkey_desc, ksp_setup.auditkey_desc)?;
+        export_keys(session, ksp_setup.wrapkey_id, ksp_setup.appkey, ksp_setup.auditkey)?;
     }
 
     if cliclack::confirm("Delete the current authentication key (strongly recommended)?").interact()? {
@@ -162,16 +161,30 @@ pub fn full_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result<(
     Ok(())
 }
 
-fn export_keys(session: &Session, wrapkey_id: u16, app_desc: ObjectDescriptor, audit_desc: Option<ObjectDescriptor>) -> Result<(), MgmError> {
-        let dir = get_directory("Enter export destination directory:")?;
+fn export_keys(session: &Session, wrapkey_id: u16, appkey: ObjectDescriptor, auditkey: Option<ObjectDescriptor>) -> Result<(), MgmError> {
+    let dir = get_directory("Enter export destination directory:")?;
 
-        let wrapped_authkey = wrap_utils::export_wrapped(session, wrapkey_id, &vec![app_desc])?;
-        object_to_file(&dir.clone(), wrapped_authkey[0].object_id, ObjectType::AuthenticationKey, &wrapped_authkey[0].wrapped_data)?;
+    let mut export_objects = vec![appkey];
+    if let Some(key) = auditkey {
+        export_objects.push(key);
+    }
 
-        if audit_desc.is_some() {
-            let wrapped_auditkey = wrap_utils::export_wrapped(session, wrapkey_id, &vec![audit_desc.unwrap()])?;
-            object_to_file(&dir, wrapped_auditkey[0].object_id, ObjectType::AuthenticationKey, &wrapped_auditkey[0].wrapped_data)?;
-        }
-        cliclack::log::step(format!("\nAll keys have been exported to {}", dir))?;
+    let wrap_op_spec = wrap::WrapOpSpec {
+        wrapkey_id,
+        wrapkey_type: WrapKeyType::Aes,
+        wrap_type: WrapType::Object,
+        include_ed_seed: false,
+        aes_algorithm: None,
+        oaep_algorithm: None,
+    };
+
+    let wrapped_keys = WrapOps::export_wrapped(session, &wrap_op_spec, &export_objects)?;
+    for key in wrapped_keys {
+        let filename = format!("0x{:04x}-{}.yhw", key.object_id, key.object_type);
+        write_bytes_to_file(base64::encode_block(&key.wrapped_data).as_bytes(), &dir, filename.as_str())?;
+    }
+
+    cliclack::log::step(format!("\nAll keys have been exported to {}", dir))?;
+
     Ok(())
 }

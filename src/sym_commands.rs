@@ -18,12 +18,16 @@ use std::fmt;
 use std::fmt::Display;
 use std::sync::LazyLock;
 
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
+use yubihsmrs::object::{ObjectCapability, ObjectDescriptor};
 use yubihsmrs::Session;
-use crate::backend::common::get_new_object_note;
-use crate::utils::{delete_objects, get_new_object_basics, get_operation_key, list_objects, print_object_properties, read_input_bytes,
-                   write_bytes_to_file, select_delete_objects, fill_new_object_properties, read_aes_key_hex};
-use crate::backend::sym_utils::{AesMode, EncryptionMode, get_sym_keys, get_algorithm_from_keylen};
+use crate::utils::select_one_object;
+use crate::backend::sym::AesOperationSpec;
+use crate::backend::sym::{AesMode, EncryptionMode};
+use crate::backend::object_ops::{Deletable, Generatable, Importable, Obtainable};
+use crate::backend::sym::SymOps;
+use crate::backend::types::{ImportObjectSpec, ObjectSpec};
+use crate::utils::{fill_object_spec, list_objects, print_failed_delete, print_object_properties, select_algorithm, select_delete_objects};
+use crate::utils::{read_aes_key_hex, read_input_bytes, write_bytes_to_file};
 use crate::error::MgmError;
 use crate::MAIN_STRING;
 
@@ -140,31 +144,33 @@ fn get_command(authkey: &ObjectDescriptor) -> Result<SymCommand, MgmError> {
 }
 
 fn list(session: &Session) -> Result<(), MgmError> {
-    let keys = get_sym_keys(session)?;
-    list_objects(session, &keys)
+    let keys = SymOps.get_all_objects(session)?;
+    list_objects(&keys)
 }
 
 fn print_key_properties(session: &Session) -> Result<(), MgmError> {
-    print_object_properties(session, get_sym_keys(session)?)
+    print_object_properties(&SymOps.get_all_objects(session)?)
+}
+
+fn delete(session: &Session) -> Result<(), MgmError> {
+    let objects = select_delete_objects(&SymOps.get_all_objects(session)?)?;
+    let failed = SymOps.delete_multiple(session, &objects);
+    print_failed_delete(&failed)
 }
 
 fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let algorithm = cliclack::select("Choose key algorithm:")
-        .item(ObjectAlgorithm::Aes128, "AES128", format!("yubihsm-shell name: {}", ObjectAlgorithm::Aes128))
-        .item(ObjectAlgorithm::Aes192, "AES192", format!("yubihsm-shell name: {}", ObjectAlgorithm::Aes192))
-        .item(ObjectAlgorithm::Aes256, "AES256", format!("yubihsm-shell name: {}", ObjectAlgorithm::Aes256))
-        .interact()?;
+    let key_algo = select_algorithm("Select AES key algorithm:", &SymOps::get_object_algorithms(), None)?;
 
-    let mut new_key = get_new_object_basics(
-        authkey, ObjectType::SymmetricKey, &AES_KEY_CAPABILITIES, &[])?;
-    new_key.algorithm = algorithm;
+    let mut new_key = ObjectSpec::empty();
+    new_key.algorithm = key_algo;
+    fill_object_spec(authkey, &mut new_key,  &SymOps::get_object_capabilities(&key_algo), &[])?;
 
-    cliclack::note("Generating AES key with:", get_new_object_note(&new_key))?;
+    cliclack::note("Generating AES key with:", new_key.to_string())?;
 
     if cliclack::confirm("Generate key?").interact()? {
         let mut spinner = cliclack::spinner();
         spinner.start("Generating AES key...");
-        new_key.id = crate::backend::sym_utils::generate(session, &new_key)?;
+        new_key.id = SymOps.generate(session, &new_key)?;
         spinner.stop("");
         cliclack::log::success(
             format!("Generated AES key with ID 0x{:04x} on the device", new_key.id))?;
@@ -174,24 +180,21 @@ fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmErro
 
 fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     let key = read_aes_key_hex("Enter AES key in HEX format:")?;
+    let key_algo = SymOps::get_symkey_algorithm_from_keylen(key.len())?;
 
-    let mut new_key = ObjectDescriptor::new();
-    new_key.algorithm = get_algorithm_from_keylen(key.len())?;
-    fill_new_object_properties(&mut new_key, authkey, &AES_KEY_CAPABILITIES, &[])?;
+    let mut new_key = ImportObjectSpec::empty();
+    new_key.data.push(key.clone());
+    new_key.object.algorithm = key_algo;
+    fill_object_spec(authkey, &mut new_key.object,  &SymOps::get_object_capabilities(&key_algo), &[])?;
 
-    cliclack::note("Import AES key with:", get_new_object_note(&new_key))?;
+    cliclack::note("Import AES key with:", new_key.object.to_string())?;
 
     if cliclack::confirm("Import key?").interact()? {
-        new_key.id = crate::backend::sym_utils::import(session, &new_key, &key)?;
+        new_key.object.id = SymOps.import(session, &new_key)?;
         cliclack::log::success(
-            format!("Imported AES key with ID 0x{:04x} on the device", new_key.id))?;
+            format!("Imported AES key with ID 0x{:04x} on the device", new_key.object.id))?;
     }
     Ok(())
-}
-
-fn delete(session: &Session) -> Result<(), MgmError> {
-    let objects = select_delete_objects(session, &get_sym_keys(session)?)?;
-    delete_objects(session, &objects)
 }
 
 fn operate(session: &Session, authkey: &ObjectDescriptor, enc_mode: EncryptionMode) -> Result<(), MgmError> {
@@ -207,15 +210,9 @@ fn operate(session: &Session, authkey: &ObjectDescriptor, enc_mode: EncryptionMo
     }
     let aes_mode = aes_mode.interact()?;
 
-    let op_capability = match aes_mode {
-        AesMode::Ecb => if enc_mode == EncryptionMode::Encrypt {ObjectCapability::EncryptEcb} else {ObjectCapability::DecryptEcb},
-        AesMode::Cbc => if enc_mode == EncryptionMode::Encrypt {ObjectCapability::EncryptCbc} else {ObjectCapability::DecryptCbc},
-    };
-    let key = get_operation_key(
-        session, authkey,
-        [op_capability].to_vec().as_ref(),
-        ObjectType::SymmetricKey,
-        &[])?;
+    let key = select_one_object(
+        "Select AES key for operation:",
+        &SymOps::get_operation_keys(session, authkey, enc_mode, aes_mode)?)?;
 
     let in_data = read_input_bytes(
         "Enter data in hex or path to binary file (data must be a multiple of 16 bytes long):", true)?;
@@ -229,13 +226,20 @@ fn operate(session: &Session, authkey: &ObjectDescriptor, enc_mode: EncryptionMo
         vec![]
     };
 
-    let out_data = crate::backend::sym_utils::operate(session, &key, aes_mode, enc_mode, iv.as_slice(), &in_data)?;
+    let op_spec = AesOperationSpec {
+        operation_key: key,
+        aes_mode,
+        enc_mode,
+        iv,
+        data: in_data,
+    };
+    let out_data = SymOps::operate(session, op_spec)?;
 
     cliclack::log::success(hex::encode(&out_data))?;
 
     if cliclack::confirm("Write to binary file?").interact()? {
         let filename = if enc_mode == EncryptionMode::Encrypt {"data.enc"} else {"data.dec"};
-        if let Err(err) = write_bytes_to_file(out_data, "", filename) {
+        if let Err(err) = write_bytes_to_file(&out_data, "", filename) {
             cliclack::log::error(format!("Failed to write binary data to file. {}", err))?;
         }
     }
@@ -247,9 +251,10 @@ fn get_iv() -> Result<Vec<u8>, MgmError> {
     let iv: String = cliclack::input("Enter 16 bytes IV in HEX format:")
         .default_input("00000000000000000000000000000000")
         .validate(|input: &String| {
-            if hex::decode(input).is_err() {
+            let hex = hex::decode(input);
+            if hex.is_err() {
                 Err("Input must be in hex format")
-            } else if input.len() != 32 {
+            } else if hex.unwrap().len() != 16 {
                 Err("IV must be 16 bytes long")
             } else {
                 Ok(())

@@ -15,8 +15,11 @@
  */
 
 pub mod common;
-pub mod asym_utils;
-pub mod sym_utils;
-pub mod auth_utils;
-pub mod wrap_utils;
-pub mod ksp_utils;
+pub mod types;
+pub mod algorithms;
+pub mod object_ops;
+pub mod asym;
+pub mod sym;
+pub mod auth;
+pub mod wrap;
+pub mod ksp;

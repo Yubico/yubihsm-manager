@@ -21,13 +21,19 @@ use std::sync::LazyLock;
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::backend::asym_utils::get_asym_object_from_der;
+use crate::backend::asym::AsymOps;
+use crate::backend::object_ops::Importable;
+use crate::backend::types::{ImportObjectSpec, ObjectSpec};
+use crate::utils::fill_object_spec;
+use crate::backend::auth::AuthOps;
+use crate::backend::object_ops::{Deletable, Obtainable};
+use crate::utils::{list_objects, print_failed_delete, print_object_properties, select_delete_objects};
 use crate::error::MgmError;
-use crate::utils::{get_new_object_basics, get_password, delete_objects,
-                   list_objects, print_object_properties, select_capabilities, select_delete_objects,
-                   get_file_path, read_pem_file};
-use crate::backend::common::{get_new_object_note, get_delegated_capabilities};
-use crate::backend::auth_utils::{AuthenticationType, AuthenticationKey, ASYM_ADMIN_CAPABILITIES, ASYM_USER_CAPABILITIES, AUDITOR_CAPABILITIES, UserType, get_auth_keys, import_authkey};
+use crate::utils::{get_password,
+                   select_capabilities,
+                   get_file_path, read_pem_from_file};
+use crate::backend::common::{get_delegated_capabilities};
+use crate::backend::auth::{AuthenticationType, UserType};
 use crate::MAIN_STRING;
 
 static AUTH_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Authentication keys", MAIN_STRING));
@@ -82,19 +88,19 @@ pub fn exec_auth_command(session: &Session, authkey: &ObjectDescriptor) -> Resul
             },
             AuthCommand::SetupUser => {
                 println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::SetupUser);
-                setup_user(session, authkey, UserType::AsymUser)
+                create_authkey(session, authkey, UserType::AsymUser)
             },
             AuthCommand::SetupAdmin => {
                 println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::SetupAdmin);
-                setup_user(session, authkey, UserType::AsymAdmin)
+                create_authkey(session, authkey, UserType::AsymAdmin)
             },
             AuthCommand::SetupAuditor => {
                 println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::SetupAuditor);
-                setup_user(session, authkey, UserType::Auditor)
+                create_authkey(session, authkey, UserType::Auditor)
             },
             AuthCommand::SetupBackupAdmin => {
                 println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::SetupBackupAdmin);
-                setup_user(session, authkey, UserType::BackupAdmin)
+                create_authkey(session, authkey, UserType::BackupAdmin)
             },
             AuthCommand::ReturnToMainMenu => return Ok(()),
             AuthCommand::Exit => std::process::exit(0),
@@ -118,11 +124,11 @@ fn get_auth_command(authkey: &ObjectDescriptor) -> Result<AuthCommand, MgmError>
     }
     if capabilities.contains(&ObjectCapability::PutAuthenticationKey) {
 
-        if HashSet::from(ASYM_USER_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
+        if HashSet::from(AuthOps::KEY_USER_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
             commands = commands.item(
                 AuthCommand::SetupUser, AuthCommand::SetupUser, "Can only use asymmetric and symmetric keys");
         }
-        if HashSet::from(ASYM_ADMIN_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
+        if HashSet::from(AuthOps::KEY_ADMIN_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
             commands = commands.item(
                 AuthCommand::SetupAdmin, AuthCommand::SetupAdmin, "Can only manage asymmetric and symmetric keys");
         }
@@ -139,53 +145,53 @@ fn get_auth_command(authkey: &ObjectDescriptor) -> Result<AuthCommand, MgmError>
 }
 
 fn list(session: &Session) -> Result<(), MgmError> {
-    list_objects(session, &get_auth_keys(session)?)
+    list_objects(&AuthOps.get_all_objects(session)?)
 }
 
 fn print_key_properties(session: &Session) -> Result<(), MgmError> {
-    print_object_properties(session, get_auth_keys(session)?)
+    print_object_properties(&AuthOps.get_all_objects(session)?)
 }
 
 fn delete(session: &Session) -> Result<(), MgmError> {
-    let objects = select_delete_objects(session, &get_auth_keys(session)?)?;
-    delete_objects(session, &objects)
+    let objects = select_delete_objects(&AuthOps.get_all_objects(session)?)?;
+    let failed = AuthOps.delete_multiple(session, &objects);
+    print_failed_delete(&failed)
 }
 
 fn create_authkey(
     session: &Session,
-    new_authkey: &ObjectDescriptor,
+    current_authkey: &ObjectDescriptor,
+    user_type: UserType
 ) -> Result<(), MgmError> {
+
+    let mut new_spec = setup_user(current_authkey, user_type)?;
+    let mut new_import_spec = ImportObjectSpec::empty();
 
     let auth_type = cliclack::select("Select authentication type:")
         .item(AuthenticationType::PasswordDerived, "Password derived", "Session keys are derived from a password")
         .item(AuthenticationType::Ecp256, "EC P256", "Session authenticated using EC key with curve secp256r1")
         .interact()?;
 
-    let mut authkey = AuthenticationKey {
-        descriptor: new_authkey.clone(),
-        auth_type,
-        key: Vec::new(),
-    };
-
-    let mut new_key_note = get_new_object_note(new_authkey);
+    let mut new_key_note = new_spec.to_string();
 
     match auth_type {
         AuthenticationType::PasswordDerived => {
+            new_spec.algorithm = ObjectAlgorithm::Aes128YubicoAuthentication;
             new_key_note = new_key_note.replace("Algorithm: Unknown", "Authentication Type: Password Derived");
 
             let pwd = get_password("Enter user password:")?;
-            authkey.key = pwd.as_bytes().to_vec();
+            new_import_spec.data.push(pwd.as_bytes().to_vec());
         },
         AuthenticationType::Ecp256 => {
+            new_spec.algorithm = ObjectAlgorithm::Ecp256YubicoAuthentication;
             new_key_note = new_key_note.replace("Algorithm: Unknown", "Authentication Type: Asymmetric");
 
             loop {
-                let pubkey = read_pem_file(get_file_path("Enter path to ECP256 public key PEM file: ")?)?;
-                let pubkey = pubkey.contents();
+                let pubkey = read_pem_from_file(get_file_path("Enter path to ECP256 public key PEM file: ")?)?;
 
-                let (_type, _algo, _value) = get_asym_object_from_der(pubkey)?;
+                let (_type, _algo, _value) = AsymOps::parse_asym_pem(pubkey)?;
                 if _type == ObjectType::PublicKey && _algo == ObjectAlgorithm::EcP256 {
-                    authkey.key = _value;
+                    new_import_spec.data.push(_value);
                     break;
                 }
                 cliclack::log::info(
@@ -193,38 +199,36 @@ fn create_authkey(
             }
         }
     };
+    new_import_spec.object = new_spec;
 
     cliclack::note("Creating new authentication key with:", new_key_note)?;
     if cliclack::confirm("Create key?").interact()? {
-        let id = import_authkey(session, &authkey)?;
+        let id = AuthOps.import(session, &new_import_spec)?;
         cliclack::log::success(format!("Created new authentication key with ID 0x{id:04x}"))?;
     }
     Ok(())
 }
 
-fn setup_user(session: &Session, current_authkey: &ObjectDescriptor, user_type: UserType) -> Result<(), MgmError> {
-    let new_authkey = match user_type {
-        UserType::AsymUser => get_new_object_basics(
-            current_authkey, ObjectType::AuthenticationKey,&ASYM_USER_CAPABILITIES, &ASYM_USER_CAPABILITIES)?,
+fn setup_user(current_authkey: &ObjectDescriptor, user_type: UserType) -> Result<ObjectSpec, MgmError> {
+    let mut new_key = ObjectSpec::empty();
+    match user_type {
+        UserType::AsymUser =>
+            fill_object_spec(current_authkey, &mut new_key, &AuthOps::KEY_USER_CAPABILITIES, &AuthOps::KEY_USER_CAPABILITIES)?,
         UserType::AsymAdmin => {
-            let mut new_key = get_new_object_basics(
-                current_authkey, ObjectType::AuthenticationKey, &ASYM_ADMIN_CAPABILITIES, &[])?;
-            let delegated_caps = select_capabilities(
-                "Select delegated capabilities", current_authkey, &ASYM_USER_CAPABILITIES, &[])?;
-            new_key.delegated_capabilities = if delegated_caps.is_empty() { None } else { Some(delegated_caps) };
-            new_key
+            fill_object_spec(
+                current_authkey, &mut new_key, &AuthOps::KEY_ADMIN_CAPABILITIES, &[])?;
+            new_key.delegated_capabilities = select_capabilities(
+                "Select delegated capabilities", current_authkey, &AuthOps::KEY_USER_CAPABILITIES, &[])?;
         },
-        UserType::Auditor => get_new_object_basics(
-            current_authkey, ObjectType::AuthenticationKey, &AUDITOR_CAPABILITIES, &[ObjectCapability::GetLogEntries])?,
+        UserType::Auditor => fill_object_spec(
+            current_authkey, &mut new_key, &AuthOps::AUDITOR_CAPABILITIES, &[ObjectCapability::GetLogEntries])?,
         UserType::BackupAdmin => {
             let current_authkey_delegated = get_delegated_capabilities(current_authkey);
-            let mut new_key = get_new_object_basics(
-                current_authkey, ObjectType::AuthenticationKey, current_authkey_delegated.as_slice(), current_authkey_delegated.as_slice())?;
-            let delegated_caps = select_capabilities(
+            fill_object_spec(
+                current_authkey, &mut new_key, current_authkey_delegated.as_slice(), current_authkey_delegated.as_slice())?;
+            new_key.delegated_capabilities = select_capabilities(
                 "Select delegated capabilities", current_authkey, current_authkey_delegated.as_slice(), current_authkey_delegated.as_slice())?;
-            new_key.delegated_capabilities = if delegated_caps.is_empty() { None } else { Some(delegated_caps) };
-            new_key
         },
     };
-    create_authkey(session, &new_authkey)
+    Ok(new_key)
 }
