@@ -1,6 +1,7 @@
 use std::fmt;
 use std::fmt::Display;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
+use crate::backend::common::contains_all;
 
 #[derive(Clone, Debug)]
 pub struct ObjectSpec {
@@ -138,4 +139,88 @@ pub struct YhAlgorithm {
     pub algorithm: ObjectAlgorithm,
     pub label: &'static str,
     pub description: &'static str,
+}
+
+
+
+#[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
+pub enum YhCommand {
+    #[default]
+    List,
+    GetKeyProperties,
+    Generate,
+    Import,
+    Delete,
+    GetPublicKey,
+    GetCertificate,
+    Sign,
+    Encrypt,
+    Decrypt,
+    DeriveEcdh,
+    SetupUser,
+    SetupAdmin,
+    SetupAuditor,
+    SetupBackupAdmin,
+    SignAttestationCert,
+    ExportWrapped,
+    ImportWrapped,
+    BackupDevice,
+    RestoreDevice,
+    ReturnToMainMenu,
+    Exit,
+}
+
+#[derive(Clone, Debug, Copy, PartialEq,  Eq, Default)]
+pub struct CommandSpec {
+    pub command: YhCommand,
+    pub label: &'static str,
+    pub description: &'static str,
+    pub required_capabilities: &'static [ObjectCapability],
+    pub require_all_capabilities: bool,
+}
+
+impl CommandSpec {
+    pub const RETURN_COMMAND: CommandSpec = CommandSpec {
+        command: YhCommand::ReturnToMainMenu,
+        label: "Return to Previous Menu",
+        description: "",
+        required_capabilities: &[],
+        require_all_capabilities: false,
+    };
+
+    pub const EXIT_COMMAND: CommandSpec = CommandSpec {
+        command: YhCommand::Exit,
+        label: "Exit",
+        description: "",
+        required_capabilities: &[],
+        require_all_capabilities: false,
+    };
+
+    pub fn new(
+        command: YhCommand,
+        label: &'static str,
+        description: &'static str,
+        required_capabilities: &'static [ObjectCapability],
+        require_all_capabilities: bool,
+    ) -> Self {
+        Self {
+            command,
+            label,
+            description,
+            required_capabilities,
+            require_all_capabilities,
+        }
+    }
+
+    pub fn is_authkey_authorized(&self, authkey: &ObjectDescriptor) -> bool {
+        if self.required_capabilities.is_empty() {
+            return true;
+        }
+        if self.require_all_capabilities {
+            contains_all(&authkey.capabilities, &self.required_capabilities)
+        } else {
+            self.required_capabilities.iter().any(|cap| authkey.capabilities.contains(cap))
+        }
+
+    }
 }

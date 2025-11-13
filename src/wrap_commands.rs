@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::fmt::Display;
 use std::fs::File;
 use std::io::Read;
 
@@ -25,6 +23,9 @@ use openssl::base64;
 use openssl::bn::BigNum;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
+use crate::utils::print_menu_headers;
+use crate::backend::types::YhCommand;
+use crate::utils::select_command;
 use crate::backend::wrap::{WrapKeyType};
 use crate::{asym_commands};
 use crate::backend::asym::AsymOps;
@@ -46,7 +47,8 @@ use crate::sym_commands::{AES_KEY_CAPABILITIES};
 use crate::asym_commands::{get_hashed_bytes, RSA_KEY_CAPABILITIES, EC_KEY_CAPABILITIES, ED_KEY_CAPABILITIES, RSA_KEY_ALGORITHM, EC_KEY_ALGORITHM};
 use crate::MAIN_STRING;
 
-static WRAP_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Wrap keys", MAIN_STRING));
+static WRAP_HEADER: &str = "Wrap keys";
+
 static SHARE_RE_256: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{70}$").unwrap());
 static SHARE_RE_192: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{59}$").unwrap());
 static SHARE_RE_128: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{48}$").unwrap());
@@ -125,7 +127,7 @@ impl Display for WrapCommand {
 pub fn exec_wrap_command(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     loop {
 
-        println!("\n{}", *WRAP_STRING);
+        print_menu_headers(&[crate::MAIN_HEADER, WRAP_HEADER]);
 
         let cmd = get_wrap_command(authkey)?;
         let result = match cmd {
@@ -234,20 +236,6 @@ fn get_new_key_note(key_desc: &ObjectDescriptor) -> String {
             .replace("Origin: Generated\t", "")
             .replace("\t", "\n")
 }
-
-// pub fn fill_wrap_spec(authkey: &ObjectDescriptor, spec: &mut ObjectSpec) -> Result<(), MgmError> {
-//     if spec.algorithm == ObjectAlgorithm::ANY {
-//         let mut key_algo = cliclack::select("Select key type");
-//         for algo in &WrapOps::get_object_algorithms() {
-//             key_algo = key_algo.item(algo.algorithm, algo.label, algo.description);
-//         }
-//         spec.algorithm = key_algo.interact()?;
-//     }
-//     fill_object_spec(authkey, spec, &WrapOps::get_wrapkey_capabilities(WrapKeyType::from((ObjectType::WrapKey, spec.algorithm))), &[])?;
-//     spec.delegated_capabilities = select_capabilities(
-//         "Select delegated capabilities", authkey, get_delegated_capabilities(authkey).as_slice(), get_delegated_capabilities(authkey).as_slice())?;
-//     Ok(())
-// }
 
 fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     let algorithm = cliclack::select("Choose key algorithm:")

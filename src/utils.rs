@@ -27,12 +27,26 @@ use pem::Pem;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain};
 use crate::error::MgmError;
 use comfy_table::{ContentArrangement, Table};
-use crate::backend::types::{ObjectSpec, YhAlgorithm};
+use crate::backend::types::{ObjectSpec, YhAlgorithm, CommandSpec};
 use crate::backend::common::{get_delegated_capabilities};
 
 const MULTI_SELECT_PROMPT_HELP: &str = ". Press the space button to select and unselect item. Press 'Enter' when done.";
 
+pub fn print_menu_headers(menu_headers:&[&str]) {
+    if menu_headers.last() == Some(&CommandSpec::RETURN_COMMAND.label) ||
+        menu_headers.last() == Some(&CommandSpec::EXIT_COMMAND.label) {
+        return;
+    }
+    println!("\n{}", menu_headers.join(" > "));
+}
 
+pub fn select_command(commands: &[CommandSpec]) -> Result<CommandSpec, MgmError> {
+    let mut cmd_select = cliclack::select("");
+    for cmd in commands {
+        cmd_select = cmd_select.item(cmd.clone(), cmd.label, cmd.description);
+    }
+    Ok(cmd_select.interact()?)
+}
 
 pub fn get_password(prompt: &str) -> Result<String, MgmError> {
     let pwd = cliclack::password(prompt)

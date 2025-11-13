@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::fmt::Display;
-use std::sync::LazyLock;
-
 use yubihsmrs::object::{ObjectCapability, ObjectDescriptor};
 use yubihsmrs::Session;
+use crate::utils::print_menu_headers;
+use crate::backend::types::YhCommand;
+use crate::utils::select_command;
 use crate::utils::select_one_object;
 use crate::backend::sym::AesOperationSpec;
 use crate::backend::sym::{AesMode, EncryptionMode};
@@ -29,7 +28,6 @@ use crate::backend::types::{ImportObjectSpec, ObjectSpec};
 use crate::utils::{fill_object_spec, list_objects, print_failed_delete, print_object_properties, select_algorithm, select_delete_objects};
 use crate::utils::{read_aes_key_hex, read_input_bytes, write_bytes_to_file};
 use crate::error::MgmError;
-use crate::MAIN_STRING;
 
 static SYM_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Symmetric keys", MAIN_STRING));
 
@@ -73,74 +71,28 @@ impl Display for SymCommand {
 pub fn exec_sym_command(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
 
     loop {
-        println!("\n{}", *SYM_STRING);
+        print_menu_headers(&[crate::MAIN_HEADER, SYM_HEADER]);
 
-        let cmd = get_command(authkey)?;
-        let res = match cmd {
-            SymCommand::List => {
-                println!("\n{} > {}\n", *SYM_STRING, SymCommand::List);
-                list(session)
-            },
-            SymCommand::GetKeyProperties => {
-                println!("\n{} > {}\n", *SYM_STRING, SymCommand::GetKeyProperties);
-                print_key_properties(session)
-            },
-            SymCommand::Generate => {
-                println!("\n{} > {}\n", *SYM_STRING, SymCommand::Generate);
-                generate(session, authkey)
-            },
-            SymCommand::Import => {
-                println!("\n{} > {}\n", *SYM_STRING, SymCommand::Import);
-                import(session, authkey)
-            },
-            SymCommand::Delete => {
-                println!("\n{} > {}\n", *SYM_STRING, SymCommand::Delete);
-                delete(session)
-            },
-            SymCommand::Encrypt => {
-                println!("\n{} > {}\n", *SYM_STRING, SymCommand::Encrypt);
-                operate(session, authkey, EncryptionMode::Encrypt)
-            },
-            SymCommand::Decrypt => {
-                println!("\n{} > {}\n", *SYM_STRING, SymCommand::Decrypt);
-                operate(session, authkey, EncryptionMode::Decrypt)
-            },
-            SymCommand::ReturnToMainMenu => return Ok(()),
-            SymCommand::Exit => std::process::exit(0),
+        let cmd = select_command(&SymOps::get_authorized_commands(authkey))?;
+        print_menu_headers(&[crate::MAIN_HEADER, SYM_HEADER, cmd.label]);
+
+        let res = match cmd.command {
+            YhCommand::List => list(session),
+            YhCommand::GetKeyProperties => print_key_properties(session),
+            YhCommand::Generate => generate(session, authkey),
+            YhCommand::Import => import(session, authkey),
+            YhCommand::Delete => delete(session),
+            YhCommand::Encrypt => operate(session, authkey, EncryptionMode::Encrypt),
+            YhCommand::Decrypt => operate(session, authkey, EncryptionMode::Decrypt),
+            YhCommand::ReturnToMainMenu => return Ok(()),
+            YhCommand::Exit => std::process::exit(0),
+            _ => unreachable!()
         };
 
         if let Err(e) = res {
             cliclack::log::error(e)?
         }
     }
-}
-
-fn get_command(authkey: &ObjectDescriptor) -> Result<SymCommand, MgmError> {
-    let capabilities= &authkey.capabilities;
-
-    let mut commands = cliclack::select("").initial_value(SymCommand::List);
-    commands = commands.item(SymCommand::List, SymCommand::List, "");
-    commands = commands.item(SymCommand::GetKeyProperties, SymCommand::GetKeyProperties, "");
-    if capabilities.contains(&ObjectCapability::GenerateSymmetricKey) {
-        commands = commands.item(SymCommand::Generate, SymCommand::Generate, "");
-    }
-    if capabilities.contains(&ObjectCapability::PutSymmetricKey) {
-        commands = commands.item(SymCommand::Import, SymCommand::Import, "");
-    }
-    if capabilities.contains(&ObjectCapability::DeleteSymmetricKey) {
-        commands = commands.item(SymCommand::Delete, SymCommand::Delete, "");
-    }
-    if capabilities.contains(&ObjectCapability::EncryptEcb) ||
-        capabilities.contains(&ObjectCapability::EncryptCbc) {
-        commands = commands.item(SymCommand::Encrypt, SymCommand::Encrypt, "");
-    }
-    if capabilities.contains(&ObjectCapability::DecryptEcb) ||
-        capabilities.contains(&ObjectCapability::DecryptCbc) {
-        commands = commands.item(SymCommand::Decrypt, SymCommand::Decrypt, "");
-    }
-    commands = commands.item(SymCommand::ReturnToMainMenu, SymCommand::ReturnToMainMenu, "");
-    commands = commands.item(SymCommand::Exit, SymCommand::Exit, "");
-    Ok(commands.interact()?)
 }
 
 fn list(session: &Session) -> Result<(), MgmError> {

@@ -3,6 +3,8 @@ use std::fmt::Display;
 use openssl::base64;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
+use crate::backend::common::get_authorized_commands;
+use crate::backend::types::{CommandSpec, YhCommand};
 use crate::backend::asym::AsymOps;
 use crate::backend::common::{contains_all};
 use crate::backend::object_ops::Importable;
@@ -160,6 +162,87 @@ impl Importable for WrapOps {
 }
 
 impl WrapOps {
+
+    const WRAP_COMMANDS: [CommandSpec;12] = [
+        CommandSpec {
+            command: YhCommand::List,
+            label: "List",
+            description: "List all wrap keys stored in the YubiHSM",
+            required_capabilities: &[],
+            require_all_capabilities: false
+        },
+        CommandSpec {
+            command: YhCommand::GetKeyProperties,
+            label: "Get Object Properties",
+            description: "Get properties of a wrap key stored in the YubiHSM",
+            required_capabilities: &[],
+            require_all_capabilities: false,
+        },
+        CommandSpec {
+            command: YhCommand::Generate,
+            label: "Generate",
+            description: "Generate a new wrap key inside the YubiHSM",
+            required_capabilities: &[ObjectCapability::GenerateWrapKey],
+            require_all_capabilities: false,
+        },
+        CommandSpec {
+            command: YhCommand::Import,
+            label: "Import",
+            description: "Import a wrap key into the YubiHSM",
+            required_capabilities: &[ObjectCapability::PutWrapKey],
+            require_all_capabilities: false,
+        },
+        CommandSpec {
+            command: YhCommand::Delete,
+            label: "Delete",
+            description: "Delete a wrap key from the YubiHSM",
+            required_capabilities: &[ObjectCapability::DeleteWrapKey],
+            require_all_capabilities: false,
+        },
+        CommandSpec {
+            command: YhCommand::GetPublicKey,
+            label: "Get Public Key",
+            description: "Retrieve the public key portion of an RSA wrap key stored in the YubiHSM",
+            required_capabilities: &[],
+            require_all_capabilities: false,
+        },
+        CommandSpec {
+            command: YhCommand::ExportWrapped,
+            label: "Export objects under wrap",
+            description: "Writes files ending with .yhw to specified directory",
+            required_capabilities: &[ObjectCapability::ExportWrapped],
+            require_all_capabilities: false,
+        },
+        CommandSpec {
+            command: YhCommand::ImportWrapped,
+            label: "Import wrapped object",
+            description: "Reads one file ending with .yhw and imports the wrapped object",
+            required_capabilities: &[ObjectCapability::ImportWrapped],
+            require_all_capabilities: false,
+        },
+        CommandSpec {
+            command: YhCommand::BackupDevice,
+            label: "Backup device",
+            description: "Exports all exportable objects under wrap",
+            required_capabilities: &[ObjectCapability::ExportWrapped],
+            require_all_capabilities: false,
+        },
+        CommandSpec {
+            command: YhCommand::RestoreDevice,
+            label: "Restore device",
+            description: "Reads all files ending with .yhw in a specified directory and imports the wrapped objects",
+            required_capabilities: &[ObjectCapability::ImportWrapped],
+            require_all_capabilities: false,
+        },
+        CommandSpec::RETURN_COMMAND,
+        CommandSpec::EXIT_COMMAND,
+    ];
+
+    pub fn get_authorized_commands(
+        authkey: &ObjectDescriptor,
+    ) -> Vec<CommandSpec> {
+        get_authorized_commands(authkey, &Self::WRAP_COMMANDS)
+    }
 
     pub fn get_algorithm_from_keylen(keylen: usize) -> Result<ObjectAlgorithm, MgmError> {
         match keylen {

@@ -1,9 +1,10 @@
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
+use crate::backend::common::get_authorized_commands;
 use crate::backend::common::{extract_algorithms, get_op_keys};
 use crate::backend::common::get_descriptors_from_handlers;
 use crate::backend::object_ops::{Deletable, Generatable, Importable, Obtainable};
-use crate::backend::types::{ImportObjectSpec, ObjectSpec, YhAlgorithm};
+use crate::backend::types::{ImportObjectSpec, ObjectSpec, YhAlgorithm, CommandSpec, YhCommand};
 use crate::error::MgmError;
 
 pub struct SymOps;
@@ -96,6 +97,66 @@ impl SymOps {
         ObjectCapability::EncryptEcb,
         ObjectCapability::DecryptEcb,
         ObjectCapability::ExportableUnderWrap];
+
+    const SYM_COMMANDS: [CommandSpec;9] = [
+        CommandSpec {
+            command: YhCommand::List,
+            label: "List",
+            description: "List all asymmetric keys and X509 certificates stored in the YubiHSM",
+            required_capabilities: &[],
+            require_all_capabilities: false
+        },
+        CommandSpec {
+            command: YhCommand::GetKeyProperties,
+            label: "Get Object Properties",
+            description: "Get properties of an asymmetric key or X509 certificate stored in the YubiHSM",
+            required_capabilities: &[],
+            require_all_capabilities: false,
+        },
+        CommandSpec {
+            command: YhCommand::Generate,
+            label: "Generate",
+            description: "Generate a new asymmetric key inside the YubiHSM",
+            required_capabilities: &[ObjectCapability::GenerateSymmetricKey],
+            require_all_capabilities: false,
+        },
+        CommandSpec {
+            command: YhCommand::Import,
+            label: "Import",
+            description: "Import an asymmetric key or X509 certificate into the YubiHSM",
+            required_capabilities: &[ObjectCapability::PutSymmetricKey],
+            require_all_capabilities: false,
+        },
+        CommandSpec {
+            command: YhCommand::Delete,
+            label: "Delete",
+            description: "Delete an asymmetric key or X509 certificate from the YubiHSM",
+            required_capabilities: &[ObjectCapability::DeleteSymmetricKey],
+            require_all_capabilities: false,
+        },
+        CommandSpec {
+            command: YhCommand::Encrypt,
+            label: "Encrypt",
+            description: "Encrypt data using an AES key stored in the YubiHSM",
+            required_capabilities: &[ObjectCapability::EncryptEcb, ObjectCapability::EncryptCbc],
+            require_all_capabilities: false,
+        },
+        CommandSpec {
+            command: YhCommand::Decrypt,
+            label: "Decrypt",
+            description: "Decrypt data using an AES key stored in the YubiHSM",
+            required_capabilities: &[ObjectCapability::DecryptEcb, ObjectCapability::DecryptCbc],
+            require_all_capabilities: false,
+        },
+        CommandSpec::RETURN_COMMAND,
+        CommandSpec::EXIT_COMMAND,
+    ];
+
+    pub fn get_authorized_commands(
+        authkey: &ObjectDescriptor,
+    ) -> Vec<CommandSpec> {
+        get_authorized_commands(authkey, &Self::SYM_COMMANDS)
+    }
 
     pub fn is_aes_algorithm(algorithm: &ObjectAlgorithm) -> bool {
         Self::AES_KEY_ALGORITHMS.iter().any(|a| a.algorithm == *algorithm)

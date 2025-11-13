@@ -1,8 +1,8 @@
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::backend::object_ops::Importable;
-use crate::backend::types::{ImportObjectSpec, YhAlgorithm};
-use crate::backend::common::get_descriptors_from_handlers;
+use crate::backend::types::{ImportObjectSpec, YhAlgorithm, CommandSpec, YhCommand};
+use crate::backend::common::{get_descriptors_from_handlers, get_authorized_commands};
 use crate::backend::object_ops::{Deletable, Obtainable};
 use crate::error::MgmError;
 
@@ -115,4 +115,64 @@ impl AuthOps {
         ObjectCapability::GetLogEntries,
         ObjectCapability::ExportableUnderWrap,
     ];
+
+    const AUTH_COMMANDS: [CommandSpec;9] = [
+        CommandSpec {
+            command: YhCommand::List,
+            label: "List",
+            description: "List all authentication keys stored in the YubiHSM",
+            required_capabilities: &[],
+            require_all_capabilities: false
+        },
+        CommandSpec {
+            command: YhCommand::GetKeyProperties,
+            label: "Get object properties",
+            description: "Get properties of an authentication key stored in the YubiHSM",
+            required_capabilities: &[],
+            require_all_capabilities: false,
+        },
+        CommandSpec {
+            command: YhCommand::Delete,
+            label: "Delete",
+            description: "Delete an authentication key from the YubiHSM",
+            required_capabilities: &[ObjectCapability::DeleteAuthenticationKey],
+            require_all_capabilities: false,
+        },
+        CommandSpec {
+            command: YhCommand::SetupUser,
+            label: "Setup (a)symmetric keys user",
+            description: "Can only use (a)symmetric keys stored in the YubiHSM",
+            required_capabilities: &[ObjectCapability::PutAuthenticationKey],
+            require_all_capabilities: false,
+        },
+        CommandSpec {
+            command: YhCommand::SetupAdmin,
+            label: "Setup (a)symmetric keys admin",
+            description: "Can only manage (a)symmetric keys stored in the YubiHSM",
+            required_capabilities: &[ObjectCapability::PutAuthenticationKey],
+            require_all_capabilities: false,
+        },
+        CommandSpec {
+            command: YhCommand::SetupAuditor,
+            label: "Setup auditor user",
+            description: "Can only perform audit functions on the YubiHSM",
+            required_capabilities: &[ObjectCapability::PutAuthenticationKey],
+            require_all_capabilities: false,
+        },
+        CommandSpec {
+            command: YhCommand::SetupBackupAdmin,
+            label: "Setup custom user",
+            description: "Can have all capabilities of the current user",
+            required_capabilities: &[ObjectCapability::PutAuthenticationKey],
+            require_all_capabilities: false,
+        },
+        CommandSpec::RETURN_COMMAND,
+        CommandSpec::EXIT_COMMAND,
+    ];
+
+    pub fn get_authorized_commands(
+        authkey: &ObjectDescriptor,
+    ) -> Vec<CommandSpec> {
+        get_authorized_commands(authkey, &Self::AUTH_COMMANDS)
+    }
 }

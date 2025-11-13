@@ -66,7 +66,7 @@ macro_rules! unwrap_or_exit1 {
 
 const YH_EC_P256_PUBKEY_LEN: usize = 65;
 
-pub const MAIN_STRING: &str = "YubiHSM Manager";
+pub static MAIN_HEADER: &str = "YubiHSM Manager";
 
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
 enum MainCommand {
@@ -230,15 +230,14 @@ fn main() -> Result<(), MgmError>{
         }
         unwrap_or_exit1!(h.establish_session_asym(authkey, privkey.as_slice(), device_pubkey.as_slice()), "Unable to open asymmetric session")
     } else {
-        // let password = match matches.get_one::<String>("password") {
-        //     Some(password) => password.to_owned(),
-        //     None => {
-        //         cliclack::password("Enter authentication password:")
-        //             .mask('*')
-        //             .interact()?
-        //     },
-        // };
-        let password = "password".to_string();
+        let password = match matches.get_one::<String>("password") {
+            Some(password) => password.to_owned(),
+            None => {
+                cliclack::password("Enter authentication password:")
+                    .mask('*')
+                    .interact()?
+            },
+        };
         unwrap_or_exit1!(h.establish_session(authkey, &password, true), "Unable to open session")
     };
 
@@ -260,7 +259,7 @@ fn main() -> Result<(), MgmError>{
         },
         None => {
             loop {
-                println!("\n{}", MAIN_STRING);
+                println!("\n{}", MAIN_HEADER);
 
                 let command = cliclack::select("")
                     .item(MainCommand::GetDeviceInfo, "Get device info", "")

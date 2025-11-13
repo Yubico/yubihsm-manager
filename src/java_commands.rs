@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::fmt::{Display};
-use std::sync::LazyLock;
 use pem::Pem;
 
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
+use crate::utils::print_menu_headers;
+use crate::backend::types::YhCommand;
+use crate::utils::select_command;
 use crate::backend::asym::AsymOps;
 use crate::backend::object_ops::Importable;
 use crate::backend::types::ImportObjectSpec;
@@ -30,100 +30,39 @@ use crate::backend::asym::JavaOps;
 use crate::backend::types::ObjectSpec;
 use crate::utils::{list_objects, print_failed_delete, select_delete_objects};
 
-use crate::backend::common::{contains_all};
 use crate::error::MgmError;
 use crate::utils::{get_file_path, read_pems_from_file};
-use crate::MAIN_STRING;
 
-static JAVA_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > SunPKCS11 keys", MAIN_STRING));
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum JavaCommand {
-    #[default]
-    List,
-    Generate,
-    Import,
-    Delete,
-    ReturnToMainMenu,
-    Exit,
-}
-
-impl Display for JavaCommand {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            JavaCommand::List => write!(f, "List"),
-            JavaCommand::Generate => write!(f, "Generate"),
-            JavaCommand::Import => write!(f, "Import"),
-            JavaCommand::Delete => write!(f, "Delete"),
-            JavaCommand::ReturnToMainMenu => write!(f, "Return to main menu"),
-            JavaCommand::Exit => write!(f, "Exit"),
-        }
-    }
-}
+static JAVA_HEADER: &str = "SunPKCS11 keys";
 
 pub fn exec_java_command(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
 
     loop {
 
-        println!("\n{}", *JAVA_STRING);
+        print_menu_headers(&[crate::MAIN_HEADER, JAVA_HEADER]);
 
         cliclack::note("",
             "SunPKCS11 compatible keys entails that an asymmetric key and its equivalent X509Certificate \
         are store in the device with the same ObjectID".to_string())?;
 
 
-        let cmd = get_command(authkey)?;
-        let res = match cmd {
-            JavaCommand::List => {
-                println!("\n{} > {}\n", *JAVA_STRING, JavaCommand::List);
-                list(session)
-            },
-            JavaCommand::Generate => {
-                println!("\n{} > {}\n", *JAVA_STRING, JavaCommand::Generate);
-                generate(session, authkey)
-            },
-            JavaCommand::Import => {
-                println!("\n{} > {}\n", *JAVA_STRING, JavaCommand::Import);
-                import(session, authkey)
-            },
-            JavaCommand::Delete => {
-                println!("\n{} > {}\n", *JAVA_STRING, JavaCommand::Delete);
-                delete(session)
-            },
-            JavaCommand::ReturnToMainMenu => return Ok(()),
-            JavaCommand::Exit => std::process::exit(0),
+        let cmd = select_command(&JavaOps::get_authorized_commands(authkey))?;
+        print_menu_headers(&[crate::MAIN_HEADER, JAVA_HEADER, cmd.label]);
+
+        let res = match cmd.command {
+            YhCommand::List => list(session),
+            YhCommand::Generate => generate(session, authkey),
+            YhCommand::Import => import(session, authkey),
+            YhCommand::Delete => delete(session),
+            YhCommand::ReturnToMainMenu => return Ok(()),
+            YhCommand::Exit => std::process::exit(0),
+            _ => unreachable!()
         };
 
         if let Err(e) = res {
             cliclack::log::error(e)?
         }
     }
-}
-
-
-fn get_command(authkey: &ObjectDescriptor) -> Result<JavaCommand, MgmError> {
-    let auth_capabilities = &authkey.capabilities;
-
-    let mut commands = cliclack::select("");
-    commands = commands.item(JavaCommand::List, JavaCommand::List, "");
-
-    if contains_all(auth_capabilities.as_slice(),
-                    &[ObjectCapability::GenerateAsymmetricKey, ObjectCapability::PutOpaque, ObjectCapability::SignAttestationCertificate]) {
-        commands = commands.item(JavaCommand::Generate, JavaCommand::Generate, "");
-    }
-
-    if contains_all(auth_capabilities.as_slice(),
-                    &[ObjectCapability::PutAsymmetricKey, ObjectCapability::PutOpaque, ObjectCapability::SignAttestationCertificate]) {
-        commands = commands.item(JavaCommand::Import, JavaCommand::Import, "");
-    }
-
-    if contains_all(auth_capabilities.as_slice(),
-                    &[ObjectCapability::DeleteAsymmetricKey, ObjectCapability::DeleteOpaque]) {
-        commands = commands.item(JavaCommand::Delete, JavaCommand::Delete, "");
-    }
-    commands = commands.item(JavaCommand::ReturnToMainMenu, JavaCommand::ReturnToMainMenu, "");
-    commands = commands.item(JavaCommand::Exit, JavaCommand::Exit, "");
-    Ok(commands.interact()?)
 }
 
 fn list(session: &Session) -> Result<(), MgmError> {
@@ -210,13 +149,3 @@ fn get_first_object_from_pem(pems:Vec<Pem>, object_type:ObjectType) -> Result<(O
     }
     Err(MgmError::Error(format!("No object of type {} found in PEM file", object_type)))
 }
-
-// fn check_free_id(session: &Session, id: u16) -> Result<(), MgmError> {
-//     if id != 0 &&
-//         (session.get_object_info(id, ObjectType::AsymmetricKey).is_ok() ||
-//             session.get_object_info(id, ObjectType::Opaque).is_ok()) {
-//         cliclack::log::error(format!("There already exists an asymmetric key and/or an opaque object with ID 0x{:04x}. Please try again with another ID or delete existing objects first", id))?;
-//         return Err(MgmError::Error("Object ID already in use".to_string()));
-//     }
-//     Ok(())
-// }

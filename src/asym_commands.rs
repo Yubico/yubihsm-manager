@@ -14,14 +14,12 @@
  * limitations under the License.
  */
 
-use std::collections::HashSet;
-use std::fmt;
-use std::fmt::Display;
 use std::path::Path;
-use std::sync::LazyLock;
-
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectOrigin, ObjectType};
 use yubihsmrs::Session;
+use crate::utils::print_menu_headers;
+use crate::backend::types::YhCommand;
+use crate::utils::select_command;
 use crate::backend::wrap::WrapOps;
 use crate::utils::select_algorithm;
 use crate::backend::object_ops::Deletable;
@@ -42,7 +40,6 @@ use crate::utils::{get_file_path,
                    select_delete_objects};
 
 use crate::error::MgmError;
-use crate::MAIN_STRING;
 
 static ASYM_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Asymmetric keys", MAIN_STRING));
 
@@ -125,56 +122,26 @@ pub fn exec_asym_command(session: &Session, authkey: &ObjectDescriptor) -> Resul
 
     loop {
 
-        println!("\n{}", *ASYM_STRING);
+        print_menu_headers(&[crate::MAIN_HEADER, ASYM_HEADER]);
 
-        let cmd = get_command(authkey)?;
-        let res = match cmd {
-            AsymCommand::List => {
-                println!("\n{} > {}\n", *ASYM_STRING, AsymCommand::List);
-                list(session)
-            },
-            AsymCommand::GetKeyProperties => {
-                println!("\n{} > {}\n", *ASYM_STRING, AsymCommand::GetKeyProperties);
-                print_key_properties(session)
-            },
-            AsymCommand::Generate => {
-                println!("\n{} > {}\n", *ASYM_STRING, AsymCommand::Generate);
-                generate(session, authkey)
-            },
-            AsymCommand::Import => {
-                println!("\n{} > {}\n", *ASYM_STRING, AsymCommand::Import);
-                import(session, authkey)
-            },
-            AsymCommand::Delete => {
-                println!("\n{} > {}\n", *ASYM_STRING, AsymCommand::Delete);
-                delete(session)
-            },
-            AsymCommand::GetPublicKey => {
-                println!("\n{} > {}\n", *ASYM_STRING, AsymCommand::GetPublicKey);
-                get_public_key(session, ObjectType::AsymmetricKey)
-            },
-            AsymCommand::GetCertificate => {
-                println!("\n{} > {}\n", *ASYM_STRING, AsymCommand::GetCertificate);
-                get_cert(session)
-            },
-            AsymCommand::Sign => {
-                println!("\n{} > {}\n", *ASYM_STRING, AsymCommand::Sign);
-                sign(session, authkey)
-            },
-            AsymCommand::Decrypt => {
-                println!("\n{} > {}\n", *ASYM_STRING, AsymCommand::Decrypt);
-                decrypt(session, authkey)
-            },
-            AsymCommand::DeriveEcdh => {
-                println!("\n{} > {}\n", *ASYM_STRING, AsymCommand::DeriveEcdh);
-                derive_ecdh(session, authkey)
-            },
-            AsymCommand::SignAttestationCert => {
-                println!("\n{} > {}\n", *ASYM_STRING, AsymCommand::SignAttestationCert);
-                sign_attestation(session, authkey)
-            },
-            AsymCommand::ReturnToMainMenu => return Ok(()),
-            AsymCommand::Exit => std::process::exit(0),
+        let cmd = select_command(&AsymOps::get_authorized_commands(authkey))?;
+        print_menu_headers(&[crate::MAIN_HEADER, ASYM_HEADER, cmd.label]);
+
+        let res = match cmd.command {
+            YhCommand::List => list(session),
+            YhCommand::GetKeyProperties => print_key_properties(session),
+            YhCommand::Generate => generate(session, authkey),
+            YhCommand::Import => import(session, authkey),
+            YhCommand::Delete => delete(session),
+            YhCommand::GetPublicKey => get_public_key(session, ObjectType::AsymmetricKey),
+            YhCommand::GetCertificate => get_cert(session),
+            YhCommand::Sign => sign(session, authkey),
+            YhCommand::Decrypt => decrypt(session, authkey),
+            YhCommand::DeriveEcdh => derive_ecdh(session, authkey),
+            YhCommand::SignAttestationCert => sign_attestation(session, authkey),
+            YhCommand::ReturnToMainMenu => return Ok(()),
+            YhCommand::Exit => std::process::exit(0),
+            _ => unreachable!()
         };
 
         if let Err(e) = res {

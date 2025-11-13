@@ -14,134 +14,48 @@
  * limitations under the License.
  */
 
-use std::collections::HashSet;
-use std::fmt;
-use std::fmt::Display;
-use std::sync::LazyLock;
-
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
+use crate::utils::print_menu_headers;
 use crate::backend::asym::AsymOps;
 use crate::backend::object_ops::Importable;
-use crate::backend::types::{ImportObjectSpec, ObjectSpec};
-use crate::utils::fill_object_spec;
+use crate::backend::types::{ImportObjectSpec, ObjectSpec, YhCommand};
 use crate::backend::auth::AuthOps;
 use crate::backend::object_ops::{Deletable, Obtainable};
-use crate::utils::{list_objects, print_failed_delete, print_object_properties, select_delete_objects};
+use crate::utils::{list_objects, print_failed_delete, print_object_properties, select_delete_objects, fill_object_spec, select_command};
 use crate::error::MgmError;
 use crate::utils::{get_password,
                    select_capabilities,
                    get_file_path, read_pem_from_file};
 use crate::backend::common::{get_delegated_capabilities};
 use crate::backend::auth::{AuthenticationType, UserType};
-use crate::MAIN_STRING;
 
-static AUTH_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Authentication keys", MAIN_STRING));
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum AuthCommand {
-    #[default]
-    List,
-    GetKeyProperties,
-    Delete,
-    SetupUser,
-    SetupAdmin,
-    SetupAuditor,
-    SetupBackupAdmin,
-    ReturnToMainMenu,
-    Exit,
-}
-
-impl Display for AuthCommand {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            AuthCommand::List => write!(f, "List"),
-            AuthCommand::GetKeyProperties => write!(f, "Print object properties"),
-            AuthCommand::Delete => write!(f, "Delete"),
-            AuthCommand::SetupUser => write!(f, "Setup asymmetric/symmetric keys user"),
-            AuthCommand::SetupAdmin => write!(f, "Setup asymmetric/symmetric keys admin"),
-            AuthCommand::SetupAuditor => write!(f, "Setup Auditor"),
-            AuthCommand::SetupBackupAdmin => write!(f, "Setup backup admin"),
-            AuthCommand::ReturnToMainMenu => write!(f, "Return to main menu"),
-            AuthCommand::Exit => write!(f, "Exit"),
-        }
-    }
-}
+static AUTH_HEADER: &str = "Authentication keys";
 
 pub fn exec_auth_command(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     loop {
-        println!("\n{}", *AUTH_STRING);
+        print_menu_headers(&[crate::MAIN_HEADER, AUTH_HEADER]);
 
-        let cmd = get_auth_command(authkey)?;
-        let res = match cmd {
-            AuthCommand::List => {
-                println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::List);
-                list(session)
-            },
-            AuthCommand::GetKeyProperties => {
-                println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::GetKeyProperties);
-                print_key_properties(session)
-            },
-            AuthCommand::Delete => {
-                println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::Delete);
-                delete(session)
-            },
-            AuthCommand::SetupUser => {
-                println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::SetupUser);
-                create_authkey(session, authkey, UserType::AsymUser)
-            },
-            AuthCommand::SetupAdmin => {
-                println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::SetupAdmin);
-                create_authkey(session, authkey, UserType::AsymAdmin)
-            },
-            AuthCommand::SetupAuditor => {
-                println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::SetupAuditor);
-                create_authkey(session, authkey, UserType::Auditor)
-            },
-            AuthCommand::SetupBackupAdmin => {
-                println!("\n{} > {}\n", *AUTH_STRING, AuthCommand::SetupBackupAdmin);
-                create_authkey(session, authkey, UserType::BackupAdmin)
-            },
-            AuthCommand::ReturnToMainMenu => return Ok(()),
-            AuthCommand::Exit => std::process::exit(0),
+        let cmd = select_command(&AuthOps::get_authorized_commands(authkey))?;
+        print_menu_headers(&[crate::MAIN_HEADER, AUTH_HEADER, cmd.label]);
+
+        let res = match cmd.command {
+            YhCommand::List => list(session),
+            YhCommand::GetKeyProperties => print_key_properties(session),
+            YhCommand::Delete => delete(session),
+            YhCommand::SetupUser => create_authkey(session, authkey, UserType::AsymUser),
+            YhCommand::SetupAdmin => create_authkey(session, authkey, UserType::AsymAdmin),
+            YhCommand::SetupAuditor => create_authkey(session, authkey, UserType::Auditor),
+            YhCommand::SetupBackupAdmin => create_authkey(session, authkey, UserType::BackupAdmin),
+            YhCommand::ReturnToMainMenu => return Ok(()),
+            YhCommand::Exit => std::process::exit(0),
+            _ => unreachable!()
         };
 
         if let Err(err) = res {
             cliclack::log::error(err)?;
         }
     }
-}
-
-fn get_auth_command(authkey: &ObjectDescriptor) -> Result<AuthCommand, MgmError> {
-    let capabilities: HashSet<ObjectCapability> = authkey.capabilities.clone().into_iter().collect();
-    let delegated_capabilities:HashSet<ObjectCapability> = get_delegated_capabilities(authkey).into_iter().collect();
-
-    let mut commands = cliclack::select("");
-    commands = commands.item(AuthCommand::List, AuthCommand::List, "");
-    commands = commands.item(AuthCommand::GetKeyProperties, AuthCommand::GetKeyProperties, "");
-    if capabilities.contains(&ObjectCapability::DeleteAuthenticationKey) {
-        commands = commands.item(AuthCommand::Delete,AuthCommand::Delete, "");
-    }
-    if capabilities.contains(&ObjectCapability::PutAuthenticationKey) {
-
-        if HashSet::from(AuthOps::KEY_USER_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
-            commands = commands.item(
-                AuthCommand::SetupUser, AuthCommand::SetupUser, "Can only use asymmetric and symmetric keys");
-        }
-        if HashSet::from(AuthOps::KEY_ADMIN_CAPABILITIES).intersection(&delegated_capabilities).count() > 0 {
-            commands = commands.item(
-                AuthCommand::SetupAdmin, AuthCommand::SetupAdmin, "Can only manage asymmetric and symmetric keys");
-        }
-        if delegated_capabilities.contains(&ObjectCapability::GetLogEntries) {
-            commands = commands.item(
-                AuthCommand::SetupAuditor, AuthCommand::SetupAuditor, "Can only perform audit functions");
-        }
-        commands = commands.item(
-            AuthCommand::SetupBackupAdmin, AuthCommand::SetupBackupAdmin, "Can have all capabilities of the current user");
-    }
-    commands = commands.item(AuthCommand::ReturnToMainMenu, "Return to main menu", "");
-    commands = commands.item(AuthCommand::Exit, AuthCommand::Exit, "");
-    Ok(commands.interact()?)
 }
 
 fn list(session: &Session) -> Result<(), MgmError> {

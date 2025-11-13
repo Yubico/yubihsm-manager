@@ -1,6 +1,8 @@
 use yubihsmrs::object::ObjectAlgorithm;
 use crate::backend::types::YhAlgorithm;
 
+
+
 impl YhAlgorithm {
     // ---------- Key Algorithms ----------
     pub const RSA2048: YhAlgorithm = YhAlgorithm {

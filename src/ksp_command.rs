@@ -17,6 +17,7 @@
 use openssl::base64;
 use yubihsmrs::object::{ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
+use crate::utils::print_menu_headers;
 use crate::backend::ksp::KspOps;
 use crate::backend::wrap;
 use crate::backend::wrap::{WrapKeyType, WrapOps, WrapType};
@@ -25,8 +26,13 @@ use crate::error::MgmError;
 use crate::utils::{get_directory, get_id, get_password, select_domains};
 use crate::wrap_commands::{display_wrapkey_shares, get_shares, get_threshold};
 
+static KSP_HEADER: &str = "KSP Setup";
+
 pub fn guided_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    cliclack::log::info("This guided setup will help you configure the YubiHSM for KSP use case.")?;
+
+    print_menu_headers(&[crate::MAIN_HEADER, KSP_HEADER]);
+
+    cliclack::log::info("\nThis guided setup will help you configure the YubiHSM for KSP use case.")?;
     cliclack::log::info("You will be prompted to enter values for the wrap key and authentication keys.")?;
     cliclack::log::info("Please ensure you have the necessary permissions and that you record the wrap key shares securely.")?;
     cliclack::log::info("Let's begin the setup process.")?;
@@ -89,6 +95,9 @@ pub fn guided_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result
 }
 
 pub fn full_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError>{
+
+    print_menu_headers(&[crate::MAIN_HEADER, KSP_HEADER]);
+
     let rsa_decrypt = cliclack::confirm("Add RSA decryption capabilities?").interact()?;
     let domains = select_domains(&authkey.domains)?;
 

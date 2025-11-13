@@ -18,7 +18,7 @@ extern crate yubihsmrs;
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
-use crate::backend::types::YhAlgorithm;
+use crate::backend::types::{YhAlgorithm, CommandSpec};
 use crate::error::MgmError;
 
 pub fn get_descriptors_from_handlers(session:&Session, handlers: &[ObjectHandle]) -> Result<Vec<ObjectDescriptor>, MgmError> {
@@ -39,53 +39,12 @@ pub fn delete_objects(session: &Session, objects: &Vec<ObjectDescriptor>) -> Vec
     failed
 }
 
-pub fn get_new_object_note(key_desc: &ObjectDescriptor) -> String {
-    key_desc.to_string()
-            .replace("Sequence:  0\t", "")
-            .replace("Origin: Generated\t", "")
-            .replace("\t", "\n")
-}
-
 pub fn get_delegated_capabilities(object: &ObjectDescriptor) -> Vec<ObjectCapability>  {
     match &object.delegated_capabilities {
         Some(caps) => caps.clone(),
         None => Vec::new()
     }
 }
-
-// pub fn get_authorized_keys(
-//     session:&Session,
-//     main_authorized_key: &ObjectDescriptor,
-//     target_key_capabilities: &[ObjectCapability],
-//     target_key_type: ObjectType,
-//     target_key_algos: &[ObjectAlgorithm]) -> Result<Vec<ObjectDescriptor>, MgmError> {
-//
-//     let mut effective_caps = target_key_capabilities.to_vec();
-//     effective_caps.retain(|c| main_authorized_key.capabilities.contains(c));
-//     if effective_caps.is_empty() {
-//         return Err(MgmError::Error("Authentication/Wrap key is missing necessary capabilities".to_string()))
-//     }
-//
-//     let keys = session.list_objects_with_filter(
-//         0,
-//         target_key_type,
-//         "",
-//         ObjectAlgorithm::ANY,
-//         &effective_caps)?;
-//     if keys.is_empty() {
-//         return Err(MgmError::Error("There are no keys available for operation. No keys with necessary capabilities are found".to_string()))
-//     }
-//     let mut keys = get_descriptors_from_handlers(session, &keys)?;
-//
-//     if !target_key_algos.is_empty() {
-//         keys.retain(|desc| target_key_algos.contains(&desc.algorithm));
-//     }
-//     if keys.is_empty() {
-//         return Err(MgmError::Error("There are no keys available for operation. No keys of expected algorithms are found".to_string()))
-//     }
-//
-//     Ok(keys)
-// }
 
 pub fn get_op_keys(
     session: &Session,
@@ -125,4 +84,15 @@ pub fn extract_algorithms(algorithms: &[YhAlgorithm]) -> Vec<ObjectAlgorithm> {
         algos.push(a.algorithm);
     }
     algos
+}
+
+pub fn get_authorized_commands(
+    authkey: &ObjectDescriptor,
+    commands: &[CommandSpec],
+) -> Vec<CommandSpec> {
+    let mut authorized_commands = commands.to_vec();
+    authorized_commands.retain(|cmd| {
+        cmd.is_authkey_authorized(authkey)
+    });
+    authorized_commands
 }
