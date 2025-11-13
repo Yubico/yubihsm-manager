@@ -1,12 +1,13 @@
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::backend::types::{ImportObjectSpec, ObjectSpec, YhAlgorithm};
+use crate::backend::algorithms::MgmAlgorithm;
+use crate::backend::types::{ImportObjectSpec, ObjectSpec};
 use crate::error::MgmError;
 
 pub trait Obtainable {
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError>;
 
-    fn get_object_algorithms() -> Vec<YhAlgorithm>;
+    fn get_object_algorithms() -> Vec<MgmAlgorithm>;
 
     fn get_object_capabilities(object_algorithm: &ObjectAlgorithm) -> Vec<ObjectCapability>;
 }

@@ -27,7 +27,8 @@ use pem::Pem;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain};
 use crate::error::MgmError;
 use comfy_table::{ContentArrangement, Table};
-use crate::backend::types::{ObjectSpec, YhAlgorithm, CommandSpec};
+use crate::backend::algorithms::MgmAlgorithm;
+use crate::backend::types::{ObjectSpec, CommandSpec};
 use crate::backend::common::{get_delegated_capabilities};
 
 const MULTI_SELECT_PROMPT_HELP: &str = ". Press the space button to select and unselect item. Press 'Enter' when done.";
@@ -159,14 +160,14 @@ pub fn select_capabilities(
 
 pub fn select_algorithm(
     prompt:&str,
-    algorithms:&[YhAlgorithm], default_algorithm: Option<ObjectAlgorithm>) -> Result<ObjectAlgorithm, MgmError> {
+    algorithms:&[MgmAlgorithm], default_algorithm: Option<ObjectAlgorithm>) -> Result<ObjectAlgorithm, MgmError> {
 
     let mut algo = cliclack::select(prompt);
     if let Some(item) = default_algorithm {
         algo = algo.initial_value(item);
     }
     for a in algorithms {
-        algo = algo.item(a.algorithm, a.label, a.description);
+        algo = algo.item(a.algorithm(), a.label(), a.description());
     }
     let algo = algo.interact()?;
     Ok(algo)

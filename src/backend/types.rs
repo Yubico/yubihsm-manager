@@ -134,15 +134,6 @@ impl ImportObjectSpec {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct YhAlgorithm {
-    pub algorithm: ObjectAlgorithm,
-    pub label: &'static str,
-    pub description: &'static str,
-}
-
-
-
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
 pub enum YhCommand {
     #[default]

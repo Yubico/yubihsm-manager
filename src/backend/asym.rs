@@ -12,12 +12,13 @@ use openssl::pkey::PKey;
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
 use yubihsmrs::Session;
+use crate::backend::algorithms::MgmAlgorithm;
 use crate::error::MgmError;
-use crate::backend::common::{extract_algorithms, get_op_keys, get_authorized_commands};
+use crate::backend::common::{get_authorized_commands, get_op_keys};
 use crate::backend::object_ops::Importable;
-use crate::backend::types::{ImportObjectSpec, YhAlgorithm};
+use crate::backend::types::{ImportObjectSpec};
 use crate::backend::object_ops::{Deletable, Generatable};
-use crate::backend::types::{ObjectSpec, YhCommand, CommandSpec};
+use crate::backend::types::{CommandSpec, ObjectSpec, YhCommand};
 use crate::backend::common::get_descriptors_from_handlers;
 use crate::backend::object_ops::Obtainable;
 
@@ -62,10 +63,10 @@ impl Obtainable for AsymOps {
         Self::get_asymmetric_objects(session, &[AsymmetricType::Key, AsymmetricType::X509Certificate])
     }
 
-    fn get_object_algorithms() -> Vec<YhAlgorithm> {
-        let mut algos = Self::RSA_KEY_ALGORITHMS.to_vec();
-        algos.extend(Self::EC_KEY_ALGORITHMS.to_vec());
-        algos.extend(Self::ED_KEY_ALGORITHMS.to_vec());
+    fn get_object_algorithms() -> Vec<MgmAlgorithm> {
+        let mut algos = MgmAlgorithm::RSA_KEY_ALGORITHMS.to_vec();
+        algos.extend(MgmAlgorithm::EC_KEY_ALGORITHMS.to_vec());
+        algos.extend(MgmAlgorithm::ED_KEY_ALGORITHMS.to_vec());
         algos
     }
 
@@ -179,29 +180,6 @@ impl AsymOps {
 
     const OPAQUE_CAPABILITIES: [ObjectCapability; 1] = [
         ObjectCapability::ExportableUnderWrap];
-
-    const RSA_KEY_ALGORITHMS: [YhAlgorithm; 3] = [
-        YhAlgorithm::RSA2048,
-        YhAlgorithm::RSA3072,
-        YhAlgorithm::RSA4096];
-
-    const EC_KEY_ALGORITHMS: [YhAlgorithm; 8] = [
-        YhAlgorithm::EC_K256,
-        YhAlgorithm::EC_P224,
-        YhAlgorithm::EC_P256,
-        YhAlgorithm::EC_P384,
-        YhAlgorithm::EC_P521,
-        YhAlgorithm::ECBP_P256,
-        YhAlgorithm::ECBP_P384,
-        YhAlgorithm::ECBP_P512];
-
-    const ED_KEY_ALGORITHMS: [YhAlgorithm; 1] = [YhAlgorithm::ED25519];
-
-    pub const RSA_OAEP_ALGORITHMS: [YhAlgorithm; 4] = [
-        YhAlgorithm::RSA_OAEP_SHA1,
-        YhAlgorithm::RSA_OAEP_SHA256,
-        YhAlgorithm::RSA_OAEP_SHA384,
-        YhAlgorithm::RSA_OAEP_SHA512];
 
     const ASYM_COMMANDS: [CommandSpec;13] = [
         CommandSpec {
@@ -344,56 +322,44 @@ impl AsymOps {
             ObjectCapability::DecryptPkcs,
             ObjectCapability::DecryptOaep,
         ];
-        get_op_keys(session, authkey, &caps, ObjectType::AsymmetricKey, Some(&extract_algorithms(&Self::RSA_KEY_ALGORITHMS)))
+        get_op_keys(session, authkey, &caps, ObjectType::AsymmetricKey, Some(&MgmAlgorithm::extract_algorithms(&MgmAlgorithm::RSA_KEY_ALGORITHMS)))
     }
 
     pub fn get_derivation_keys(session: &Session, authkey: &ObjectDescriptor)  -> Result<Vec<ObjectDescriptor>, MgmError> {
-        get_op_keys(session, authkey, &[ObjectCapability::DeriveEcdh], ObjectType::AsymmetricKey, Some(&extract_algorithms(&Self::EC_KEY_ALGORITHMS)))
+        get_op_keys(session, authkey, &[ObjectCapability::DeriveEcdh], ObjectType::AsymmetricKey, Some(&MgmAlgorithm::extract_algorithms(&MgmAlgorithm::EC_KEY_ALGORITHMS)))
     }
 
-    pub fn get_signing_algorithms(authkey: &ObjectDescriptor, signkey: &ObjectDescriptor) -> Vec<YhAlgorithm> {
+    pub fn get_signing_algorithms(authkey: &ObjectDescriptor, signkey: &ObjectDescriptor) -> Vec<MgmAlgorithm> {
         let mut algos = Vec::new();
         if Self::is_rsa_key_algorithm(&signkey.algorithm) {
             if signkey.capabilities.contains(&ObjectCapability::SignPkcs) &&
                 authkey.capabilities.contains(&ObjectCapability::SignPkcs) {
-                algos.push(YhAlgorithm::RSA_PKCS1_SHA1);
-                algos.push(YhAlgorithm::RSA_PKCS1_SHA256);
-                algos.push(YhAlgorithm::RSA_PKCS1_SHA384);
-                algos.push(YhAlgorithm::RSA_PKCS1_SHA512);
+                algos.extend_from_slice(&MgmAlgorithm::RSA_PKCS_ALGORITHMS);
             }
             if signkey.capabilities.contains(&ObjectCapability::SignPss) &&
                 authkey.capabilities.contains(&ObjectCapability::SignPss) {
-                algos.push(YhAlgorithm::RSA_PSS_SHA1);
-                algos.push(YhAlgorithm::RSA_PSS_SHA256);
-                algos.push(YhAlgorithm::RSA_PSS_SHA384);
-                algos.push(YhAlgorithm::RSA_PSS_SHA512);
+                algos.extend_from_slice(&MgmAlgorithm::RSA_PSS_ALGORITHMS);
             }
         } else if Self::is_ec_key_algorithm(&signkey.algorithm) &&
             signkey.capabilities.contains(&ObjectCapability::SignEcdsa) &&
                 authkey.capabilities.contains(&ObjectCapability::SignEcdsa) {
-            algos.push(YhAlgorithm::ECDSA_SHA1);
-            algos.push(YhAlgorithm::ECDSA_SHA256);
-            algos.push(YhAlgorithm::ECDSA_SHA384);
-            algos.push(YhAlgorithm::ECDSA_SHA512);
+            algos.extend_from_slice(&MgmAlgorithm::ECDSA_ALGORITHMS);
         } else if signkey.algorithm == ObjectAlgorithm::Ed25519 &&
             signkey.capabilities.contains(&ObjectCapability::SignEddsa) &&
                 authkey.capabilities.contains(&ObjectCapability::SignEddsa) {
-                algos.push(YhAlgorithm::ED25519);
+                algos.extend_from_slice(&MgmAlgorithm::EDDSA_ALGORITHMS);
         }
         algos
     }
 
-    pub fn get_decryption_algorithms(authkey: &ObjectDescriptor, deckey: &ObjectDescriptor) -> Vec<YhAlgorithm> {
+    pub fn get_decryption_algorithms(authkey: &ObjectDescriptor, deckey: &ObjectDescriptor) -> Vec<MgmAlgorithm> {
         let mut algos = Vec::new();
         if Self::is_rsa_key_algorithm(&deckey.algorithm) {
             if deckey.capabilities.contains(&ObjectCapability::DecryptPkcs) && authkey.capabilities.contains(&ObjectCapability::DecryptPkcs) {
-                algos.push(YhAlgorithm::RSA_PKCS1_DECRYPT);
+                algos.push(MgmAlgorithm::RsaPkcs1Decrypt);
             }
             if deckey.capabilities.contains(&ObjectCapability::DecryptOaep) && authkey.capabilities.contains(&ObjectCapability::DecryptOaep) {
-                algos.push(YhAlgorithm::RSA_OAEP_SHA1);
-                algos.push(YhAlgorithm::RSA_OAEP_SHA256);
-                algos.push(YhAlgorithm::RSA_OAEP_SHA384);
-                algos.push(YhAlgorithm::RSA_OAEP_SHA512);
+                algos.extend_from_slice(&MgmAlgorithm::RSA_OAEP_ALGORITHMS);
             }
         }
         algos
@@ -528,15 +494,15 @@ impl AsymOps {
 
 
     pub fn is_rsa_key_algorithm(algorithm: &ObjectAlgorithm) -> bool {
-        Self::RSA_KEY_ALGORITHMS.iter().any(|a| a.algorithm == *algorithm)
+        MgmAlgorithm::RSA_KEY_ALGORITHMS.iter().any(|a| a.algorithm() == *algorithm)
     }
 
     pub fn is_ec_key_algorithm(algorithm: &ObjectAlgorithm) -> bool {
-        Self::EC_KEY_ALGORITHMS.iter().any(|a| a.algorithm == *algorithm)
+        MgmAlgorithm::EC_KEY_ALGORITHMS.iter().any(|a| a.algorithm() == *algorithm)
     }
 
     pub fn is_oaep_algorithm(algorithm: &ObjectAlgorithm) -> bool {
-        Self::RSA_OAEP_ALGORITHMS.iter().any(|a| a.algorithm == *algorithm)
+        MgmAlgorithm::RSA_OAEP_ALGORITHMS.iter().any(|a| a.algorithm() == *algorithm)
     }
 
     pub fn get_hashed_bytes(algo: &ObjectAlgorithm, input: &[u8]) -> Result<Vec<u8>, MgmError> {
@@ -722,7 +688,7 @@ impl Obtainable for JavaOps {
         keys.sort_by(|a, b| a.label.cmp(&b.label));
         Ok(keys)    }
 
-    fn get_object_algorithms() -> Vec<YhAlgorithm> {
+    fn get_object_algorithms() -> Vec<MgmAlgorithm> {
         AsymOps::get_object_algorithms()
     }
 

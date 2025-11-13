@@ -18,7 +18,7 @@ extern crate yubihsmrs;
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
-use crate::backend::types::{YhAlgorithm, CommandSpec};
+use crate::backend::types::CommandSpec;
 use crate::error::MgmError;
 
 pub fn get_descriptors_from_handlers(session:&Session, handlers: &[ObjectHandle]) -> Result<Vec<ObjectDescriptor>, MgmError> {
@@ -76,14 +76,6 @@ pub fn contains_all(set: &[ObjectCapability], subset: &[ObjectCapability]) -> bo
         }
     }
     true
-}
-
-pub fn extract_algorithms(algorithms: &[YhAlgorithm]) -> Vec<ObjectAlgorithm> {
-    let mut algos = Vec::new();
-    for a in algorithms {
-        algos.push(a.algorithm);
-    }
-    algos
 }
 
 pub fn get_authorized_commands(

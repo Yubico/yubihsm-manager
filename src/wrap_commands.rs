@@ -23,6 +23,7 @@ use openssl::base64;
 use openssl::bn::BigNum;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
+use crate::backend::algorithms::MgmAlgorithm;
 use crate::utils::print_menu_headers;
 use crate::backend::types::YhCommand;
 use crate::utils::select_command;

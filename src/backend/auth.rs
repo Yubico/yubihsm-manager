@@ -1,7 +1,8 @@
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
+use crate::backend::algorithms::MgmAlgorithm;
 use crate::backend::object_ops::Importable;
-use crate::backend::types::{ImportObjectSpec, YhAlgorithm, CommandSpec, YhCommand};
+use crate::backend::types::{ImportObjectSpec, CommandSpec, YhCommand};
 use crate::backend::common::{get_descriptors_from_handlers, get_authorized_commands};
 use crate::backend::object_ops::{Deletable, Obtainable};
 use crate::error::MgmError;
@@ -35,8 +36,8 @@ impl Obtainable for AuthOps {
         get_descriptors_from_handlers(session, &keys)
     }
 
-    fn get_object_algorithms() -> Vec<YhAlgorithm> {
-        Vec::new()
+    fn get_object_algorithms() -> Vec<MgmAlgorithm> {
+        unimplemented!()
     }
 
     fn get_object_capabilities(_: &ObjectAlgorithm) -> Vec<ObjectCapability> {

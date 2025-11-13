@@ -225,7 +225,7 @@ pub fn fill_asym_spec(authkey: &ObjectDescriptor, spec: &mut ObjectSpec) -> Resu
     if spec.algorithm == ObjectAlgorithm::ANY {
         let mut key_algo = cliclack::select("Select key type");
         for algo in &AsymOps::get_object_algorithms() {
-            key_algo = key_algo.item(algo.algorithm, algo.label, algo.description);
+            key_algo = key_algo.item(algo.algorithm(), algo.label(), algo.description());
         }
         spec.algorithm = key_algo.interact()?;
     }

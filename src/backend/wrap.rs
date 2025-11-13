@@ -3,6 +3,7 @@ use std::fmt::Display;
 use openssl::base64;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
+use crate::backend::algorithms::MgmAlgorithm;
 use crate::backend::common::get_authorized_commands;
 use crate::backend::types::{CommandSpec, YhCommand};
 use crate::backend::asym::AsymOps;
@@ -12,7 +13,7 @@ use crate::backend::types::ImportObjectSpec;
 use crate::backend::sym::SymOps;
 use crate::backend::common::get_descriptors_from_handlers;
 use crate::backend::object_ops::{Deletable, Generatable, Obtainable};
-use crate::backend::types::{ObjectSpec, YhAlgorithm};
+use crate::backend::types::{ObjectSpec};
 use crate::error::MgmError;
 
 pub struct WrapOps;
@@ -67,15 +68,6 @@ pub struct WrappedData {
     pub error: Option<MgmError>,
 }
 
-const WRAP_KEY_ALGORITHMS: [YhAlgorithm; 6] = [
-    YhAlgorithm::AES128_CCM_WRAP,
-    YhAlgorithm::AES192_CCM_WRAP,
-    YhAlgorithm::AES256_CCM_WRAP,
-    YhAlgorithm::RSA2048,
-    YhAlgorithm::RSA3072,
-    YhAlgorithm::RSA4096,
-];
-
 const AES_WRAP_KEY_CAPABILITIES: [ObjectCapability; 3] = [
     ObjectCapability::ExportWrapped,
     ObjectCapability::ImportWrapped,
@@ -102,8 +94,8 @@ impl Obtainable for WrapOps {
         get_descriptors_from_handlers(session, keys.as_slice())
     }
 
-    fn get_object_algorithms() -> Vec<YhAlgorithm> {
-        WRAP_KEY_ALGORITHMS.to_vec()
+    fn get_object_algorithms() -> Vec<MgmAlgorithm> {
+        MgmAlgorithm::WRAP_KEY_ALGORITHMS.to_vec()
     }
 
     fn get_object_capabilities(_object_algorithm: &ObjectAlgorithm) -> Vec<ObjectCapability> {
@@ -349,7 +341,7 @@ impl WrapOps {
         Ok(objects)
     }
 
-    pub fn get_unwrapped_key_algorithms() -> Vec<YhAlgorithm> {
+    pub fn get_unwrapped_key_algorithms() -> Vec<MgmAlgorithm> {
         let mut algos = Vec::new();
         algos.extend_from_slice(AsymOps::get_object_algorithms().as_slice());
         algos.extend_from_slice(SymOps::get_object_algorithms().as_slice());

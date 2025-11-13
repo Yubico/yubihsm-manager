@@ -1,10 +1,11 @@
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
+use crate::backend::algorithms::MgmAlgorithm;
 use crate::backend::common::get_authorized_commands;
-use crate::backend::common::{extract_algorithms, get_op_keys};
+use crate::backend::common::get_op_keys;
 use crate::backend::common::get_descriptors_from_handlers;
 use crate::backend::object_ops::{Deletable, Generatable, Importable, Obtainable};
-use crate::backend::types::{ImportObjectSpec, ObjectSpec, YhAlgorithm, CommandSpec, YhCommand};
+use crate::backend::types::{CommandSpec, ImportObjectSpec, ObjectSpec, YhCommand};
 use crate::error::MgmError;
 
 pub struct SymOps;
@@ -42,8 +43,8 @@ impl Obtainable for SymOps {
         get_descriptors_from_handlers(session, &keys)
     }
 
-    fn get_object_algorithms() -> Vec<YhAlgorithm> {
-        Self::AES_KEY_ALGORITHMS.to_vec()
+    fn get_object_algorithms() -> Vec<MgmAlgorithm> {
+        MgmAlgorithm::AES_KEY_ALGORITHMS.to_vec()
     }
 
     fn get_object_capabilities(_: &ObjectAlgorithm) -> Vec<ObjectCapability> {
@@ -84,12 +85,6 @@ impl Importable for SymOps {
 }
 
 impl SymOps {
-
-    const AES_KEY_ALGORITHMS: [YhAlgorithm; 3] = [
-        YhAlgorithm::AES128,
-        YhAlgorithm::AES192,
-        YhAlgorithm::AES256,
-    ];
 
     const AES_KEY_CAPABILITIES: [ObjectCapability; 5] = [
         ObjectCapability::EncryptCbc,
@@ -159,7 +154,7 @@ impl SymOps {
     }
 
     pub fn is_aes_algorithm(algorithm: &ObjectAlgorithm) -> bool {
-        Self::AES_KEY_ALGORITHMS.iter().any(|a| a.algorithm == *algorithm)
+        MgmAlgorithm::AES_KEY_ALGORITHMS.iter().any(|a| a.algorithm() == *algorithm)
     }
 
     pub fn get_symkey_algorithm_from_keylen(keylen: usize) -> Result<ObjectAlgorithm, MgmError> {
@@ -187,7 +182,7 @@ impl SymOps {
             authkey,
             &caps,
             ObjectType::SymmetricKey,
-            Some(&extract_algorithms(&Self::AES_KEY_ALGORITHMS))
+            Some(&MgmAlgorithm::extract_algorithms(&MgmAlgorithm::AES_KEY_ALGORITHMS))
         )?;
         Ok(keys)
     }
