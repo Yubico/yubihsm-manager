@@ -17,14 +17,14 @@
 use openssl::base64;
 use yubihsmrs::object::{ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::utils::print_menu_headers;
+use crate::ui::cmd_utils::{get_id, get_password, print_menu_headers, select_domains};
 use crate::backend::ksp::KspOps;
 use crate::backend::wrap;
 use crate::backend::wrap::{WrapKeyType, WrapOps, WrapType};
-use crate::utils::write_bytes_to_file;
-use crate::error::MgmError;
-use crate::utils::{get_directory, get_id, get_password, select_domains};
-use crate::wrap_commands::{display_wrapkey_shares, get_shares, get_threshold};
+use crate::ui::io_utils::write_bytes_to_file;
+use crate::backend::error::MgmError;
+use crate::ui::io_utils::get_directory;
+use crate::ui::wrap_menu::{display_wrapkey_shares, get_shares, get_threshold};
 
 static KSP_HEADER: &str = "KSP Setup";
 

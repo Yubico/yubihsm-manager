@@ -39,18 +39,11 @@ use yubihsmrs::object::ObjectType;
 use backend::asym::AsymOps;
 use backend::common::get_descriptors_from_handlers;
 
-use error::MgmError;
-use utils::{list_objects};
+use backend::error::MgmError;
+use ui::cmd_utils::list_objects;
 
-pub mod error;
-pub mod utils;
 pub mod backend;
-pub mod asym_commands;
-pub mod java_commands;
-pub mod sym_commands;
-pub mod auth_commands;
-pub mod wrap_commands;
-pub mod ksp_command;
+pub mod ui;
 
 macro_rules! unwrap_or_exit1 {
     ( $e:expr, $msg:expr) => {
@@ -246,14 +239,14 @@ fn main() -> Result<(), MgmError>{
     match matches.subcommand() {
         Some(subcommand) => {
             match subcommand.0 {
-                "asym" => asym_commands::exec_asym_command(&session, &authkey),
-                "sym" => sym_commands::exec_sym_command(&session, &authkey),
-                "auth" => auth_commands::exec_auth_command(&session, &authkey),
-                "wrap" => wrap_commands::exec_wrap_command(&session, &authkey),
+                "asym" => ui::asym_menu::exec_asym_command(&session, &authkey),
+                "sym" => ui::sym_menu::exec_sym_command(&session, &authkey),
+                "auth" => ui::auth_menu::exec_auth_command(&session, &authkey),
+                "wrap" => ui::wrap_menu::exec_wrap_command(&session, &authkey),
                 "gen-pseudo-random" => get_random_number(&session),
                 "reset" => reset_device(&session),
-                "ksp" => ksp_command::guided_ksp_setup(&session, &authkey),
-                "sunpkcs11" => java_commands::exec_java_command(&session, &authkey),
+                "ksp" => ui::ksp_menu::guided_ksp_setup(&session, &authkey),
+                "sunpkcs11" => ui::java_menu::exec_java_command(&session, &authkey),
                 _ => unreachable!(),
             }
         },
@@ -288,12 +281,12 @@ fn main() -> Result<(), MgmError>{
                             Err(err) => Err(MgmError::LibYubiHsm(err)),
                         }
                     },
-                    MainCommand::AsymMgm => asym_commands::exec_asym_command(&session, &authkey),
-                    MainCommand::SymMgm => sym_commands::exec_sym_command(&session, &authkey),
-                    MainCommand::AuthMgm => auth_commands::exec_auth_command(&session, &authkey),
-                    MainCommand::WrapMgm => wrap_commands::exec_wrap_command(&session, &authkey),
-                    MainCommand::Ksp => ksp_command::guided_ksp_setup(&session, &authkey),
-                    MainCommand::Java => java_commands::exec_java_command(&session, &authkey),
+                    MainCommand::AsymMgm => ui::asym_menu::exec_asym_command(&session, &authkey),
+                    MainCommand::SymMgm => ui::sym_menu::exec_sym_command(&session, &authkey),
+                    MainCommand::AuthMgm => ui::auth_menu::exec_auth_command(&session, &authkey),
+                    MainCommand::WrapMgm => ui::wrap_menu::exec_wrap_command(&session, &authkey),
+                    MainCommand::Ksp => ui::ksp_menu::guided_ksp_setup(&session, &authkey),
+                    MainCommand::Java => ui::java_menu::exec_java_command(&session, &authkey),
                     MainCommand::Random => get_random_number(&session),
                     MainCommand::Reset => reset_device(&session),
                     MainCommand::Exit => std::process::exit(0),

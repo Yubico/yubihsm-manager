@@ -17,106 +17,31 @@
 use std::path::Path;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectOrigin, ObjectType};
 use yubihsmrs::Session;
-use crate::utils::print_menu_headers;
+use crate::ui::cmd_utils::{print_menu_headers, print_object_properties, select_delete_objects, select_one_object};
 use crate::backend::types::YhCommand;
-use crate::utils::select_command;
+use crate::ui::cmd_utils::select_command;
 use crate::backend::wrap::WrapOps;
-use crate::utils::select_algorithm;
+use crate::ui::cmd_utils::select_algorithm;
 use crate::backend::object_ops::Deletable;
-use crate::utils::print_failed_delete;
+use crate::ui::cmd_utils::print_failed_delete;
 use crate::backend::asym::AttestationType;
 use crate::backend::object_ops::Importable;
 use crate::backend::types::ImportObjectSpec;
 use crate::backend::object_ops::Generatable;
 use crate::backend::types::ObjectSpec;
-use crate::utils::fill_object_spec;
-use crate::utils::{list_objects, print_object_properties};
+use crate::ui::cmd_utils::fill_object_spec;
+use crate::ui::cmd_utils::list_objects;
 use crate::backend::asym::AsymmetricType;
 use crate::backend::asym::AsymOps;
 use crate::backend::object_ops::Obtainable;
 
-use crate::utils::{get_file_path,
-                   read_input_bytes, read_input_string, read_pem_from_file, select_one_object, write_bytes_to_file,
-                   select_delete_objects};
+use crate::ui::io_utils::{get_file_path,
+                          read_input_bytes, read_input_string, read_pem_from_file,
+                          write_bytes_to_file};
 
-use crate::error::MgmError;
+use crate::backend::error::MgmError;
 
-static ASYM_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Asymmetric keys", MAIN_STRING));
-
-pub const RSA_KEY_CAPABILITIES: [ObjectCapability; 6] = [
-    ObjectCapability::SignPkcs,
-    ObjectCapability::SignPss,
-    ObjectCapability::DecryptPkcs,
-    ObjectCapability::DecryptOaep,
-    ObjectCapability::ExportableUnderWrap,
-    ObjectCapability::SignAttestationCertificate];
-
-pub const EC_KEY_CAPABILITIES: [ObjectCapability; 4] = [
-    ObjectCapability::SignEcdsa,
-    ObjectCapability::DeriveEcdh,
-    ObjectCapability::ExportableUnderWrap,
-    ObjectCapability::SignAttestationCertificate];
-
-pub const ED_KEY_CAPABILITIES: [ObjectCapability; 3] = [
-    ObjectCapability::SignEddsa,
-    ObjectCapability::ExportableUnderWrap,
-    ObjectCapability::SignAttestationCertificate];
-
-const OPAQUE_CAPABILITIES: [ObjectCapability; 1] = [
-    ObjectCapability::ExportableUnderWrap];
-
-pub const RSA_KEY_ALGORITHM: [ObjectAlgorithm; 3] = [
-    ObjectAlgorithm::Rsa2048,
-    ObjectAlgorithm::Rsa3072,
-    ObjectAlgorithm::Rsa4096];
-
-pub const EC_KEY_ALGORITHM: [ObjectAlgorithm; 8] = [
-    ObjectAlgorithm::EcP224,
-    ObjectAlgorithm::EcP256,
-    ObjectAlgorithm::EcP384,
-    ObjectAlgorithm::EcP521,
-    ObjectAlgorithm::EcK256,
-    ObjectAlgorithm::EcBp256,
-    ObjectAlgorithm::EcBp384,
-    ObjectAlgorithm::EcBp512];
-
-#[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
-enum AsymCommand {
-    #[default]
-    List,
-    GetKeyProperties,
-    Generate,
-    Import,
-    Delete,
-    GetPublicKey,
-    GetCertificate,
-    Sign,
-    Decrypt,
-    DeriveEcdh,
-    SignAttestationCert,
-    ReturnToMainMenu,
-    Exit,
-}
-
-impl Display for AsymCommand {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            AsymCommand::List => write!(f, "List"),
-            AsymCommand::GetKeyProperties => write!(f, "Print object properties"),
-            AsymCommand::Generate => write!(f, "Generate"),
-            AsymCommand::Import => write!(f, "Import"),
-            AsymCommand::Delete => write!(f, "Delete"),
-            AsymCommand::GetPublicKey => write!(f, "Get public key"),
-            AsymCommand::GetCertificate => write!(f, "Get X509 certificate"),
-            AsymCommand::Sign => write!(f, "Sign"),
-            AsymCommand::Decrypt => write!(f, "Decrypt"),
-            AsymCommand::DeriveEcdh => write!(f, "Derive ECDH"),
-            AsymCommand::SignAttestationCert => write!(f, "Get attestation certificate"),
-            AsymCommand::ReturnToMainMenu => write!(f, "Return to main menu"),
-            AsymCommand::Exit => write!(f, "Exit"),
-        }
-    }
-}
+static ASYM_HEADER: &str = "Asymmetric keys";
 
 pub fn exec_asym_command(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
 
@@ -150,65 +75,14 @@ pub fn exec_asym_command(session: &Session, authkey: &ObjectDescriptor) -> Resul
     }
 }
 
-fn get_command(authkey: &ObjectDescriptor) -> Result<AsymCommand, MgmError> {
-    let capabilities: HashSet<ObjectCapability> = authkey.capabilities.clone().into_iter().collect();
-
-    let mut commands = cliclack::select("").initial_value(AsymCommand::List);
-    commands = commands.item(AsymCommand::List, AsymCommand::List, "");
-    commands = commands.item(AsymCommand::GetKeyProperties, AsymCommand::GetKeyProperties, "");
-    if capabilities.contains(&ObjectCapability::GenerateAsymmetricKey) {
-        commands = commands.item(AsymCommand::Generate, AsymCommand::Generate, "");
-    }
-    if capabilities.contains(&ObjectCapability::PutAsymmetricKey) {
-        commands = commands.item(AsymCommand::Import, AsymCommand::Import, "");
-    }
-    if capabilities.contains(&ObjectCapability::DeleteAsymmetricKey) ||
-        capabilities.contains(&ObjectCapability::DeleteOpaque) {
-        commands = commands.item(AsymCommand::Delete, AsymCommand::Delete, "");
-    }
-    commands = commands.item(AsymCommand::GetPublicKey, AsymCommand::GetPublicKey, "");
-    if capabilities.contains(&ObjectCapability::GetOpaque) {
-        commands = commands.item(AsymCommand::GetCertificate, AsymCommand::GetCertificate, "");
-    }
-    if HashSet::from([ObjectCapability::SignPkcs,
-        ObjectCapability::SignPss,
-        ObjectCapability::SignEcdsa,
-        ObjectCapability::SignEddsa]).intersection(&capabilities).count() > 0 {
-        commands = commands.item(AsymCommand::Sign, AsymCommand::Sign, "");
-    }
-    if HashSet::from([
-        ObjectCapability::DecryptPkcs,
-        ObjectCapability::DecryptOaep]).intersection(&capabilities).count() > 0 {
-        commands = commands.item(AsymCommand::Decrypt, AsymCommand::Decrypt, "");
-    }
-    if capabilities.contains(&ObjectCapability::DeriveEcdh) {
-        commands = commands.item(AsymCommand::DeriveEcdh, AsymCommand::DeriveEcdh, "");
-    }
-    if capabilities.contains(&ObjectCapability::SignAttestationCertificate) {
-        commands = commands.item(AsymCommand::SignAttestationCert, AsymCommand::SignAttestationCert, "");
-    }
-    commands = commands.item(AsymCommand::ReturnToMainMenu, AsymCommand::ReturnToMainMenu, "");
-    commands = commands.item(AsymCommand::Exit, AsymCommand::Exit, "");
-    Ok(commands.interact()?)
-}
-
-fn get_all_asym_objects(session: &Session) -> Result<Vec<ObjectHandle>, MgmError> {
-    let mut keys = session.
-                              list_objects_with_filter(0, ObjectType::AsymmetricKey, "", ObjectAlgorithm::ANY, &Vec::new())?;
-    keys.extend(session.
-                           list_objects_with_filter(0, ObjectType::Opaque, "",ObjectAlgorithm::OpaqueX509Certificate, &Vec::new())?);
-    Ok(keys)
-}
-
-pub fn get_rsa_key_algo(size_in_bytes:u32) -> Result<ObjectAlgorithm, MgmError> {
-    match size_in_bytes {
-        256 => Ok(ObjectAlgorithm::Rsa2048),
-        384 => Ok(ObjectAlgorithm::Rsa3072),
-        512 => Ok(ObjectAlgorithm::Rsa4096),
-        _ => {
-            Err(MgmError::Error(format!("Unsupported RSA key size {}", (size_in_bytes * 8))))
-        }
-    }
+fn list(session: &Session) -> Result<(), MgmError> {
+    let types = cliclack::multiselect("Select type to list")
+        .initial_values([AsymmetricType::Key, AsymmetricType::X509Certificate].to_vec())
+        .required(false)
+        .item(AsymmetricType::Key, AsymmetricType::Key, "")
+        .item(AsymmetricType::X509Certificate, AsymmetricType::X509Certificate, "")
+        .interact()?;
+    list_objects(&AsymOps::get_asymmetric_objects(session, &types)?)
 }
 
 fn print_key_properties(session: &Session) -> Result<(), MgmError> {
@@ -291,123 +165,6 @@ pub fn get_public_key(session: &Session, object_type: ObjectType) -> Result<(), 
     let key = select_one_object(
         "Select key" , &keys)?;
 
-    let pubkey = match session.get_pubkey(key.id, ObjectType::AsymmetricKey) {
-        Ok(pk) => pk,
-        Err(e) => {
-            cliclack::log::error(format!("Failed to get public key for asymmetric key 0x{:04x}. {}",
-                                         key.id, e))?;
-            return Ok(())
-        }
-    };
-
-    let pem_pubkey;
-    let key_algo = pubkey.1;
-    if RSA_KEY_ALGORITHM.contains(&key_algo) {
-        let e = match BigNum::from_slice(&[0x01, 0x00, 0x01]) {
-            Ok(bn) => bn,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to construct exponent for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
-
-        let n = match BigNum::from_slice(pubkey.0.as_slice()) {
-            Ok(bn) => bn,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to construct n for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
-
-        let rsa_pubkey = match openssl::rsa::Rsa::from_public_components(n, e) {
-            Ok(rsa) => rsa,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to parse RSA public key for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
-
-        pem_pubkey = match rsa_pubkey.public_key_to_pem() {
-            Ok(pem) => pem,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to convert RSA public key to PEM format for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
-    } else if EC_KEY_ALGORITHM.contains(&key_algo) {
-        let nid = match key_algo {
-            ObjectAlgorithm::EcP256 => Nid::X9_62_PRIME256V1,
-            ObjectAlgorithm::EcK256 => Nid::SECP256K1,
-            ObjectAlgorithm::EcP384 => Nid::SECP384R1,
-            ObjectAlgorithm::EcP521 => Nid::SECP521R1,
-            ObjectAlgorithm::EcP224 => Nid::SECP224R1,
-            ObjectAlgorithm::EcBp256 => Nid::BRAINPOOL_P256R1,
-            ObjectAlgorithm::EcBp384 => Nid::BRAINPOOL_P384R1,
-            ObjectAlgorithm::EcBp512 => Nid::BRAINPOOL_P512R1,
-            _ => unreachable!()
-        };
-        let ec_group = match EcGroup::from_curve_name(nid) {
-            Ok(group) => group,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to get EC group from key algorithm for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
-
-        let mut ctx = match BigNumContext::new() {
-            Ok(bnc) => bnc,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to create BigNumContext for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
-
-        let mut ec_pubkey_bytes: Vec<u8> = Vec::new();
-        ec_pubkey_bytes.push(0x04);
-        ec_pubkey_bytes.extend(pubkey.0);
-        let ec_point = match EcPoint::from_bytes(&ec_group, ec_pubkey_bytes.as_slice(), &mut ctx) {
-            Ok(p) => p,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to parse EC point for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
-
-        let ec_pubkey = match EcKey::from_public_key(&ec_group, &ec_point) {
-            Ok(pk) => pk,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to parse EC public key for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
-
-        pem_pubkey = match ec_pubkey.public_key_to_pem() {
-            Ok(pem) => pem,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to convert EC public key to PEM format for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
-    } else if key_algo == ObjectAlgorithm::Ed25519 {
-        let ed_pubkey = match PKey::public_key_from_raw_bytes(pubkey.0.as_slice(), pkey::Id::ED25519) {
-            Ok(pk) => pk,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to parse ED public key for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(());
-            }
-        };
-
-        pem_pubkey = match ed_pubkey.public_key_to_pem() {
-            Ok(pem) => pem,
-            Err(err) => {
-                cliclack::log::error(format!("Failed to convert ED public key to PEM format for key 0x{:04x}. {}", key.id, err))?;
-                return Ok(())
-            }
-        };
-    } else {
-        cliclack::log::error(format!("Object 0x{:04x} is not an asymmetric key", key.id))?;
-        return Ok(())
-    }
 
     let pubkey = AsymOps::get_pubkey_pem(session, key.id, key.object_type)?;
     println!("{}\n",pubkey);
@@ -438,38 +195,6 @@ fn get_cert(session: &Session) -> Result<(), MgmError> {
         }
     }
     Ok(())
-}
-
-pub fn get_hashed_bytes(algo: &ObjectAlgorithm, input: &[u8]) -> Result<Vec<u8>, MgmError> {
-    match algo {
-        ObjectAlgorithm::RsaPkcs1Sha1 |
-        ObjectAlgorithm::RsaPssSha1 |
-        ObjectAlgorithm::EcdsaSha1 |
-        ObjectAlgorithm::RsaOaepSha1 => Ok(openssl::hash::hash(MessageDigest::sha1(), input)?.to_vec()),
-        ObjectAlgorithm::RsaPkcs1Sha256 |
-        ObjectAlgorithm::RsaPssSha256 |
-        ObjectAlgorithm::EcdsaSha256 |
-        ObjectAlgorithm::RsaOaepSha256 => Ok(openssl::hash::hash(MessageDigest::sha256(), input)?.to_vec()),
-        ObjectAlgorithm::RsaPkcs1Sha384 |
-        ObjectAlgorithm::RsaPssSha384 |
-        ObjectAlgorithm::EcdsaSha384 |
-        ObjectAlgorithm::RsaOaepSha384 => Ok(openssl::hash::hash(MessageDigest::sha384(), input)?.to_vec()),
-        ObjectAlgorithm::RsaPkcs1Sha512 |
-        ObjectAlgorithm::RsaPssSha512 |
-        ObjectAlgorithm::EcdsaSha512 |
-        ObjectAlgorithm::RsaOaepSha512 => Ok(openssl::hash::hash(MessageDigest::sha512(), input)?.to_vec()),
-        _ => Err(MgmError::InvalidInput("Algorithm does not contain hash component".to_string()))
-    }
-}
-
-fn get_mgf1_algorithm(algo: &ObjectAlgorithm) -> Result<ObjectAlgorithm, MgmError> {
-    match algo {
-        ObjectAlgorithm::RsaOaepSha1 | ObjectAlgorithm::RsaPssSha1 => Ok(ObjectAlgorithm::Mgf1Sha1),
-        ObjectAlgorithm::RsaOaepSha256 | ObjectAlgorithm::RsaPssSha256 => Ok(ObjectAlgorithm::Mgf1Sha256),
-        ObjectAlgorithm::RsaOaepSha384 | ObjectAlgorithm::RsaPssSha384 => Ok(ObjectAlgorithm::Mgf1Sha384),
-        ObjectAlgorithm::RsaOaepSha512 | ObjectAlgorithm::RsaPssSha512 => Ok(ObjectAlgorithm::Mgf1Sha512),
-        _ => Err(MgmError::InvalidInput("Algorithm is not an RSA PSS or OAEP decryption algorithm".to_string())),
-    }
 }
 
 fn sign(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {

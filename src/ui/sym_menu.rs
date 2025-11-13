@@ -16,57 +16,20 @@
 
 use yubihsmrs::object::{ObjectCapability, ObjectDescriptor};
 use yubihsmrs::Session;
-use crate::utils::print_menu_headers;
+use crate::ui::cmd_utils::{fill_object_spec, print_failed_delete, print_menu_headers, print_object_properties, select_algorithm, select_delete_objects};
 use crate::backend::types::YhCommand;
-use crate::utils::select_command;
-use crate::utils::select_one_object;
+use crate::ui::cmd_utils::select_command;
+use crate::ui::cmd_utils::select_one_object;
 use crate::backend::sym::AesOperationSpec;
 use crate::backend::sym::{AesMode, EncryptionMode};
 use crate::backend::object_ops::{Deletable, Generatable, Importable, Obtainable};
 use crate::backend::sym::SymOps;
 use crate::backend::types::{ImportObjectSpec, ObjectSpec};
-use crate::utils::{fill_object_spec, list_objects, print_failed_delete, print_object_properties, select_algorithm, select_delete_objects};
-use crate::utils::{read_aes_key_hex, read_input_bytes, write_bytes_to_file};
-use crate::error::MgmError;
+use crate::ui::cmd_utils::list_objects;
+use crate::ui::io_utils::{read_aes_key_hex, read_input_bytes, write_bytes_to_file};
+use crate::backend::error::MgmError;
 
-static SYM_STRING: LazyLock<String> = LazyLock::new(|| format!("{} > Symmetric keys", MAIN_STRING));
-
-pub const AES_KEY_CAPABILITIES: [ObjectCapability; 5] = [
-    ObjectCapability::EncryptCbc,
-    ObjectCapability::DecryptCbc,
-    ObjectCapability::EncryptEcb,
-    ObjectCapability::DecryptEcb,
-    ObjectCapability::ExportableUnderWrap];
-
-#[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
-enum SymCommand {
-    #[default]
-    List,
-    GetKeyProperties,
-    Generate,
-    Import,
-    Delete,
-    Encrypt,
-    Decrypt,
-    ReturnToMainMenu,
-    Exit,
-}
-
-impl Display for SymCommand {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            SymCommand::List => write!(f, "List"),
-            SymCommand::GetKeyProperties => write!(f, "Print object properties"),
-            SymCommand::Generate => write!(f, "Generate"),
-            SymCommand::Import => write!(f, "Import"),
-            SymCommand::Delete => write!(f, "Delete"),
-            SymCommand::Encrypt => write!(f, "Encrypt"),
-            SymCommand::Decrypt => write!(f, "Decrypt"),
-            SymCommand::ReturnToMainMenu => write!(f, "Return to main menu"),
-            SymCommand::Exit => write!(f, "Exit"),
-        }
-    }
-}
+static SYM_HEADER: &str = "Symmetric keys";
 
 pub fn exec_sym_command(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
 

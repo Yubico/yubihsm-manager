@@ -16,18 +16,17 @@
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::utils::print_menu_headers;
+use crate::ui::cmd_utils::{fill_object_spec, get_password, print_failed_delete, print_menu_headers, print_object_properties, select_capabilities, select_command, select_delete_objects};
 use crate::backend::asym::AsymOps;
 use crate::backend::object_ops::Importable;
 use crate::backend::types::{ImportObjectSpec, ObjectSpec, YhCommand};
 use crate::backend::auth::AuthOps;
 use crate::backend::object_ops::{Deletable, Obtainable};
-use crate::utils::{list_objects, print_failed_delete, print_object_properties, select_delete_objects, fill_object_spec, select_command};
-use crate::error::MgmError;
-use crate::utils::{get_password,
-                   select_capabilities,
-                   get_file_path, read_pem_from_file};
-use crate::backend::common::{get_delegated_capabilities};
+use crate::ui::cmd_utils::list_objects;
+use crate::backend::error::MgmError;
+use crate::ui::io_utils::{get_file_path,
+                          read_pem_from_file};
+use crate::backend::common::get_delegated_capabilities;
 use crate::backend::auth::{AuthenticationType, UserType};
 
 static AUTH_HEADER: &str = "Authentication keys";

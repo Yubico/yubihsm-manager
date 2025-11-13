@@ -1,3 +1,19 @@
+/*
+ * Copyright 2025 Yubico AB
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 use std::convert::TryFrom;
 use std::fmt;
 use std::fmt::Display;
@@ -13,7 +29,7 @@ use openssl::pkey::PKey;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
 use yubihsmrs::Session;
 use crate::backend::algorithms::MgmAlgorithm;
-use crate::error::MgmError;
+use crate::backend::error::MgmError;
 use crate::backend::common::{get_authorized_commands, get_op_keys};
 use crate::backend::object_ops::Importable;
 use crate::backend::types::{ImportObjectSpec};
@@ -264,20 +280,8 @@ impl AsymOps {
             required_capabilities: &[ObjectCapability::SignAttestationCertificate],
             require_all_capabilities: false,
         },
-        CommandSpec {
-            command: YhCommand::ReturnToMainMenu,
-            label: "Return to Previous Menu",
-            description: "",
-            required_capabilities: &[],
-            require_all_capabilities: false,
-        },
-        CommandSpec {
-            command: YhCommand::Exit,
-            label: "Exit",
-            description: "",
-            required_capabilities: &[],
-            require_all_capabilities: false,
-        },
+        CommandSpec::RETURN_COMMAND,
+        CommandSpec::EXIT_COMMAND,
     ];
 
     pub fn get_authorized_commands(
@@ -827,8 +831,7 @@ impl JavaOps {
             command: YhCommand::Delete,
             label: "Delete",
             description: "Delete an asymmetric key and X509 certificate with the same Object ID from the YubiHSM",
-            required_capabilities: &[ObjectCapability::DeleteAsymmetricKey,
-                ObjectCapability::DeleteOpaque],
+            required_capabilities: &[ObjectCapability::DeleteAsymmetricKey, ObjectCapability::DeleteOpaque],
             require_all_capabilities: true,
         },
         CommandSpec::RETURN_COMMAND,

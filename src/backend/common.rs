@@ -19,7 +19,7 @@ extern crate yubihsmrs;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::backend::types::CommandSpec;
-use crate::error::MgmError;
+use crate::backend::error::MgmError;
 
 pub fn get_descriptors_from_handlers(session:&Session, handlers: &[ObjectHandle]) -> Result<Vec<ObjectDescriptor>, MgmError> {
     let descriptors: Vec<ObjectDescriptor> = handlers

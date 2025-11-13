@@ -18,20 +18,20 @@ use pem::Pem;
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::utils::print_menu_headers;
+use crate::ui::cmd_utils::{print_failed_delete, print_menu_headers, select_delete_objects};
 use crate::backend::types::YhCommand;
-use crate::utils::select_command;
+use crate::ui::cmd_utils::select_command;
 use crate::backend::asym::AsymOps;
 use crate::backend::object_ops::Importable;
 use crate::backend::types::ImportObjectSpec;
-use crate::asym_commands::fill_asym_spec;
+use crate::ui::asym_menu::fill_asym_spec;
 use crate::backend::object_ops::{Deletable, Generatable, Obtainable};
 use crate::backend::asym::JavaOps;
 use crate::backend::types::ObjectSpec;
-use crate::utils::{list_objects, print_failed_delete, select_delete_objects};
+use crate::ui::cmd_utils::list_objects;
 
-use crate::error::MgmError;
-use crate::utils::{get_file_path, read_pems_from_file};
+use crate::backend::error::MgmError;
+use crate::ui::io_utils::{get_file_path, read_pems_from_file};
 
 static JAVA_HEADER: &str = "SunPKCS11 keys";
 

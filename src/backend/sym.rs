@@ -1,3 +1,19 @@
+/*
+ * Copyright 2025 Yubico AB
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::backend::algorithms::MgmAlgorithm;
@@ -6,7 +22,7 @@ use crate::backend::common::get_op_keys;
 use crate::backend::common::get_descriptors_from_handlers;
 use crate::backend::object_ops::{Deletable, Generatable, Importable, Obtainable};
 use crate::backend::types::{CommandSpec, ImportObjectSpec, ObjectSpec, YhCommand};
-use crate::error::MgmError;
+use crate::backend::error::MgmError;
 
 pub struct SymOps;
 
