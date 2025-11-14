@@ -28,15 +28,6 @@ pub trait Obtainable {
     fn get_object_capabilities(object_algorithm: &ObjectAlgorithm) -> Vec<ObjectCapability>;
 }
 
-// /// Trait for fetching and formatting a single object.
-// pub trait Describable {
-//     fn get_properties(&self, session: &Session, id: u16, object_type: ObjectType) -> Result<ObjectDescriptor, MgmError>;
-//
-//     fn print(&self, desc: &ObjectDescriptor) -> String {
-//         desc.to_string()
-//     }
-// }
-
 /// Trait for generating a new object.
 pub trait Generatable {
     fn generate(&self, session: &Session, spec: &ObjectSpec) -> Result<u16, MgmError>;
@@ -49,7 +40,9 @@ pub trait Importable {
 
 /// Trait for deleting an existing object.
 pub trait Deletable {
-    fn delete(&self, session: &Session, object_id: u16, object_type: ObjectType) -> Result<(), MgmError>;
+    fn delete(&self, session: &Session, object_id: u16, object_type: ObjectType) -> Result<(), MgmError> {
+        Ok(session.delete_object(object_id, object_type)?)
+    }
 
     fn delete_multiple(&self, session: &Session, objects: &Vec<ObjectDescriptor>) -> Vec<(ObjectDescriptor, MgmError)> {
         let mut failed:Vec<(ObjectDescriptor, MgmError)> = Vec::new();

@@ -73,7 +73,7 @@ fn delete(session: &Session) -> Result<(), MgmError> {
     print_failed_delete(&failed)
 }
 
-fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+pub fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     let key_algo = select_algorithm("Select AES key algorithm:", &SymOps::get_object_algorithms(), None)?;
 
     let mut new_key = ObjectSpec::empty();
@@ -93,7 +93,7 @@ fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmErro
     Ok(())
 }
 
-fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+pub fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     let key = read_aes_key_hex("Enter AES key in HEX format:")?;
     let key_algo = SymOps::get_symkey_algorithm_from_keylen(key.len())?;
 

@@ -62,10 +62,10 @@ impl Obtainable for AuthOps {
 }
 
 impl Deletable for AuthOps {
-    fn delete(&self, session: &Session, object_id: u16, _: ObjectType) -> Result<(), MgmError> {
-        session.delete_object(object_id, ObjectType::AuthenticationKey)?;
-        Ok(())
-    }
+    // fn delete(&self, session: &Session, object_id: u16, _: ObjectType) -> Result<(), MgmError> {
+    //     session.delete_object(object_id, ObjectType::AuthenticationKey)?;
+    //     Ok(())
+    // }
 }
 
 impl Importable for AuthOps {

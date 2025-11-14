@@ -31,17 +31,11 @@ extern crate core;
 
 
 use std::fs;
-use std::str::FromStr;
-
 use clap::Arg;
-use yubihsmrs::{Session, YubiHsm};
-use yubihsmrs::object::ObjectType;
+use yubihsmrs::YubiHsm;
+use yubihsmrs::object::{ObjectAlgorithm, ObjectType};
 use backend::asym::AsymOps;
-use backend::common::get_descriptors_from_handlers;
-
 use backend::error::MgmError;
-use ui::cmd_utils::list_objects;
-
 pub mod backend;
 pub mod ui;
 
@@ -61,22 +55,6 @@ const YH_EC_P256_PUBKEY_LEN: usize = 65;
 
 pub static MAIN_HEADER: &str = "YubiHSM Manager";
 
-#[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
-enum MainCommand {
-    #[default]
-    GetDeviceInfo,
-    ListObjects,
-    AuthMgm,
-    AsymMgm,
-    SymMgm,
-    WrapMgm,
-    Ksp,
-    Java,
-    Random,
-    Reset,
-    Exit,
-}
-
 fn parse_id(value: &str) -> Result<u16, String> {
     let id = if value.starts_with("0x") {
         u16::from_str_radix(&value[2..], 16)
@@ -90,50 +68,16 @@ fn parse_id(value: &str) -> Result<u16, String> {
     }
 }
 
-fn get_random_number(session: &Session) -> Result<(), MgmError> {
-    let nr_of_bytes: usize = cliclack::input("Enter number of bytes")
-        .default_input("256")
-        .required(false)
-        .placeholder("Can be maximum of 2028 bytes for newer YubiHSMs or 2021 for older ones. Default is 256")
-        .validate(|input: &String| {
-            if usize::from_str(input).is_err() {
-                Err("Input must be a number number")
-            } else if usize::from_str(input).unwrap() > 2028 {
-                Err("The number must be no greater than 2028 for newer YubiHSMs or 2021 for older ones")
-            } else {
-                Ok(())
-            }
-        })
-        .interact()?;
-    match session.get_random(nr_of_bytes) {
-        Ok(random) => println!("{}", hex::encode(random)),
-        Err(err) => {
-            cliclack::log::error(format!("Failed to get pseudo random number from device. {}", err))?;
-        }
-    }
-    Ok(())
-}
-
-fn reset_device(session: &Session) -> Result<(), MgmError> {
-    cliclack::log::warning("All data will be deleted from the device and cannot be recovered.")?;
-    if cliclack::confirm("Continue?").interact()? {
-        if let Err(err) = session.reset() {
-            cliclack::log::error(format!("Failed to reset device. {}", err))?;
-        };
-    }
-    Ok(())
-}
-
 fn main() -> Result<(), MgmError>{
     let matches = clap::Command::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .subcommand(clap::Command::new("get-device-info").about("Display YubiHSM device info"))
+        .subcommand(clap::Command::new("get-device-publickey").about("Display YubiHSM device public key"))
         .subcommand(clap::Command::new("asym").about("Manage asymmetric keys"))
         .subcommand(clap::Command::new("sym").about("Manage symmetric keys"))
         .subcommand(clap::Command::new("auth").about("Manage authentication keys (aka users)"))
         .subcommand(clap::Command::new("wrap").about("Manage wrap keys"))
-        .subcommand(clap::Command::new("gen-pseudo-random").about("Generate a pseudo random number"))
         .subcommand(clap::Command::new("reset").about("Reset YubiHSM2 device"))
         .subcommand(clap::Command::new("ksp").about("Setup KSP user for Windows CNG provider"))
         .subcommand(clap::Command::new("sunpkcs11").about("Manage asymmetric keys compatible with JAVA SunPKCS11 provider"))
@@ -184,8 +128,15 @@ fn main() -> Result<(), MgmError>{
     };
 
     if let Some("get-device-info") = matches.subcommand_name() {
-        let info = unwrap_or_exit1!(h.get_device_info(), "Unable to get device info");
+        let info = h.get_device_info()?;
         cliclack::log::success(info)?;
+        return Ok(());
+    };
+
+    if let Some("get-device-publickey") = matches.subcommand_name() {
+        let pubkey = h.get_device_pubkey()?;
+        let pubkey = AsymOps::get_pubkey_pem(ObjectAlgorithm::EcP256, &pubkey)?;
+        println!("{}\n",pubkey);
         return Ok(());
     };
 
@@ -212,7 +163,7 @@ fn main() -> Result<(), MgmError>{
         };
 
         let (_typ, _algo, privkey) = AsymOps::parse_asym_pem(pem::parse(fs::read_to_string(filename)?)?)?;
-        if _typ != ObjectType::AsymmetricKey || _algo != yubihsmrs::object::ObjectAlgorithm::EcP256 {
+        if _typ != ObjectType::AsymmetricKey || _algo != ObjectAlgorithm::EcP256 {
             cliclack::log::error("Private key in PEM file is not an EC P256 key")?;
             std::process::exit(1);
         }
@@ -243,59 +194,14 @@ fn main() -> Result<(), MgmError>{
                 "sym" => ui::sym_menu::exec_sym_command(&session, &authkey),
                 "auth" => ui::auth_menu::exec_auth_command(&session, &authkey),
                 "wrap" => ui::wrap_menu::exec_wrap_command(&session, &authkey),
-                "gen-pseudo-random" => get_random_number(&session),
-                "reset" => reset_device(&session),
+                "reset" => ui::device_menu::reset(&session),
                 "ksp" => ui::ksp_menu::guided_ksp_setup(&session, &authkey),
                 "sunpkcs11" => ui::java_menu::exec_java_command(&session, &authkey),
                 _ => unreachable!(),
             }
         },
         None => {
-            loop {
-                println!("\n{}", MAIN_HEADER);
-
-                let command = cliclack::select("")
-                    .item(MainCommand::GetDeviceInfo, "Get device info", "")
-                    .item(MainCommand::ListObjects, "List all objects", "")
-                    .item(MainCommand::AsymMgm, "Asymmetric keys", "")
-                    .item(MainCommand::SymMgm, "Symmetric keys", "Available with firmware version 2.3.1 or later")
-                    .item(MainCommand::AuthMgm, "Authentication keys", "Users' access and permissions")
-                    .item(MainCommand::WrapMgm, "Wrap keys", "")
-                    .item(MainCommand::Ksp, "Special usecase: KSP", "Setup KSP user for Windows CNG provider")
-                    .item(MainCommand::Java, "Special usecase: SunPKCS11", "Manage asymmetric keys compatible with JAVA SunPKCS11 provider")
-                    .item(MainCommand::Random, "Generate pseudo random number", "")
-                    .item(MainCommand::Reset, "Reset device", "")
-                    .item(MainCommand::Exit, "Exit", "")
-                    .interact()?;
-
-                let result = match command {
-                    MainCommand::GetDeviceInfo => {
-                        cliclack::log::success(h.get_device_info()?)?;
-                        Ok(())
-                    },
-                    MainCommand::ListObjects => {
-                        match session.list_objects() {
-                            Ok(objects) => {
-                                list_objects(&get_descriptors_from_handlers(&session, &objects)?)
-                            },
-                            Err(err) => Err(MgmError::LibYubiHsm(err)),
-                        }
-                    },
-                    MainCommand::AsymMgm => ui::asym_menu::exec_asym_command(&session, &authkey),
-                    MainCommand::SymMgm => ui::sym_menu::exec_sym_command(&session, &authkey),
-                    MainCommand::AuthMgm => ui::auth_menu::exec_auth_command(&session, &authkey),
-                    MainCommand::WrapMgm => ui::wrap_menu::exec_wrap_command(&session, &authkey),
-                    MainCommand::Ksp => ui::ksp_menu::guided_ksp_setup(&session, &authkey),
-                    MainCommand::Java => ui::java_menu::exec_java_command(&session, &authkey),
-                    MainCommand::Random => get_random_number(&session),
-                    MainCommand::Reset => reset_device(&session),
-                    MainCommand::Exit => std::process::exit(0),
-                };
-
-                if let Err(err) = result {
-                    cliclack::log::error(err)?;
-                }
-            }
+            ui::main_menu::exec_main_command(&session, &authkey)
         }
     }
 }

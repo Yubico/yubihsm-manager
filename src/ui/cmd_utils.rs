@@ -17,7 +17,7 @@
 use crate::backend::types::{CommandSpec, ObjectSpec};
 use crate::backend::error::MgmError;
 use std::str::FromStr;
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
 use cliclack::MultiSelect;
 use std::convert::TryFrom;
 use crate::backend::algorithms::MgmAlgorithm;
@@ -253,6 +253,29 @@ pub fn print_failed_delete(failed: &[(ObjectDescriptor, MgmError)]) -> Result<()
     Ok(())
 }
 
+pub fn get_spec_in_table(spec: &ObjectSpec) -> Table {
+    let mut header = vec!["ID", "Type", "Label", "Algorithm", "Domains", "Capabilities"];
+    let mut row = vec![
+        spec.get_id_str(),
+        spec.get_type_str(),
+        spec.label.to_string(),
+        spec.get_algorithm_str(),
+        spec.get_domains_str(),
+        spec.get_capabilities_str()];
+    if !spec.delegated_capabilities.is_empty() ||
+        spec.object_type == ObjectType::AuthenticationKey ||
+        spec.object_type == ObjectType::WrapKey ||
+        spec.object_type == ObjectType::PublicWrapKey {
+        header.push("Delegated Capabilities");
+        row.push(spec.get_delegated_capabilities_str());
+    }
+    let mut table = Table::new();
+    table.set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_header(header);
+    table.add_row(row);
+    table
+}
+
 pub fn print_object_properties(objects: &[ObjectDescriptor]) -> Result<(), MgmError> {
     if objects.is_empty() {
         cliclack::log::info("No objects to display")?;
@@ -260,43 +283,22 @@ pub fn print_object_properties(objects: &[ObjectDescriptor]) -> Result<(), MgmEr
     }
 
     let object = select_one_object("", objects)?;
+    let spec = ObjectSpec::from(object.clone());
+    let origin = format!("{:?}", object.origin);
 
     let mut table = Table::new();
     table.set_content_arrangement(ContentArrangement::Dynamic);
     table.set_header(vec!["ID", "Type", "Label", "Algorithm", "Sequence", "Origin", "Domains", "Capabilities", "Delegated Capabilities"]);
-
-    let id = format!("0x{:04x}", object.id);
-    let origin = format!("{:?}", object.origin);
-
-    let mut domains = String::new().to_owned();
-    object.domains.iter().for_each(
-        |domain| domains.push_str(format!("{:160},", domain).as_str()));
-    domains.pop();
-
-    let mut capabilities = String::new().to_owned();
-    object.capabilities.iter().for_each(|cap| capabilities.push_str(format!("{:?},", cap).as_str()));
-    capabilities.pop();
-
-    let delegated_capabilities = {
-        let mut delegated = String::new().to_owned();
-        let caps = get_delegated_capabilities(&object);
-        caps.iter().for_each(|cap| delegated.push_str(format!("{:?},", cap).as_str()));
-        if !delegated.is_empty() {
-            delegated.pop();
-        }
-        delegated
-    };
-
     table.add_row(vec![
-        id,
-        object.object_type.to_string(),
-        object.label.to_string(),
-        object.algorithm.to_string(),
+        spec.get_id_str(),
+        spec.get_type_str(),
+        spec.label.to_string(),
+        spec.get_algorithm_str(),
         object.sequence.to_string(),
         origin,
-        domains,
-        capabilities,
-        delegated_capabilities]);
+        spec.get_domains_str(),
+        spec.get_capabilities_str(),
+        spec.get_delegated_capabilities_str()]);
 
     println!("{table}");
 
@@ -304,25 +306,24 @@ pub fn print_object_properties(objects: &[ObjectDescriptor]) -> Result<(), MgmEr
 }
 
 pub fn list_objects(objects: &[ObjectDescriptor]) -> Result<(), MgmError> {
-    let mut objects = objects.to_vec();
-    objects.sort_by(|a, b| a.label.cmp(&b.label));
+
+    let mut specs:Vec<ObjectSpec> = objects.iter().map(|d| ObjectSpec::from(d.clone())).collect::<Vec<_>>();
+    specs.sort_by(|a, b| a.label.cmp(&b.label));
 
     let mut table = Table::new();
     table.set_content_arrangement(ContentArrangement::Dynamic);
     table.set_header(vec!["ID", "Type", "Label", "Algorithm", "Domains", "Capabilities"]);
 
-    for d in objects {
-        let id = format!("0x{:04x}", d.id);
-        let mut domains = String::new().to_owned();
-        d.domains.iter().for_each(
-            |domain| domains.push_str(format!("{:160},", domain).as_str()));
-        domains.pop();
+    for spec in specs {
 
-        let mut capabilities = String::new().to_owned();
-        d.capabilities.iter().for_each(|cap| capabilities.push_str(format!("{:?},", cap).as_str()));
-        capabilities.pop();
+        table.add_row(vec![
+            spec.get_id_str(),
+            spec.get_type_str(),
+            spec.label.to_string(),
+            spec.get_algorithm_str(),
+            spec.get_domains_str(),
+            spec.get_capabilities_str()]);
 
-        table.add_row(vec![id, d.object_type.to_string(), d.label.to_string(), d.algorithm.to_string(), domains, capabilities]);
     }
     println!("{table}");
     Ok(())

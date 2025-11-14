@@ -108,11 +108,7 @@ impl Obtainable for AsymOps {
 // }
 
 
-impl Deletable for AsymOps {
-    fn delete(&self, session: &Session, object_id: u16, object_type: ObjectType) -> Result<(), MgmError> {
-        Ok(session.delete_object(object_id, object_type)?)
-    }
-}
+impl Deletable for AsymOps {}
 
 impl Generatable for AsymOps {
     fn generate(&self, session: &Session, spec: &ObjectSpec) -> Result<u16, MgmError> {
@@ -360,7 +356,7 @@ impl AsymOps {
         let mut algos = Vec::new();
         if Self::is_rsa_key_algorithm(&deckey.algorithm) {
             if deckey.capabilities.contains(&ObjectCapability::DecryptPkcs) && authkey.capabilities.contains(&ObjectCapability::DecryptPkcs) {
-                algos.push(MgmAlgorithm::RsaPkcs1Decrypt);
+                algos.push(ObjectAlgorithm::RsaPkcs1Decrypt.into());
             }
             if deckey.capabilities.contains(&ObjectCapability::DecryptOaep) && authkey.capabilities.contains(&ObjectCapability::DecryptOaep) {
                 algos.extend_from_slice(&MgmAlgorithm::RSA_OAEP_ALGORITHMS);
@@ -369,43 +365,9 @@ impl AsymOps {
         algos
     }
 
-    pub fn get_pubkey_pem(session: &Session, object_id: u16, object_typ: ObjectType) -> Result<Pem, MgmError> {
+    pub fn get_pubkey(session: &Session, object_id: u16, object_typ: ObjectType) -> Result<Pem, MgmError> {
         let (pubkey, algo) = session.get_pubkey(object_id, object_typ)?;
-        let pem_bytes: Vec<u8> = if Self::is_rsa_key_algorithm(&algo) {
-            let e = BigNum::from_slice(&[0x01, 0x00, 0x01])?;
-            let n = BigNum::from_slice(pubkey.as_slice())?;
-            let rsa_pubkey = openssl::rsa::Rsa::from_public_components(n, e)?;
-            rsa_pubkey.public_key_to_pem()?
-        } else if Self::is_ec_key_algorithm(&algo) {
-            let nid = match algo {
-                ObjectAlgorithm::EcP256 => Nid::X9_62_PRIME256V1,
-                ObjectAlgorithm::EcK256 => Nid::SECP256K1,
-                ObjectAlgorithm::EcP384 => Nid::SECP384R1,
-                ObjectAlgorithm::EcP521 => Nid::SECP521R1,
-                ObjectAlgorithm::EcP224 => Nid::SECP224R1,
-                ObjectAlgorithm::EcBp256 => Nid::BRAINPOOL_P256R1,
-                ObjectAlgorithm::EcBp384 => Nid::BRAINPOOL_P384R1,
-                ObjectAlgorithm::EcBp512 => Nid::BRAINPOOL_P512R1,
-                _ => unreachable!()
-            };
-            let ec_group = EcGroup::from_curve_name(nid)?;
-            let mut ctx = BigNumContext::new()?;
-
-            let mut ec_pubkey_bytes: Vec<u8> = Vec::new();
-            ec_pubkey_bytes.push(0x04);
-            ec_pubkey_bytes.extend(pubkey);
-            let ec_point = EcPoint::from_bytes(&ec_group, ec_pubkey_bytes.as_slice(), &mut ctx)?;
-            let ec_pubkey = EcKey::from_public_key(&ec_group, &ec_point)?;
-            ec_pubkey.public_key_to_pem()?
-        } else if algo == ObjectAlgorithm::Ed25519 {
-            let ed_pubkey = PKey::public_key_from_raw_bytes(pubkey.as_slice(), pkey::Id::ED25519)?;
-            ed_pubkey.public_key_to_pem()?
-        } else {
-            return Err(MgmError::InvalidInput(
-                format!("Unknown or unsupported asymmetric key algorithm {:?}", algo)));
-        };
-        let pem = Pem::try_from(pem_bytes.as_slice())?;
-        Ok(pem)
+        Self::get_pubkey_pem(algo, pubkey.as_slice())
     }
 
     pub fn get_certificate(session: &Session, key_id: u16) -> Result<Pem, MgmError> {
@@ -611,6 +573,46 @@ impl AsymOps {
         }
 
         Err(MgmError::InvalidInput("Failed to parse PEM data as either private key, public key or X509Certificate".to_string()))
+    }
+
+    pub fn get_pubkey_pem(algorithm: ObjectAlgorithm, pubkey_bytes: &[u8]) -> Result<Pem, MgmError> {
+        let pem_bytes: Vec<u8> = if Self::is_rsa_key_algorithm(&algorithm) {
+            let e = BigNum::from_slice(&[0x01, 0x00, 0x01])?;
+            let n = BigNum::from_slice(pubkey_bytes)?;
+            let rsa_pubkey = openssl::rsa::Rsa::from_public_components(n, e)?;
+            rsa_pubkey.public_key_to_pem()?
+        } else if Self::is_ec_key_algorithm(&algorithm) {
+            let nid = match algorithm {
+                ObjectAlgorithm::EcP256 => Nid::X9_62_PRIME256V1,
+                ObjectAlgorithm::EcK256 => Nid::SECP256K1,
+                ObjectAlgorithm::EcP384 => Nid::SECP384R1,
+                ObjectAlgorithm::EcP521 => Nid::SECP521R1,
+                ObjectAlgorithm::EcP224 => Nid::SECP224R1,
+                ObjectAlgorithm::EcBp256 => Nid::BRAINPOOL_P256R1,
+                ObjectAlgorithm::EcBp384 => Nid::BRAINPOOL_P384R1,
+                ObjectAlgorithm::EcBp512 => Nid::BRAINPOOL_P512R1,
+                _ => unreachable!()
+            };
+            let ec_group = EcGroup::from_curve_name(nid)?;
+            let mut ctx = BigNumContext::new()?;
+
+            let mut ec_pubkey_bytes: Vec<u8> = Vec::new();
+            if pubkey_bytes[0] != 0x04 {
+                ec_pubkey_bytes.push(0x04);
+            }
+            ec_pubkey_bytes.extend(pubkey_bytes);
+            let ec_point = EcPoint::from_bytes(&ec_group, ec_pubkey_bytes.as_slice(), &mut ctx)?;
+            let ec_pubkey = EcKey::from_public_key(&ec_group, &ec_point)?;
+            ec_pubkey.public_key_to_pem()?
+        } else if algorithm == ObjectAlgorithm::Ed25519 {
+            let ed_pubkey = PKey::public_key_from_raw_bytes(pubkey_bytes, pkey::Id::ED25519)?;
+            ed_pubkey.public_key_to_pem()?
+        } else {
+            return Err(MgmError::InvalidInput(
+                format!("Unknown or unsupported asymmetric key algorithm {:?}", algorithm)));
+        };
+        let pem = Pem::try_from(pem_bytes.as_slice())?;
+        Ok(pem)
     }
 
 

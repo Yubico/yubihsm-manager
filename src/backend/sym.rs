@@ -69,10 +69,10 @@ impl Obtainable for SymOps {
 }
 
 impl Deletable for SymOps {
-    fn delete(&self, session: &Session, object_id: u16, _: ObjectType) -> Result<(), MgmError> {
-        session.delete_object(object_id, ObjectType::SymmetricKey)?;
-        Ok(())
-    }
+    // fn delete(&self, session: &Session, object_id: u16, _: ObjectType) -> Result<(), MgmError> {
+    //     session.delete_object(object_id, ObjectType::SymmetricKey)?;
+    //     Ok(())
+    // }
 }
 
 impl Generatable for SymOps {

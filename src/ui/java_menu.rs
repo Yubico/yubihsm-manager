@@ -77,7 +77,7 @@ fn delete(session: &Session) -> Result<(), MgmError> {
     print_failed_delete(&failed)
 }
 
-fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+pub fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     let mut new_key = ObjectSpec::empty();
     fill_asym_spec(authkey, &mut new_key)?;
 
@@ -93,7 +93,7 @@ fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmErro
     Ok(())
 }
 
-fn import(session: &Session, authkey: &ObjectDescriptor ) -> Result<(), MgmError> {
+pub fn import(session: &Session, authkey: &ObjectDescriptor ) -> Result<(), MgmError> {
 
     let mut pems = read_pems_from_file(
         get_file_path("Enter absolute path to PEM file containing private key and/or X509Certificate (Only the first object of its type will be imported):")?)?;

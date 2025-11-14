@@ -22,12 +22,13 @@ use regex::Regex;
 use openssl::base64;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
+use crate::ui::cmd_utils::get_spec_in_table;
 use crate::backend::algorithms::MgmAlgorithm;
 use crate::ui::cmd_utils::{fill_object_spec, get_id, get_label, print_failed_delete, print_menu_headers, print_object_properties, select_algorithm, select_capabilities, select_delete_objects, select_domains, select_multiple_objects};
 use crate::backend::types::YhCommand;
 use crate::ui::cmd_utils::select_command;
 use crate::backend::wrap::WrapKeyType;
-use crate::ui::asym_menu;
+use crate::ui::{asym_menu, device_menu};
 use crate::backend::asym::AsymOps;
 use crate::backend::object_ops::Importable;
 use crate::backend::sym::SymOps;
@@ -66,8 +67,7 @@ pub fn exec_wrap_command(session: &Session, authkey: &ObjectDescriptor) -> Resul
             YhCommand::GetPublicKey => asym_menu::get_public_key(session, ObjectType::WrapKey),
             YhCommand::ExportWrapped => export_wrapped(session, authkey),
             YhCommand::ImportWrapped => import_wrapped(session, authkey),
-            YhCommand::BackupDevice => backup(session, authkey),
-            YhCommand::RestoreDevice => restore(session, authkey),
+            YhCommand::GetRandom => device_menu::get_random(session),
             YhCommand::ReturnToMainMenu => return Ok(()),
             YhCommand::Exit => std::process::exit(0),
             _ => unreachable!()
@@ -93,8 +93,9 @@ fn delete(session: &Session) -> Result<(), MgmError> {
     print_failed_delete(&failed)
 }
 
-fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+pub fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     let mut new_key = ObjectSpec::empty();
+    new_key.object_type = ObjectType::WrapKey;
     let key_algo = select_algorithm("Select wrap key algorithm", &WrapOps::get_object_algorithms(), None)?;
     let key_type = if AsymOps::is_rsa_key_algorithm(&key_algo) { WrapKeyType::Rsa } else { WrapKeyType::Aes };
     new_key.algorithm = key_algo;
@@ -103,7 +104,7 @@ fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmErro
         "Select delegated capabilities", authkey, get_delegated_capabilities(authkey).as_slice(), get_delegated_capabilities(authkey).as_slice())?;
 
 
-    cliclack::note("Generating wrap key with:",new_key.to_string())?;
+    cliclack::note("Generating wrap key with:", get_spec_in_table(&new_key))?;
     if cliclack::confirm("Generate wrap key?").interact()? {
         let mut spinner = cliclack::spinner();
         spinner.start("Generating key...");
@@ -115,7 +116,7 @@ fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmErro
     Ok(())
 }
 
-fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+pub fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     if cliclack::confirm("Re-create from shares?").interact()? {
         import_from_shares(session)
     } else {
@@ -341,114 +342,6 @@ fn import_wrapped(session: &Session, authkey: &ObjectDescriptor) -> Result<(), M
 
     cliclack::log::success(format!("Successfully imported object {}, with ID 0x{:04x}", handle.object_type, handle.object_id))?;
 
-    Ok(())
-}
-
-
-
-fn backup(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let wrapkeys = WrapOps::get_wrapping_keys(session, authkey)?;
-    let wrapkey = select_one_object(
-        "Select the wrapping key to use for exporting objects:",
-        &wrapkeys)?;
-    let wrapkey_type = WrapOps::get_wrapkey_type(wrapkey.object_type, wrapkey.algorithm)?;
-
-    let mut wrap_op = WrapOpSpec {
-        wrapkey_id: wrapkey.id,
-        wrapkey_type,
-        wrap_type: WrapType::Object,
-        include_ed_seed: false,
-        aes_algorithm: None,
-        oaep_algorithm: None,
-    };
-
-    let export_objects = WrapOps::get_exportable_objects(session, &wrapkey, WrapType::Object)?;
-    if export_objects.iter().any(|x| x.algorithm == ObjectAlgorithm::Ed25519) {
-        wrap_op.include_ed_seed = cliclack::confirm("Include Ed25519 seed in the wrapped export? (required for importing Ed25519 keys)").interact()?
-    };
-
-    if wrapkey_type == WrapKeyType::RsaPublic {
-        wrap_op.aes_algorithm = Some(select_algorithm(
-            "Select AES algorithm to use for wrapping",
-            &SymOps::get_object_algorithms(), Some(ObjectAlgorithm::Aes256))?);
-        wrap_op.oaep_algorithm = Some(select_algorithm(
-            "Select OAEP algorithm to use for wrapping",
-            &MgmAlgorithm::RSA_OAEP_ALGORITHMS, Some(ObjectAlgorithm::RsaOaepSha256))?);
-    }
-
-    let dir: String = get_directory("Enter path to backup directory:")?;
-
-    let wrapped_objects = WrapOps::export_wrapped(session, &wrap_op, &export_objects)?;
-
-    for object in &wrapped_objects {
-        if object.error.is_some() {
-            cliclack::log::warning(format!("Failed to wrap {} with ID 0x{:04x}: {}. Skipping...", object.object_type, object.object_id, object.error.as_ref().unwrap()))?;
-            continue;
-        }
-        let filename = format!("0x{:04x}-{}.yhw", object.object_id, object.object_type);
-        write_bytes_to_file(base64::encode_block(&object.wrapped_data).as_bytes(), &dir, filename.as_str())?;
-    }
-
-    Ok(())
-}
-
-fn restore(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let wrapkeys = WrapOps::get_unwrapping_keys(session, authkey)?;
-    let wrapkey = select_one_object(
-        "Select the unwrapping key to use for importing objects:",
-        &wrapkeys)?;
-    let wrapkey_type = WrapOps::get_wrapkey_type(wrapkey.object_type, wrapkey.algorithm)?;
-
-    let dir = get_directory("Enter backup directory:")?;
-    let files: Vec<_> = match scan_dir::ScanDir::files()
-        .read(dir.clone(), |iter| {
-            iter.filter(|(_, name)| name.ends_with(".yhw"))
-                .map(|(entry, _)| entry.path())
-                .collect()
-        }) {
-        Ok(f) => f,
-        Err(err) => {
-            cliclack::log::error(err)?;
-            return Err(MgmError::Error("Failed to read files".to_string()))
-        }
-    };
-
-    if files.is_empty() {
-        cliclack::log::info(format!("No backup files were found in {}", dir))?;
-        return Ok(())
-    }
-
-    let mut wrap_op = WrapOpSpec {
-        wrapkey_id: wrapkey.id,
-        wrapkey_type,
-        wrap_type: WrapType::Object,
-        include_ed_seed: false,
-        aes_algorithm: None,
-        oaep_algorithm: None,
-    };
-    if wrapkey_type == WrapKeyType::Rsa {
-        wrap_op.oaep_algorithm = Some(select_algorithm(
-            "Select OAEP algorithm to use for unwrapping",
-            &MgmAlgorithm::RSA_OAEP_ALGORITHMS, Some(ObjectAlgorithm::RsaOaepSha256))?);
-    }
-
-    for f in files {
-        cliclack::log::info(format!("reading {}", &f.display()))?;
-        let mut file = File::open(&f)?;
-
-        let mut wrap = String::new();
-        file.read_to_string(&mut wrap)?;
-
-        let res = WrapOps::import_wrapped(session, &wrap_op, wrap, None);
-        match res {
-            Ok(handle) => {
-                cliclack::log::success(format!("Successfully imported object {}, with ID 0x{:04x}", handle.object_type, handle.object_id))?;
-            },
-            Err(e) => {
-                cliclack::log::error(format!("Failed to import wrapped object from file {}: {}. Skipping...", f.display(), e))?;
-            }
-        }
-    }
     Ok(())
 }
 

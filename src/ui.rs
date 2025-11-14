@@ -16,9 +16,11 @@
 
 pub mod cmd_utils;
 pub mod io_utils;
+pub mod main_menu;
 pub mod asym_menu;
 pub mod java_menu;
 pub mod sym_menu;
 pub mod auth_menu;
 pub mod wrap_menu;
 pub mod ksp_menu;
+pub mod device_menu;

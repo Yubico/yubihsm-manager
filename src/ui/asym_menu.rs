@@ -107,7 +107,7 @@ pub fn fill_asym_spec(authkey: &ObjectDescriptor, spec: &mut ObjectSpec) -> Resu
     Ok(())
 }
 
-fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+pub fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     let key_algo = select_algorithm("Select key algorithm", &AsymOps::get_object_algorithms(), None)?;
 
     let mut new_key = ObjectSpec::empty();
@@ -166,7 +166,7 @@ pub fn get_public_key(session: &Session, object_type: ObjectType) -> Result<(), 
         "Select key" , &keys)?;
 
 
-    let pubkey = AsymOps::get_pubkey_pem(session, key.id, key.object_type)?;
+    let pubkey = AsymOps::get_pubkey(session, key.id, key.object_type)?;
     println!("{}\n",pubkey);
 
     if cliclack::confirm("Write to file?").interact()? {
