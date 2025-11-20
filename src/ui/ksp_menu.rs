@@ -17,77 +17,77 @@
 use openssl::base64;
 use yubihsmrs::object::{ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::ui::cmd_utils::{get_id, get_password, print_menu_headers, select_domains};
-use crate::backend::ksp::KspOps;
-use crate::backend::wrap;
-use crate::backend::wrap::{WrapKeyType, WrapOps, WrapType};
-use crate::ui::io_utils::write_bytes_to_file;
+use crate::traits::ui_traits::YubihsmUi;
+use crate::ui::utils::{display_menu_headers, write_bytes_to_file};
+use crate::ui::wrap_menu::{display_wrapkey_shares};
+use crate::cmd_ui::cmd_ui::Cmdline;
 use crate::backend::error::MgmError;
-use crate::ui::io_utils::get_directory;
-use crate::ui::wrap_menu::{display_wrapkey_shares, get_shares, get_threshold};
+use crate::backend::ksp::KspOps;
+use crate::backend::wrap::{WrapKeyType, WrapOps, WrapType, WrapOpSpec};
 
 static KSP_HEADER: &str = "KSP Setup";
 
 pub fn guided_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
 
-    print_menu_headers(&[crate::MAIN_HEADER, KSP_HEADER]);
+    let intro_text = "Follow this guided setup to prepare the YubiHSM to be used with Windows KSP/CNG provider.\n\
+    You will be prompted to enter values for the wrap key and authentication keys.\n\
+    Please ensure you have the necessary permissions and that you record the wrap key shares securely.";
 
-    cliclack::log::info("\nThis guided setup will help you configure the YubiHSM for KSP use case.")?;
-    cliclack::log::info("You will be prompted to enter values for the wrap key and authentication keys.")?;
-    cliclack::log::info("Please ensure you have the necessary permissions and that you record the wrap key shares securely.")?;
-    cliclack::log::info("Let's begin the setup process.")?;
+    display_menu_headers(&[crate::MAIN_HEADER, KSP_HEADER], intro_text)?;
+
+
+    YubihsmUi::display_info_message(&Cmdline,"Beginning the setup process.")?;
 
     KspOps::check_privileges(authkey)?;
-    let rsa_decrypt = cliclack::confirm("Add RSA decryption capabilities?").interact()?;
+    YubihsmUi::display_info_message(&Cmdline, "User has sufficient privileges to perform KSP setup.")?;
 
-    cliclack::log::step("Importing KSP wrap key...")?;
-    let id = get_id()?;
-    let domains = select_domains(&authkey.domains)?;
-    let shares = get_shares()?;
-    let threshold = get_threshold(shares)?;
+    let rsa_decrypt = YubihsmUi::get_confirmation(&Cmdline, "Add RSA decryption capabilities?")?;
+
+    YubihsmUi::display_info_message(&Cmdline, "Importing KSP wrap key...")?;
+    let id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
+    let domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
+    let shares = YubihsmUi::get_split_aes_n_shares(&Cmdline, "Enter the number of shares to create:")?;
+    let threshold = YubihsmUi::get_split_aes_m_threshold(&Cmdline, "Enter the number of shares necessary to re-create the key:", shares)?;
     let (wrapkey_id, wrapkey_shares) = KspOps::import_ksp_wrapkey(
         session, id, &domains, rsa_decrypt, shares, threshold)?;
-    cliclack::log::success(format!("Successfully imported wrap key with ID  0x{:04x}", wrapkey_id))?;
-    loop {
-        if cliclack::confirm("Ready to record wrap key shares? ").interact()? {
-            break;
-        }
-    }
-    display_wrapkey_shares(wrapkey_shares.shares_data)?;
-    cliclack::log::step("All key shares have been recorded and cannot be displayed again\n")?;
+    YubihsmUi::display_success_message(&Cmdline, format!("Successfully imported wrap key with ID  0x{:04x}", wrapkey_id).as_str())?;
+    YubihsmUi::get_string_input(&Cmdline, "Press any key to start recording wrap key shares", true)?;
 
-    cliclack::log::step("Importing application authentication key...")?;
+    display_wrapkey_shares(wrapkey_shares.shares_data)?;
+    YubihsmUi::display_info_message(&Cmdline, "All key shares have been recorded and cannot be displayed again\n")?;
+
+    YubihsmUi::display_info_message(&Cmdline, "Importing application authentication key...")?;
     let appkey_desc = KspOps::import_app_authkey(
         session,
-        get_id()?,
+        YubihsmUi::get_new_object_id(&Cmdline, 0)?,
         &domains,
         rsa_decrypt,
-        get_password("Enter application authentication key password:")?,
+        YubihsmUi::get_password(&Cmdline, "Enter application authentication key password:", true)?,
     )?;
-    cliclack::log::success(format!("Successfully imported application authentication key with ID  0x{:04x}", appkey_desc.id))?;
+    YubihsmUi::display_success_message(&Cmdline, format!("Successfully imported application authentication key with ID  0x{:04x}", appkey_desc.id).as_str())?;
 
-    let auditkey_desc =
-        if cliclack::confirm("Create an audit key? ").interact()? {
-            cliclack::log::step("Importing audit key...")?;
-            let auditkey = KspOps::import_audit_authkey(
+    let auditkey =
+        if YubihsmUi::get_confirmation(&Cmdline, "Create an audit key? ")? {
+            YubihsmUi::display_info_message(&Cmdline, "Importing audit key...")?;
+            let key_desc = KspOps::import_audit_authkey(
                 session,
-                get_id()?,
+                YubihsmUi::get_new_object_id(&Cmdline, 0)?,
                 &domains,
-                get_password("Enter audit key password:")?,
+                YubihsmUi::get_password(&Cmdline, "Enter audit key password:", true)?,
             )?;
-            cliclack::log::success(format!("Successfully imported audit key with ID  0x{:04x}", auditkey.id))?;
-            auditkey
+            YubihsmUi::display_success_message(&Cmdline, format!("Successfully imported audit key with ID  0x{:04x}", key_desc.id).as_str())?;
+            Some(key_desc)
         } else {
-            ObjectDescriptor::new()
+            None
         };
 
-    if cliclack::confirm("Export keys? ").interact()? {
-        export_keys(session, wrapkey_id, appkey_desc, if auditkey_desc.id != 0 { Some(auditkey_desc) } else { None })?;
+    if YubihsmUi::get_confirmation(&Cmdline, "Export keys? ")? {
+        export_keys(session, wrapkey_id, appkey_desc, auditkey)?;
     }
 
-    cliclack::log::step("KSP setup completed successfully!")?;
+    YubihsmUi::display_success_message(&Cmdline, "KSP setup completed successfully!")?;
 
-    if cliclack::confirm("Delete the current authentication key (strongly recommended)?").interact()? {
+    if YubihsmUi::get_confirmation(&Cmdline, "Delete the current authentication key (strongly recommended)?")? {
         session.delete_object(authkey.id, ObjectType::AuthenticationKey)?;
     }
 
@@ -96,26 +96,33 @@ pub fn guided_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result
 
 pub fn full_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError>{
 
-    print_menu_headers(&[crate::MAIN_HEADER, KSP_HEADER]);
+    let intro_text = "Follow this guided setup to prepare the YubiHSM to be used with Windows KSP/CNG provider.\n\
+    You will be prompted to enter values for the wrap key and authentication keys.\n\
+    Please ensure you have the necessary permissions and that you record the wrap key shares securely.";
 
-    let rsa_decrypt = cliclack::confirm("Add RSA decryption capabilities?").interact()?;
-    let domains = select_domains(&authkey.domains)?;
+    display_menu_headers(&[crate::MAIN_HEADER, KSP_HEADER], intro_text)?;
 
-    cliclack::log::step("Enter values for wrap key:")?;
-    let wrap_id = get_id()?;
-    cliclack::log::info("The wrap key will be split into shares. Please enter the number of shares and the threshold for reconstruction.")?;
-    let shares = get_shares()?;
-    let threshold = get_threshold(shares)?;
+
+    let rsa_decrypt = YubihsmUi::get_confirmation(&Cmdline, "Add RSA decryption capabilities?")?;
+    let domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
+
+    YubihsmUi::display_info_message(&Cmdline, "Enter values for wrap key:")?;
+    let wrap_id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
+    YubihsmUi::display_info_message(&Cmdline, "The wrap key will be split into shares. Please enter the number of shares and the threshold for reconstruction.")?;
+    let shares = YubihsmUi::get_split_aes_n_shares(&Cmdline, "Enter the number of shares to create:")?;
+    let threshold = YubihsmUi::get_split_aes_m_threshold(&Cmdline, "Enter the number of shares necessary to re-create the key:", shares)?;
+
 
     // Create an authentication key for usage with the above wrap key
-    cliclack::log::step("Enter values for application authentication key:")?;
-    let appkey_id = get_id()?;
-    let appkey_pwd = get_password("Enter application authentication key password:")?;
+    YubihsmUi::display_info_message(&Cmdline, "Enter values for application authentication key:")?;
+    let appkey_id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
+    let appkey_pwd = YubihsmUi::get_password(&Cmdline, "Enter application authentication key password:", true)?;
 
     let (audit_id, audit_pwd) =
-        if cliclack::confirm("Create an audit key? ").interact()? {
-            cliclack::log::step("Enter values for audit key:")?;
-            (Some(get_id()?), Some(get_password("Enter audit key password:")?))
+        if YubihsmUi::get_confirmation(&Cmdline, "Create an audit key? ")? {
+            YubihsmUi::display_info_message(&Cmdline, "Enter values for audit key:")?;
+            (Some(YubihsmUi::get_new_object_id(&Cmdline, 0)?),
+             Some(YubihsmUi::get_password(&Cmdline, "Enter audit key password:", true)?))
         } else {
             (None, None)
         };
@@ -135,7 +142,7 @@ pub fn full_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result<(
         audit_pwd,
     )?;
 
-    cliclack::log::success(format!(
+    YubihsmUi::display_success_message(&Cmdline, format!(
         "\nKSP setup completed successfully!\n\
         Created wrap key with ID: 0x{:04x}\n\
         Created application authentication Key with ID: 0x{:04x}\
@@ -147,23 +154,23 @@ pub fn full_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result<(
         } else {
             "".to_string()
         }
-    ))?;
+    ).as_str())?;
 
-    cliclack::log::step("Please be prepared to record wrap key shares")?;
+    YubihsmUi::display_info_message(&Cmdline, "Please be prepared to record wrap key shares")?;
     loop {
-        if cliclack::confirm("Ready to record wrap key shares? ").interact()? {
+        if YubihsmUi::get_confirmation(&Cmdline,"Ready to record wrap key shares? ")? {
             break;
         }
     }
     display_wrapkey_shares(ksp_setup.wrapkey.shares_data)?;
 
-    cliclack::log::step("All key shares have been recorded and cannot be displayed again")?;
+    YubihsmUi::display_info_message(&Cmdline, "All key shares have been recorded and cannot be displayed again")?;
 
-    if cliclack::confirm("Export keys? ").interact()? {
+    if YubihsmUi::get_confirmation(&Cmdline, "Export keys? ")? {
         export_keys(session, ksp_setup.wrapkey_id, ksp_setup.appkey, ksp_setup.auditkey)?;
     }
 
-    if cliclack::confirm("Delete the current authentication key (strongly recommended)?").interact()? {
+    if YubihsmUi::get_confirmation(&Cmdline, "Delete the current authentication key (strongly recommended)?")? {
         session.delete_object(authkey.id, ObjectType::AuthenticationKey)?;
     }
 
@@ -171,14 +178,19 @@ pub fn full_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result<(
 }
 
 fn export_keys(session: &Session, wrapkey_id: u16, appkey: ObjectDescriptor, auditkey: Option<ObjectDescriptor>) -> Result<(), MgmError> {
-    let dir = get_directory("Enter export destination directory:")?;
+    let dir = YubihsmUi::get_path_input(
+        &Cmdline,
+        "Enter export destination directory:",
+        false,
+        Some("."),
+        Some("Default is current directory"))?;
 
     let mut export_objects = vec![appkey];
     if let Some(key) = auditkey {
         export_objects.push(key);
     }
 
-    let wrap_op_spec = wrap::WrapOpSpec {
+    let wrap_op_spec = WrapOpSpec {
         wrapkey_id,
         wrapkey_type: WrapKeyType::Aes,
         wrap_type: WrapType::Object,
@@ -190,10 +202,10 @@ fn export_keys(session: &Session, wrapkey_id: u16, appkey: ObjectDescriptor, aud
     let wrapped_keys = WrapOps::export_wrapped(session, &wrap_op_spec, &export_objects)?;
     for key in wrapped_keys {
         let filename = format!("0x{:04x}-{}.yhw", key.object_id, key.object_type);
-        write_bytes_to_file(base64::encode_block(&key.wrapped_data).as_bytes(), &dir, filename.as_str())?;
+        write_bytes_to_file(base64::encode_block(&key.wrapped_data).as_bytes(), filename.as_str(), Some(&dir))?;
     }
 
-    cliclack::log::step(format!("\nAll keys have been exported to {}", dir))?;
+    YubihsmUi::display_info_message(&Cmdline, format!("\nAll keys have been exported to {}", dir).as_str())?;
 
     Ok(())
 }

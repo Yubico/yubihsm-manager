@@ -18,20 +18,14 @@ use pem::Pem;
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::ui::cmd_utils::{print_failed_delete, print_menu_headers, select_delete_objects};
-use crate::backend::types::YhCommand;
-use crate::ui::cmd_utils::select_command;
-use crate::backend::asym::AsymOps;
-use crate::backend::object_ops::Importable;
-use crate::backend::types::ImportObjectSpec;
-use crate::ui::asym_menu::fill_asym_spec;
-use crate::backend::object_ops::{Deletable, Generatable, Obtainable};
-use crate::backend::asym::JavaOps;
-use crate::backend::types::ObjectSpec;
-use crate::ui::cmd_utils::list_objects;
-
+use crate::traits::ui_traits::YubihsmUi;
+use crate::ui::utils::{display_menu_headers, display_object_properties, get_pem_from_file};
+use crate::cmd_ui::cmd_ui::Cmdline;
 use crate::backend::error::MgmError;
-use crate::ui::io_utils::{get_file_path, read_pems_from_file};
+use crate::backend::types::{MgmCommandType, ImportObjectSpec, ObjectSpec};
+use crate::backend::asym::{AsymOps, JavaOps};
+use crate::backend::object_ops::{Deletable, Generatable, Obtainable, Importable};
+
 
 static JAVA_HEADER: &str = "SunPKCS11 keys";
 
@@ -39,104 +33,170 @@ pub fn exec_java_command(session: &Session, authkey: &ObjectDescriptor) -> Resul
 
     loop {
 
-        print_menu_headers(&[crate::MAIN_HEADER, JAVA_HEADER]);
+        display_menu_headers(&[crate::MAIN_HEADER, JAVA_HEADER],
+            "SunPKCS11 compatible keys entails that an asymmetric key and its equivalent X509Certificate are store in the device with the same ObjectID")?;
 
-        cliclack::note("",
-            "SunPKCS11 compatible keys entails that an asymmetric key and its equivalent X509Certificate \
-        are store in the device with the same ObjectID".to_string())?;
-
-
-        let cmd = select_command(&JavaOps::get_authorized_commands(authkey))?;
-        print_menu_headers(&[crate::MAIN_HEADER, JAVA_HEADER, cmd.label]);
+        let cmd = YubihsmUi::select_command(&Cmdline, &JavaOps::get_authorized_commands(authkey))?;
+        display_menu_headers(&[crate::MAIN_HEADER, JAVA_HEADER, cmd.label], cmd.description)?;
 
         let res = match cmd.command {
-            YhCommand::List => list(session),
-            YhCommand::Generate => generate(session, authkey),
-            YhCommand::Import => import(session, authkey),
-            YhCommand::Delete => delete(session),
-            YhCommand::ReturnToMainMenu => return Ok(()),
-            YhCommand::Exit => std::process::exit(0),
+            MgmCommandType::List => list(session),
+            MgmCommandType::GetKeyProperties => dislpay_key_properties(session),
+            MgmCommandType::Generate => generate(session, authkey),
+            MgmCommandType::Import => import(session, authkey),
+            MgmCommandType::Delete => delete(session),
+            //MgmCommandType::ReturnToMainMenu => return Ok(()),
+            MgmCommandType::Exit => std::process::exit(0),
             _ => unreachable!()
         };
 
         if let Err(e) = res {
-            cliclack::log::error(e)?
+            YubihsmUi::display_error_message(&Cmdline, e.to_string().as_str())?
         }
     }
 }
 
 fn list(session: &Session) -> Result<(), MgmError> {
-    let keys = JavaOps.get_all_objects(session)?;
-    list_objects(&keys)
+    YubihsmUi::display_objects_basic(&Cmdline, &JavaOps.get_all_objects(session)?)
+}
+
+fn dislpay_key_properties(session: &Session) -> Result<(), MgmError> {
+    display_object_properties(&JavaOps.get_all_objects(session)?)
 }
 
 fn delete(session: &Session) -> Result<(), MgmError> {
-    let keys = JavaOps.get_all_objects(session)?;
-    let delete_keys = select_delete_objects(&keys)?;
-    let failed = JavaOps.delete_multiple(session, &delete_keys);
-    print_failed_delete(&failed)
+    // let keys = JavaOps.get_all_objects(session)?;
+    // let delete_keys = select_delete_objects(&keys)?;
+    // let failed = JavaOps.delete_multiple(session, &delete_keys);
+    // print_failed_delete(&failed)
+
+    let objects = YubihsmUi::select_multiple_objects(
+        &Cmdline,
+        &JavaOps.get_all_objects(session)?,
+        false,
+        Some("Select key(s) to delete"))?;
+    if objects.is_empty() {
+        YubihsmUi::display_info_message(&Cmdline, "No objects were selected")?;
+        return Ok(());
+    }
+
+    if !YubihsmUi::get_warning_confirmation(
+        &Cmdline, "Selected object(s) will be deleted and cannot be recovered")? {
+        YubihsmUi::display_info_message(&Cmdline, "Objects are not deleted")?;
+        return Ok(());
+    }
+
+    for object in objects {
+        match JavaOps.delete(session, object.id, object.object_type) {
+            Ok(_) => {
+                YubihsmUi::display_success_message(
+                    &Cmdline,
+                    format!("Successfully deleted asymmetric key and X509Certificate objects with ID 0x{:04x} from the YubiHSM", object.id).as_str())?;
+            },
+            Err(err) => {
+                YubihsmUi::display_error_message(
+                    &Cmdline,
+                    format!("Failed to delete asymmetric key and/or X509Certificate object with ID 0x{:04x}. {}", object.id, err).as_str())?;
+            }
+        }
+    }
+    Ok(())
 }
 
 pub fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     let mut new_key = ObjectSpec::empty();
-    fill_asym_spec(authkey, &mut new_key)?;
+    new_key.object_type = ObjectType::AsymmetricKey;
+    new_key.algorithm = YubihsmUi::select_algorithm(
+        &Cmdline,
+        &JavaOps::get_object_algorithms(),
+        None,
+        Some("Select algorithm for the new SunPKCS11 compatible key"))?;
 
-    cliclack::note("Generating SunPKCS11 compatible key with:", new_key.to_string())?;
-    if cliclack::confirm("Generate key?").interact()? {
-        let mut spinner = cliclack::spinner();
-        spinner.start("Generating SunPKCS11 compatible key...");
-        new_key.id = JavaOps.generate(session, &new_key)?;
-        spinner.stop("");
-        cliclack::log::success(
-            format!("Generated asymmetric key and stored attestation certificate with ID 0x{:04x} on the device", new_key.id))?;
+    new_key.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
+    new_key.label = YubihsmUi::get_object_label(&Cmdline, "")?;
+    new_key.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
+    new_key.capabilities = YubihsmUi::select_object_capabilities(
+        &Cmdline,
+        &JavaOps::get_object_capabilities(authkey, &new_key.algorithm),
+        &[],
+        None)?;
+
+    if !YubihsmUi::get_note_confirmation(&Cmdline, "Generating SunPKCS11 compatible key with:", &new_key.to_string())? {
+        YubihsmUi::display_info_message(&Cmdline, "Key is not generated")?;
+        return Ok(());
     }
+
+    let spinner = YubihsmUi::start_spinner(&Cmdline, Some("Generating key..."));
+    new_key.id = JavaOps.generate(session, &new_key)?;
+    YubihsmUi::stop_spinner(&Cmdline, spinner, None);
+    YubihsmUi::display_success_message(&Cmdline,
+                                       format!("Generated asymmetric key and stored attestation certificate with ID 0x{:04x} on the YubiHSM", new_key.id).as_str())?;
     Ok(())
 }
 
 pub fn import(session: &Session, authkey: &ObjectDescriptor ) -> Result<(), MgmError> {
 
-    let mut pems = read_pems_from_file(
-        get_file_path("Enter absolute path to PEM file containing private key and/or X509Certificate (Only the first object of its type will be imported):")?)?;
+    let filepath = YubihsmUi::get_pem_filepath(
+        &Cmdline,
+        "Enter absolute path to PEM file containing private key and/or X509Certificate (Only the first object of its type will be imported):",
+        true,
+        None)?;
+    let mut pems = get_pem_from_file(&filepath)?;
 
-    let mut spec = ObjectSpec::empty();
-    let mut import_spec = ImportObjectSpec::empty();
+    let mut new_key = ImportObjectSpec::empty();
+    new_key.object.object_type = ObjectType::AsymmetricKey;
+
     loop {
         if let Ok((_algo, _value)) = get_first_object_from_pem(pems.clone(), ObjectType::AsymmetricKey) {
-            spec.object_type = ObjectType::AsymmetricKey;
-            spec.algorithm = _algo;
-            import_spec.data.push(_value);
+            new_key.object.algorithm = _algo;
+            new_key.data.push(_value);
             break;
         }
-        cliclack::log::error("No private key found in PEM file. Please try again or press ESC to go back to menu")?;
-        pems = read_pems_from_file(
-            get_file_path("Enter absolute path to PEM file containing a private key:")?)?;
+        YubihsmUi::display_error_message(&Cmdline, "No private key found in PEM file. Please try again or press ESC to go back to menu")?;
+        pems = get_pem_from_file(&YubihsmUi::get_pem_filepath(
+            &Cmdline,
+            "Enter absolute path to PEM file containing a private key:",
+            true,
+            None)?)?;
     }
-    cliclack::log::success("Private key loaded from PEM file")?;
+    YubihsmUi::display_info_message(&Cmdline, "Private key loaded from PEM file")?;
 
-    if pems.len() == 1 {
-        pems = read_pems_from_file(
-            get_file_path("Enter absolute path to PEM file containing an X509Certificate:")?)?;
-    }
     loop {
         if let Ok((_, _value)) = get_first_object_from_pem(pems.clone(), ObjectType::Opaque) {
-            import_spec.data.push(_value);
+            new_key.data.push(_value);
             break;
         }
-        cliclack::log::error("No X509Certificate found in PEM file. Please try again or press ESC to go back to menu")?;
-        pems = read_pems_from_file(
-            get_file_path("Enter absolute path to PEM file containing an X509Certificate:")?)?;
+        YubihsmUi::display_error_message(&Cmdline, "No X509Certificate found in PEM file. Please try again or press ESC to go back to menu")?;
+        pems = get_pem_from_file(&YubihsmUi::get_pem_filepath(
+            &Cmdline,
+            "Enter absolute path to PEM file containing an X509Certificate:",
+            true,
+            None)?)?;
     }
-    cliclack::log::success("X509Certificate loaded from PEM file")?;
+    YubihsmUi::display_info_message(&Cmdline, "X509Certificate loaded from PEM file")?;
 
-    fill_asym_spec(authkey, &mut spec)?;
-    import_spec.object = spec;
+    new_key.object.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
+    new_key.object.label = YubihsmUi::get_object_label(&Cmdline, "")?;
+    new_key.object.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
+    new_key.object.capabilities = YubihsmUi::select_object_capabilities(
+        &Cmdline,
+        &AsymOps::get_object_capabilities(authkey, &new_key.object.algorithm),
+        &[],
+        Some("Select object capabilities"))?;
 
-    cliclack::note("Importing SunPKCS11 compatible key with: ", import_spec.object.to_string())?;
-    if cliclack::confirm("Import key?").interact()? {
-        let id = JavaOps.import(session, &import_spec)?;
-        cliclack::log::success(format!("Imported private key and X509Certificate with ID 0x{:04x} into the device", id))?;
+    if !YubihsmUi::get_note_confirmation(
+        &Cmdline,
+        "Importing SunPKCS11 compatible key with:",
+        &new_key.object.to_string())? {
+        YubihsmUi::display_info_message(&Cmdline, "Object is not imported")?;
+        return Ok(());
     }
 
+    let spinner = YubihsmUi::start_spinner(&Cmdline, Some("Generating key..."));
+    new_key.object.id = JavaOps.import(session, &new_key)?;
+    YubihsmUi::stop_spinner(&Cmdline, spinner, None);
+    YubihsmUi::display_success_message(&Cmdline,
+                                       format!("Imported {} object with ID 0x{:04x} into the YubiHSM", new_key.object.object_type, new_key.object.id).as_str())?;
     Ok(())
 }
 

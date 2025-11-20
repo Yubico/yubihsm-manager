@@ -16,59 +16,57 @@
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::ui::cmd_utils::{fill_object_spec, get_password, print_failed_delete, print_menu_headers, print_object_properties, select_capabilities, select_command, select_delete_objects};
-use crate::backend::asym::AsymOps;
-use crate::backend::object_ops::Importable;
-use crate::backend::types::{ImportObjectSpec, ObjectSpec, YhCommand};
-use crate::backend::auth::AuthOps;
-use crate::backend::object_ops::{Deletable, Obtainable};
-use crate::ui::cmd_utils::list_objects;
+use crate::traits::ui_traits::YubihsmUi;
+use crate::cmd_ui::cmd_ui::Cmdline;
+use crate::ui::utils::{delete_objects, display_object_properties, get_pem_from_file, display_menu_headers};
 use crate::backend::error::MgmError;
-use crate::ui::io_utils::{get_file_path,
-                          read_pem_from_file};
+use crate::backend::asym::AsymOps;
+use crate::backend::types::{ImportObjectSpec, ObjectSpec, MgmCommandType, SelectionItem};
+use crate::backend::object_ops::{Obtainable, Importable};
 use crate::backend::common::get_delegated_capabilities;
-use crate::backend::auth::{AuthenticationType, UserType};
+use crate::backend::auth::{AuthOps, AuthenticationType, UserType};
 
 static AUTH_HEADER: &str = "Authentication keys";
 
 pub fn exec_auth_command(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     loop {
-        print_menu_headers(&[crate::MAIN_HEADER, AUTH_HEADER]);
 
-        let cmd = select_command(&AuthOps::get_authorized_commands(authkey))?;
-        print_menu_headers(&[crate::MAIN_HEADER, AUTH_HEADER, cmd.label]);
+        display_menu_headers(&[crate::MAIN_HEADER, AUTH_HEADER],
+                             "Authentication key operations allow you to setup users by managing authentication keys stored on the YubiHSM")?;
+
+        let cmd = YubihsmUi::select_command(
+            &Cmdline, &AuthOps::get_authorized_commands(authkey))?;
+        display_menu_headers(&[crate::MAIN_HEADER, AUTH_HEADER, cmd.label], cmd.description)?;
 
         let res = match cmd.command {
-            YhCommand::List => list(session),
-            YhCommand::GetKeyProperties => print_key_properties(session),
-            YhCommand::Delete => delete(session),
-            YhCommand::SetupUser => create_authkey(session, authkey, UserType::AsymUser),
-            YhCommand::SetupAdmin => create_authkey(session, authkey, UserType::AsymAdmin),
-            YhCommand::SetupAuditor => create_authkey(session, authkey, UserType::Auditor),
-            YhCommand::SetupBackupAdmin => create_authkey(session, authkey, UserType::BackupAdmin),
-            YhCommand::ReturnToMainMenu => return Ok(()),
-            YhCommand::Exit => std::process::exit(0),
+            MgmCommandType::List => list(session),
+            MgmCommandType::GetKeyProperties => print_key_properties(session),
+            MgmCommandType::Delete => delete(session),
+            MgmCommandType::SetupUser => create_authkey(session, authkey, UserType::AsymUser),
+            MgmCommandType::SetupAdmin => create_authkey(session, authkey, UserType::AsymAdmin),
+            MgmCommandType::SetupAuditor => create_authkey(session, authkey, UserType::Auditor),
+            MgmCommandType::SetupBackupAdmin => create_authkey(session, authkey, UserType::BackupAdmin),
+            MgmCommandType::ReturnToMainMenu => return Ok(()),
+            MgmCommandType::Exit => std::process::exit(0),
             _ => unreachable!()
         };
 
         if let Err(err) = res {
-            cliclack::log::error(err)?;
+            YubihsmUi::display_error_message(&Cmdline, err.to_string().as_str())?;
         }
     }
 }
 
 fn list(session: &Session) -> Result<(), MgmError> {
-    list_objects(&AuthOps.get_all_objects(session)?)
+    YubihsmUi::display_objects_basic(&Cmdline, &AuthOps.get_all_objects(session)?)
 }
 
 fn print_key_properties(session: &Session) -> Result<(), MgmError> {
-    print_object_properties(&AuthOps.get_all_objects(session)?)
+    display_object_properties(&AuthOps.get_all_objects(session)?)
 }
 
 fn delete(session: &Session) -> Result<(), MgmError> {
-    let objects = select_delete_objects(&AuthOps.get_all_objects(session)?)?;
-    let failed = AuthOps.delete_multiple(session, &objects);
-    print_failed_delete(&failed)
+    delete_objects(session, &AuthOps.get_all_objects(session)?)
 }
 
 fn create_authkey(
@@ -77,70 +75,97 @@ fn create_authkey(
     user_type: UserType
 ) -> Result<(), MgmError> {
 
-    let mut new_spec = setup_user(current_authkey, user_type)?;
-    let mut new_import_spec = ImportObjectSpec::empty();
+    let mut new_key = ImportObjectSpec::empty();
+    new_key.object = setup_user(current_authkey, user_type)?;
 
-    let auth_type = cliclack::select("Select authentication type:")
-        .item(AuthenticationType::PasswordDerived, "Password derived", "Session keys are derived from a password")
-        .item(AuthenticationType::Ecp256, "EC P256", "Session authenticated using EC key with curve secp256r1")
-        .interact()?;
+    let auth_type = YubihsmUi::select_one_item(
+        &Cmdline,
+        &[
+            SelectionItem::new(AuthenticationType::PasswordDerived, "Password derived".to_string(), "Session keys are derived from a password".to_string()),
+            SelectionItem::new(AuthenticationType::Ecp256, "EC P256".to_string(), "Session authenticated using EC key with curve secp256r1".to_string()),
+        ],
+        None,
+        Some("Select authentication type"))?;
 
-    let mut new_key_note = new_spec.to_string();
+    let mut new_key_note = new_key.object.to_string();
 
     match auth_type {
         AuthenticationType::PasswordDerived => {
-            new_spec.algorithm = ObjectAlgorithm::Aes128YubicoAuthentication;
+            new_key.object.algorithm = ObjectAlgorithm::Aes128YubicoAuthentication;
             new_key_note = new_key_note.replace("Algorithm: Unknown", "Authentication Type: Password Derived");
 
-            let pwd = get_password("Enter user password:")?;
-            new_import_spec.data.push(pwd.as_bytes().to_vec());
+            let pwd = YubihsmUi::get_password(&Cmdline, "Enter user password:", true)?;
+            new_key.data.push(pwd.as_bytes().to_vec());
         },
         AuthenticationType::Ecp256 => {
-            new_spec.algorithm = ObjectAlgorithm::Ecp256YubicoAuthentication;
+            new_key.object.algorithm = ObjectAlgorithm::Ecp256YubicoAuthentication;
             new_key_note = new_key_note.replace("Algorithm: Unknown", "Authentication Type: Asymmetric");
 
-            loop {
-                let pubkey = read_pem_from_file(get_file_path("Enter path to ECP256 public key PEM file: ")?)?;
+            let pubkey = YubihsmUi::get_public_ecp256_filepath(&Cmdline, "Enter path to ECP256 public key PEM file: ")?;
+            let pubkey = get_pem_from_file(&pubkey)?[0].clone();
 
-                let (_type, _algo, _value) = AsymOps::parse_asym_pem(pubkey)?;
-                if _type == ObjectType::PublicKey && _algo == ObjectAlgorithm::EcP256 {
-                    new_import_spec.data.push(_value);
-                    break;
-                }
-                cliclack::log::info(
-                    "Invalid public key. Found object is either not a public key or not of curve secp256r1. Please try again or press ESC to go back to menu")?;
-            }
+            let (_type, _algo, _value) = AsymOps::parse_asym_pem(pubkey)?;
+            if _type != ObjectType::PublicKey && _algo != ObjectAlgorithm::EcP256 {
+                return Err(MgmError::InvalidInput(
+                    "Invalid public key. Found object is either not a public key or not of curve secp256r1.".to_string()));
+             }
+            new_key.data.push(_value);
         }
     };
-    new_import_spec.object = new_spec;
 
-    cliclack::note("Creating new authentication key with:", new_key_note)?;
-    if cliclack::confirm("Create key?").interact()? {
-        let id = AuthOps.import(session, &new_import_spec)?;
-        cliclack::log::success(format!("Created new authentication key with ID 0x{id:04x}"))?;
+    if !YubihsmUi::get_note_confirmation(&Cmdline, "Creating new authentication key with:", &new_key_note)? {
+        YubihsmUi::display_info_message(&Cmdline, "Authentication key not created")?;
+        return Ok(());
     }
+
+    new_key.object.id = AuthOps.import(session, &new_key)?;
+    YubihsmUi::display_success_message(&Cmdline, format!("Created new authentication key with ID 0x{:04x}", new_key.object.id).as_str())?;
     Ok(())
 }
 
 fn setup_user(current_authkey: &ObjectDescriptor, user_type: UserType) -> Result<ObjectSpec, MgmError> {
     let mut new_key = ObjectSpec::empty();
+    new_key.object_type = ObjectType::AuthenticationKey;
+    new_key.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
+    new_key.label = YubihsmUi::get_object_label(&Cmdline, "")?;
+    new_key.domains = YubihsmUi::select_object_domains(&Cmdline, &current_authkey.domains)?;
     match user_type {
         UserType::AsymUser =>
-            fill_object_spec(current_authkey, &mut new_key, &AuthOps::KEY_USER_CAPABILITIES, &AuthOps::KEY_USER_CAPABILITIES)?,
+            new_key.capabilities = YubihsmUi::select_object_capabilities(
+                &Cmdline,
+                &AuthOps::KEY_USER_CAPABILITIES,
+                &AuthOps::KEY_USER_CAPABILITIES,
+                None)?,
         UserType::AsymAdmin => {
-            fill_object_spec(
-                current_authkey, &mut new_key, &AuthOps::KEY_ADMIN_CAPABILITIES, &[])?;
-            new_key.delegated_capabilities = select_capabilities(
-                "Select delegated capabilities", current_authkey, &AuthOps::KEY_USER_CAPABILITIES, &[])?;
+            new_key.capabilities = YubihsmUi::select_object_capabilities(
+                &Cmdline,
+                &AuthOps::KEY_ADMIN_CAPABILITIES,
+                &[],
+                None)?;
+            new_key.delegated_capabilities = YubihsmUi::select_object_capabilities(
+                &Cmdline,
+                &AuthOps::KEY_USER_CAPABILITIES,
+                &[],
+                Some("Select delegated capabilities"))?;
         },
-        UserType::Auditor => fill_object_spec(
-            current_authkey, &mut new_key, &AuthOps::AUDITOR_CAPABILITIES, &[ObjectCapability::GetLogEntries])?,
+        UserType::Auditor =>
+            new_key.capabilities = YubihsmUi::select_object_capabilities(
+                &Cmdline,
+                &AuthOps::AUDITOR_CAPABILITIES,
+                &[ObjectCapability::GetLogEntries],
+                None)?,
         UserType::BackupAdmin => {
             let current_authkey_delegated = get_delegated_capabilities(current_authkey);
-            fill_object_spec(
-                current_authkey, &mut new_key, current_authkey_delegated.as_slice(), current_authkey_delegated.as_slice())?;
-            new_key.delegated_capabilities = select_capabilities(
-                "Select delegated capabilities", current_authkey, current_authkey_delegated.as_slice(), current_authkey_delegated.as_slice())?;
+            new_key.capabilities = YubihsmUi::select_object_capabilities(
+                &Cmdline,
+                &current_authkey_delegated,
+                &current_authkey_delegated,
+                None)?;
+            new_key.delegated_capabilities = YubihsmUi::select_object_capabilities(
+                &Cmdline,
+                &current_authkey_delegated,
+                &current_authkey_delegated,
+                Some("Select delegated capabilities"))?;
         },
     };
     Ok(new_key)

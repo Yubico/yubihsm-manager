@@ -77,6 +77,7 @@ impl MgmAlgorithm {
             ObjectAlgorithm::Mgf1Sha512 => "MGF1 with SHA512",
             ObjectAlgorithm::Aes128YubicoAuthentication => "AES128 Yubico Authentication",
             ObjectAlgorithm::Ecp256YubicoAuthentication => "ECP256 Yubico Authentication",
+            ObjectAlgorithm::OpaqueX509Certificate => "Opaque X509 Certificate",
             _ => "Unknown Algorithm"
         }
     }
@@ -127,6 +128,7 @@ impl MgmAlgorithm {
             ObjectAlgorithm::Mgf1Sha512 => "yubihsm-shell name: mgf1-sha512",
             ObjectAlgorithm::Aes128YubicoAuthentication => "yubihsm-shell name: aes128-yubico-authentication",
             ObjectAlgorithm::Ecp256YubicoAuthentication => "yubihsm-shell name: ecp256-yubico-authentication",
+            ObjectAlgorithm::OpaqueX509Certificate => "yubihsm-shell name: opaque-x509-certificate",
             _ => "Unknown Algorithm"
         }
     }

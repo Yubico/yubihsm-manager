@@ -18,14 +18,13 @@ use std::fmt;
 use std::fmt::Display;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
+use crate::backend::error::MgmError;
 use crate::backend::asym::{AsymOps, JavaOps};
 use crate::backend::sym::SymOps;
 use crate::backend::wrap::WrapOps;
 use crate::backend::object_ops::Deletable;
-use crate::backend::common::get_descriptors_from_handlers;
-use crate::backend::error::MgmError;
-use crate::backend::common::get_authorized_commands;
-use crate::backend::types::{CommandSpec, YhCommand};
+use crate::backend::common::{get_descriptors_from_handlers, get_authorized_commands};
+use crate::backend::types::{MgmCommand, MgmCommandType};
 
 #[derive(Debug, Clone, PartialEq,  Eq, Default)]
 pub enum FilterType {
@@ -40,7 +39,7 @@ impl Display for FilterType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             FilterType::All => write!(f, "List all objects"),
-            FilterType::Id(_) => write!(f, "Filter by Object ID"),
+            FilterType::Id(_) => write!(f, "Filter by object ID"),
             FilterType::Type(_) => write!(f, "Filter by object type"),
             FilterType::Label(_) => write!(f, "Filter by object label"),
         }
@@ -94,23 +93,23 @@ pub struct MainOps;
 impl Deletable for MainOps {}
 
 impl MainOps {
-    const MAIN_COMMANDS: [CommandSpec;9] = [
-        CommandSpec {
-            command: YhCommand::List,
+    const MAIN_COMMANDS: [MgmCommand;9] = [
+        MgmCommand {
+            command: MgmCommandType::List,
             label: "List",
-            description: "List all objects stored in the YubiHSM",
+            description: "List all objects stored on the YubiHSM",
             required_capabilities: &[],
             require_all_capabilities: false
         },
-        CommandSpec {
-            command: YhCommand::GetKeyProperties,
+        MgmCommand {
+            command: MgmCommandType::GetKeyProperties,
             label: "Get Object Properties",
-            description: "Get properties of an object stored in the YubiHSM",
+            description: "Get properties of an object stored on the YubiHSM",
             required_capabilities: &[],
             require_all_capabilities: false,
         },
-        CommandSpec {
-            command: YhCommand::Delete,
+        MgmCommand {
+            command: MgmCommandType::Delete,
             label: "Delete",
             description: "Delete an object from the YubiHSM",
             required_capabilities: &[
@@ -122,8 +121,8 @@ impl MainOps {
                 ObjectCapability::DeleteAuthenticationKey],
             require_all_capabilities: false,
         },
-        CommandSpec {
-            command: YhCommand::Generate,
+        MgmCommand {
+            command: MgmCommandType::Generate,
             label: "Generate",
             description: "Generate a new key inside the YubiHSM",
             required_capabilities: &[
@@ -132,8 +131,8 @@ impl MainOps {
                 ObjectCapability::GenerateWrapKey],
             require_all_capabilities: false,
         },
-        CommandSpec {
-            command: YhCommand::Import,
+        MgmCommand {
+            command: MgmCommandType::Import,
             label: "Import",
             description: "Import an object into the YubiHSM",
             required_capabilities: &[
@@ -143,33 +142,33 @@ impl MainOps {
                 ObjectCapability::PutWrapKey],
             require_all_capabilities: false,
         },
-        CommandSpec {
-            command: YhCommand::GotoKey,
+        MgmCommand {
+            command: MgmCommandType::GotoKey,
             label: "Goto key operation",
             description: "",
             required_capabilities: &[],
             require_all_capabilities: false,
         },
-        CommandSpec {
-            command: YhCommand::GotoSpecialCase,
+        MgmCommand {
+            command: MgmCommandType::GotoSpecialCase,
             label: "Goto special case operations",
             description: "",
             required_capabilities: &[],
             require_all_capabilities: false,
         },
-        CommandSpec {
-            command: YhCommand::GotoDevice,
+        MgmCommand {
+            command: MgmCommandType::GotoDevice,
             label: "Goto device operations",
             description: "Get pseudo random number, backup, restore or reset device",
             required_capabilities: &[],
             require_all_capabilities: false,
         },
-        CommandSpec::EXIT_COMMAND,
+        MgmCommand::EXIT_COMMAND,
     ];
 
     pub fn get_authorized_commands(
         authkey: &ObjectDescriptor,
-    ) -> Vec<CommandSpec> {
+    ) -> Vec<MgmCommand> {
         get_authorized_commands(authkey, &Self::MAIN_COMMANDS)
     }
 
@@ -237,16 +236,16 @@ impl MainOps {
 
     pub fn get_generatable_types(authkey: &ObjectDescriptor) -> Vec<MgmObjectType> {
         let mut types = Vec::new();
-        if CommandSpec::contains_command(&AsymOps::get_authorized_commands(authkey), &YhCommand::Generate) {
+        if MgmCommand::contains_command(&AsymOps::get_authorized_commands(authkey), &MgmCommandType::Generate) {
             types.push(MgmObjectType::Asymmetric);
         }
-        if CommandSpec::contains_command(&SymOps::get_authorized_commands(authkey), &YhCommand::Generate) {
+        if MgmCommand::contains_command(&SymOps::get_authorized_commands(authkey), &MgmCommandType::Generate) {
             types.push(MgmObjectType::Symmetric);
         }
-        if CommandSpec::contains_command(&WrapOps::get_authorized_commands(authkey), &YhCommand::Generate) {
+        if MgmCommand::contains_command(&WrapOps::get_authorized_commands(authkey), &MgmCommandType::Generate) {
             types.push(MgmObjectType::Wrap);
         }
-        if CommandSpec::contains_command(&JavaOps::get_authorized_commands(authkey), &YhCommand::Generate) {
+        if MgmCommand::contains_command(&JavaOps::get_authorized_commands(authkey), &MgmCommandType::Generate) {
             types.push(MgmObjectType::Java);
         }
         types
@@ -255,16 +254,16 @@ impl MainOps {
 
     pub fn get_importable_types(authkey: &ObjectDescriptor) -> Vec<MgmObjectType> {
         let mut types = Vec::new();
-        if CommandSpec::contains_command(&AsymOps::get_authorized_commands(authkey), &YhCommand::Import) {
+        if MgmCommand::contains_command(&AsymOps::get_authorized_commands(authkey), &MgmCommandType::Import) {
             types.push(MgmObjectType::Asymmetric);
         }
-        if CommandSpec::contains_command(&SymOps::get_authorized_commands(authkey), &YhCommand::Import) {
+        if MgmCommand::contains_command(&SymOps::get_authorized_commands(authkey), &MgmCommandType::Import) {
             types.push(MgmObjectType::Symmetric);
         }
-        if CommandSpec::contains_command(&WrapOps::get_authorized_commands(authkey), &YhCommand::Import) {
+        if MgmCommand::contains_command(&WrapOps::get_authorized_commands(authkey), &MgmCommandType::Import) {
             types.push(MgmObjectType::Wrap);
         }
-        if CommandSpec::contains_command(&JavaOps::get_authorized_commands(authkey), &YhCommand::Import) {
+        if MgmCommand::contains_command(&JavaOps::get_authorized_commands(authkey), &MgmCommandType::Import) {
             types.push(MgmObjectType::Java);
         }
         types

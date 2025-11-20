@@ -178,7 +178,7 @@ impl ImportObjectSpec {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
-pub enum YhCommand {
+pub enum MgmCommandType {
     #[default]
     List,
     GetKeyProperties,
@@ -212,33 +212,33 @@ pub enum YhCommand {
 }
 
 #[derive(Clone, Debug, Copy, PartialEq,  Eq, Default)]
-pub struct CommandSpec {
-    pub command: YhCommand,
+pub struct MgmCommand {
+    pub command: MgmCommandType,
     pub label: &'static str,
     pub description: &'static str,
     pub required_capabilities: &'static [ObjectCapability],
     pub require_all_capabilities: bool,
 }
 
-impl CommandSpec {
-    pub const RETURN_COMMAND: CommandSpec = CommandSpec {
-        command: YhCommand::ReturnToMainMenu,
+impl MgmCommand {
+    pub const RETURN_COMMAND: MgmCommand = MgmCommand {
+        command: MgmCommandType::ReturnToMainMenu,
         label: "Return to Previous Menu",
         description: "",
         required_capabilities: &[],
         require_all_capabilities: false,
     };
 
-    pub const EXIT_COMMAND: CommandSpec = CommandSpec {
-        command: YhCommand::Exit,
-        label: "Exit",
+    pub const EXIT_COMMAND: MgmCommand = MgmCommand {
+        command: MgmCommandType::Exit,
+        label: "Exit YubiHSM Manager",
         description: "",
         required_capabilities: &[],
         require_all_capabilities: false,
     };
 
     pub fn new(
-        command: YhCommand,
+        command: MgmCommandType,
         label: &'static str,
         description: &'static str,
         required_capabilities: &'static [ObjectCapability],
@@ -264,21 +264,64 @@ impl CommandSpec {
         }
     }
 
-    // pub fn get_authorized_commands(
-    //     authkey: &ObjectDescriptor,
-    //     commands: &[CommandSpec],
-    // ) -> Vec<CommandSpec> {
-    //     commands
-    //         .iter()
-    //         .filter(|cmd| cmd.is_authkey_authorized(authkey))
-    //         .cloned()
-    //         .collect()
-    // }
-
     pub fn contains_command(
-        commands: &[CommandSpec],
-        commands_to_check: &YhCommand,
+        commands: &[MgmCommand],
+        commands_to_check: &MgmCommandType,
     ) -> bool {
         commands.iter().any(|cmd| cmd.command == *commands_to_check)
     }
+}
+
+#[derive(Debug, Clone, PartialEq,  Eq, Default)]
+pub struct SelectionItem<T: Clone + Eq> {
+    pub value: T,
+    pub label: String,
+    pub hint: String,
+}
+
+impl <T:Clone+Eq> SelectionItem<T> {
+    pub fn new(value: T, label: String, hint: String) -> Self {
+        SelectionItem { value, label, hint }
+    }
+}
+
+// impl <T:Clone+Eq> From<&MgmAlgorithm> for SelectionItem<T> {
+//     fn from(algorithm: &MgmAlgorithm) -> Self {
+//         SelectionItem::new(
+//             algorithm.algorithm(),
+//             algorithm.label().to_string(),
+//             algorithm.description().to_string(),
+//         )
+//     }
+// }
+
+impl <T:Clone+Eq+Display> SelectionItem<T> {
+    pub fn get_item(value: &T) -> Self
+    {
+        SelectionItem::new(
+            value.clone(),
+            format!("{}", value),
+            String::new(),
+        )
+    }
+
+    pub fn get_items(values: &[T]) -> Vec<SelectionItem<T>>
+    where T: Clone + Eq
+    {
+        let mut items:Vec<SelectionItem<T>> = Vec::new();
+        for t in values {
+            items.push(Self::get_item(t));
+        }
+        items
+    }
+
+    // pub fn get_algorithm_items(algorithms: &[MgmAlgorithm]) -> Vec<SelectionItem<MgmAlgorithm>>
+    // {
+    //     let mut items:Vec<SelectionItem<MgmAlgorithm>> = Vec::new();
+    //     for algo in algorithms {
+    //         items.push(Self::from(algo));
+    //     }
+    //     items
+    // }
+
 }

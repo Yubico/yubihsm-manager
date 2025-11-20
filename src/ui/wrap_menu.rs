@@ -17,107 +17,106 @@
 use std::fs::File;
 use std::io::Read;
 
-use std::sync::LazyLock;
-use regex::Regex;
 use openssl::base64;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::ui::cmd_utils::get_spec_in_table;
-use crate::backend::algorithms::MgmAlgorithm;
-use crate::ui::cmd_utils::{fill_object_spec, get_id, get_label, print_failed_delete, print_menu_headers, print_object_properties, select_algorithm, select_capabilities, select_delete_objects, select_domains, select_multiple_objects};
-use crate::backend::types::YhCommand;
-use crate::ui::cmd_utils::select_command;
-use crate::backend::wrap::WrapKeyType;
+use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::{asym_menu, device_menu};
-use crate::backend::asym::AsymOps;
-use crate::backend::object_ops::Importable;
-use crate::backend::sym::SymOps;
-use crate::backend::types::ImportObjectSpec;
-use crate::backend::wrap::{WrapOpSpec, WrapType};
-use crate::ui::cmd_utils::select_one_object;
-use crate::ui::io_utils::read_pem_from_file;
-use crate::backend::object_ops::{Deletable, Generatable, Obtainable};
-use crate::backend::types::ObjectSpec;
-use crate::backend::wrap::WrapOps;
-use crate::ui::cmd_utils::list_objects;
+use crate::ui::utils::{display_menu_headers, write_bytes_to_file, delete_objects, display_object_properties, get_pem_from_file};
+use crate::cmd_ui::cmd_ui::Cmdline;
 use crate::backend::error::MgmError;
-use crate::ui::io_utils::{get_directory, get_file_path, write_bytes_to_file};
+use crate::backend::types::{SelectionItem, MgmCommandType, ImportObjectSpec, ObjectSpec};
+use crate::backend::validators::{aes_key_validator, pem_private_rsa_file_validator, pem_public_rsa_file_validator};
+use crate::backend::algorithms::MgmAlgorithm;
+use crate::backend::asym::AsymOps;
+use crate::backend::sym::SymOps;
+use crate::backend::wrap::{WrapOps, WrapOpSpec, WrapType, WrapKeyType};
+use crate::backend::object_ops::{Generatable, Obtainable, Importable};
 use crate::backend::common::get_delegated_capabilities;
 
 static WRAP_HEADER: &str = "Wrap keys";
 
-static SHARE_RE_256: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{70}$").unwrap());
-static SHARE_RE_192: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{59}$").unwrap());
-static SHARE_RE_128: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{48}$").unwrap());
-
 pub fn exec_wrap_command(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     loop {
 
-        print_menu_headers(&[crate::MAIN_HEADER, WRAP_HEADER]);
+        display_menu_headers(&[crate::MAIN_HEADER, WRAP_HEADER],
+                             "Wrap key operations allow you to manage and use wrap keys keys stored on the YubiHSM")?;
 
-        let cmd = select_command(&WrapOps::get_authorized_commands(authkey))?;
-        print_menu_headers(&[crate::MAIN_HEADER, WRAP_HEADER, cmd.label]);
+        let cmd = YubihsmUi::select_command(&Cmdline, &WrapOps::get_authorized_commands(authkey))?;
+        display_menu_headers(&[crate::MAIN_HEADER, WRAP_HEADER, cmd.label], cmd.description)?;
 
         let result = match cmd.command {
-            YhCommand::List => list(session),
-            YhCommand::GetKeyProperties => print_key_properties(session),
-            YhCommand::Generate => generate(session, authkey),
-            YhCommand::Import => import(session, authkey),
-            YhCommand::Delete => delete(session),
-            YhCommand::GetPublicKey => asym_menu::get_public_key(session, ObjectType::WrapKey),
-            YhCommand::ExportWrapped => export_wrapped(session, authkey),
-            YhCommand::ImportWrapped => import_wrapped(session, authkey),
-            YhCommand::GetRandom => device_menu::get_random(session),
-            YhCommand::ReturnToMainMenu => return Ok(()),
-            YhCommand::Exit => std::process::exit(0),
+            MgmCommandType::List => list(session),
+            MgmCommandType::GetKeyProperties => print_key_properties(session),
+            MgmCommandType::Generate => generate(session, authkey),
+            MgmCommandType::Import => import(session, authkey),
+            MgmCommandType::Delete => delete(session),
+            MgmCommandType::GetPublicKey => asym_menu::get_public_key(session, ObjectType::WrapKey),
+            MgmCommandType::ExportWrapped => export_wrapped(session, authkey),
+            MgmCommandType::ImportWrapped => import_wrapped(session, authkey),
+            MgmCommandType::GetRandom => device_menu::get_random(session),
+            MgmCommandType::ReturnToMainMenu => return Ok(()),
+            MgmCommandType::Exit => std::process::exit(0),
             _ => unreachable!()
         };
 
         if let Err(err) = result {
-            cliclack::log::error(err)?;
+            YubihsmUi::display_error_message(&Cmdline, err.to_string().as_str())?;
         }
     }
 }
 
 fn list(session: &Session) -> Result<(), MgmError> {
-    list_objects(&WrapOps.get_all_objects(session)?)
+    YubihsmUi::display_objects_basic(&Cmdline, &WrapOps.get_all_objects(session)?)
 }
 
 fn print_key_properties(session: &Session) -> Result<(), MgmError> {
-    print_object_properties(&WrapOps.get_all_objects(session)?)
+    display_object_properties(&WrapOps.get_all_objects(session)?)
 }
 
 fn delete(session: &Session) -> Result<(), MgmError> {
-    let objects = select_delete_objects(&WrapOps.get_all_objects(session)?)?;
-    let failed = WrapOps.delete_multiple(session, &objects);
-    print_failed_delete(&failed)
+    delete_objects(session, &WrapOps.get_all_objects(session)?)
 }
 
 pub fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     let mut new_key = ObjectSpec::empty();
     new_key.object_type = ObjectType::WrapKey;
-    let key_algo = select_algorithm("Select wrap key algorithm", &WrapOps::get_object_algorithms(), None)?;
-    let key_type = if AsymOps::is_rsa_key_algorithm(&key_algo) { WrapKeyType::Rsa } else { WrapKeyType::Aes };
-    new_key.algorithm = key_algo;
-    fill_object_spec(authkey, &mut new_key, &WrapOps::get_wrapkey_capabilities(key_type), &[])?;
-    new_key.delegated_capabilities = select_capabilities(
-        "Select delegated capabilities", authkey, get_delegated_capabilities(authkey).as_slice(), get_delegated_capabilities(authkey).as_slice())?;
+    new_key.algorithm = YubihsmUi::select_algorithm(
+        &Cmdline,
+        &WrapOps::get_object_algorithms(),
+        None,
+        Some("Select wrap key algorithm"))?;
+    let key_type = if AsymOps::is_rsa_key_algorithm(&new_key.algorithm) { WrapKeyType::Rsa } else { WrapKeyType::Aes };
 
+    new_key.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
+    new_key.label = YubihsmUi::get_object_label(&Cmdline, "")?;
+    new_key.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
+    new_key.capabilities = YubihsmUi::select_object_capabilities(
+        &Cmdline,
+        &WrapOps::get_wrapkey_capabilities(key_type),
+        &[],
+        None)?;
+    new_key.delegated_capabilities = YubihsmUi::select_object_capabilities(
+        &Cmdline,
+        &get_delegated_capabilities(authkey),
+        &get_delegated_capabilities(authkey),
+        Some("Select delegated capabilities"))?;
 
-    cliclack::note("Generating wrap key with:", get_spec_in_table(&new_key))?;
-    if cliclack::confirm("Generate wrap key?").interact()? {
-        let mut spinner = cliclack::spinner();
-        spinner.start("Generating key...");
-        new_key.id = WrapOps.generate(session, &new_key)?;
-        cliclack::log::success(
-            format!("Generated wrap key with ID 0x{:04x} on the device", new_key.id))?;
-        spinner.stop("");
+    if !YubihsmUi::get_note_confirmation(&Cmdline, "Generating wrap key with:", &new_key.to_string())? {
+        YubihsmUi::display_info_message(&Cmdline, "Key is not generated")?;
+        return Ok(());
     }
+
+    let spinner = YubihsmUi::start_spinner(&Cmdline, Some("Generating key..."));
+    new_key.id = WrapOps.generate(session, &new_key)?;
+    YubihsmUi::stop_spinner(&Cmdline, spinner, None);
+    YubihsmUi::display_success_message(&Cmdline,
+                                       format!("Generated wrap key with ID 0x{:04x} on the YubiHSM", new_key.id).as_str())?;
     Ok(())
 }
 
 pub fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    if cliclack::confirm("Re-create from shares?").interact()? {
+    if YubihsmUi::get_confirmation(&Cmdline, "Re-create from shares?")? {
         import_from_shares(session)
     } else {
         import_full_key(session, authkey)
@@ -125,79 +124,79 @@ pub fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmEr
 }
 
 fn import_full_key(session:&Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let input:String = cliclack::input("Enter wrap key in HEX format or path to PEM file containing RSA key:").interact()?;
-    let (key_type, key_algo, key_bytes) = if let Ok(hex) = hex::decode(input.clone()) {
-        cliclack::log::info("Detected HEX string. Parsing as AES wrap key...")?;
-        let mut key = hex;
-        loop {
-            if key.len() == 16 || key.len() == 24 || key.len() == 32 {
-                break;
-            }
-            cliclack::log::warning(format!("Provided key length is {} bytes, which is not valid for AES wrap key. Key must be 16, 24 or 32 bytes long", key.len()))?;
-            let s:String = cliclack::input("Try again or press ESC to return to menu:").interact()?;
-            key = hex::decode(s)?;
-        }
-        let algo = match key.len() {
-            16 => ObjectAlgorithm::Aes128CcmWrap,
-            24 => ObjectAlgorithm::Aes192CcmWrap,
-            32 => ObjectAlgorithm::Aes256CcmWrap,
-            _ => unreachable!(),
-        };
-        (WrapKeyType::Aes, algo, key)
-    } else if let Ok(pem) = read_pem_from_file(input.clone()) {
-        cliclack::log::info("Detected PEM file. Parsing as RSA key...")?;
+    let mut new_key = ImportObjectSpec::empty();
 
-        let mut p = pem;
-        let parsed;
-        loop {
-            let res = AsymOps::parse_asym_pem(p.clone());
-            if let Ok(items) = res {
-                if AsymOps::is_rsa_key_algorithm(&items.1) {
-                    parsed = items;
-                    break;
-                }
-            }
-            cliclack::log::warning("Provided PEM file does not contain a valid RSA wrap key. Only private or public RSA keys of length 2048, 3072, 4096 are valid".to_string())?;
-            let filepath:String = cliclack::input("Try again or press ESC to return to menu:").interact()?;
-            p = read_pem_from_file(filepath)?;
-        }
 
-        let (_type, _algo, _bytes) = parsed;
+    let mut input = YubihsmUi::get_string_input(
+        &Cmdline, "Enter wrap key in HEX format or path to PEM file containing RSA key:", true)?;
+    loop {
+        if aes_key_validator(&input).is_ok() || pem_private_rsa_file_validator(&input).is_ok() || pem_public_rsa_file_validator(&input).is_ok() {
+            break;
+        }
+        YubihsmUi::display_error_message(&Cmdline, "Input is neither valid AES key in HEX format nor valid path to a file containing RSA key in PEM format")?;
+        input = YubihsmUi::get_string_input(
+            &Cmdline, "Try again or press ESC to return to menu:", true)?;
+    }
+
+    if aes_key_validator(&input).is_ok() {
+        YubihsmUi::display_info_message(&Cmdline,"Detected HEX string. Parsing as AES wrap key...")?;
+        new_key.object.object_type = ObjectType::WrapKey;
+        new_key.data.push(hex::decode(input)?);
+        new_key.object.algorithm = WrapOps::get_algorithm_from_keylen(new_key.data[0].len())?;
+    } else if pem_private_rsa_file_validator(&input).is_ok() || pem_public_rsa_file_validator(&input).is_ok() {
+        YubihsmUi::display_info_message(&Cmdline, "Detected PEM file with private RSA key. Parsing as RSA key...")?;
+        let pem = get_pem_from_file(&input)?[0].clone();
+        let (_type, _algo, _bytes) = AsymOps::parse_asym_pem(pem)?;
+        new_key.data.push(_bytes);
+        new_key.object.algorithm = _algo;
         match _type {
-            ObjectType::AsymmetricKey => {
-                (WrapKeyType::Rsa, _algo, _bytes)
-            },
-            ObjectType::PublicKey => {
-                (WrapKeyType::RsaPublic, _algo, _bytes)
-            },
+            ObjectType::AsymmetricKey => new_key.object.object_type = ObjectType::WrapKey,
+            ObjectType::PublicKey => new_key.object.object_type = ObjectType::PublicWrapKey,
             _ => unreachable!()
         }
     } else {
-        return Err(MgmError::InvalidInput("Input must be in HEX format or valid PEM file path".to_string()));
-    };
+        unreachable!();
+    }
+    let key_type = WrapOps::get_wrapkey_type(new_key.object.object_type, new_key.object.algorithm)?;
 
-    let mut spec = ImportObjectSpec::empty();
-    spec.object.object_type = if key_type == WrapKeyType::RsaPublic {ObjectType::PublicWrapKey} else {ObjectType::WrapKey};
-    spec.object.algorithm = key_algo;
-    spec.data.push(key_bytes);
-    fill_object_spec(authkey, &mut spec.object, &WrapOps::get_wrapkey_capabilities(key_type), &[])?;
-    spec.object.delegated_capabilities = select_capabilities("Select delegated capabilities", authkey, get_delegated_capabilities(authkey).as_slice(), get_delegated_capabilities(authkey).as_slice())?;
+    new_key.object.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
+    new_key.object.label = YubihsmUi::get_object_label(&Cmdline, "")?;
+    new_key.object.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
+    new_key.object.capabilities = YubihsmUi::select_object_capabilities(
+        &Cmdline,
+        &WrapOps::get_wrapkey_capabilities(key_type),
+        &[],
+        Some("Select object capabilities"))?;
+    new_key.object.delegated_capabilities = YubihsmUi::select_object_capabilities(
+        &Cmdline,
+        &get_delegated_capabilities(authkey),
+        &get_delegated_capabilities(authkey),
+        Some("Select delegated capabilities"))?;
 
-    cliclack::note("Import wrap key with:", spec.object.to_string())?;
-
-    if cliclack::confirm("Import wrap key?").interact()? {
-        spec.object.id = WrapOps.import(session, &spec)?;
-        cliclack::log::success(
-            format!("Imported wrap key with ID 0x{:04x} on the device", spec.object.id))?;
-    } else {
+    if !YubihsmUi::get_note_confirmation(
+        &Cmdline,
+        "Import wrap key with:",
+        &new_key.object.to_string())? {
+        YubihsmUi::display_info_message(&Cmdline, "Object is not imported")?;
         return Ok(());
     }
 
-    cliclack::log::remark("Split wrap key? Note that the wrap key is already imported into the YubiHSM2. Key split is done outside the device")?;
-    if key_type == WrapKeyType::Aes && cliclack::confirm("Split wrap key?").interact()? {
-        let n_shares = get_shares()?;
-        let n_threshold = get_threshold(n_shares)?;
-        let split_key = WrapOps::split_wrap_key(&spec, n_threshold, n_shares)?;
+    let spinner = YubihsmUi::start_spinner(&Cmdline, Some("Generating key..."));
+    new_key.object.id = WrapOps.import(session, &new_key)?;
+    YubihsmUi::stop_spinner(&Cmdline, spinner, None);
+    YubihsmUi::display_success_message(&Cmdline,
+                                       format!("Imported {} object with ID 0x{:04x} into the YubiHSM", new_key.object.object_type, new_key.object.id).as_str())?;
+
+
+    if key_type != WrapKeyType::Aes {
+        return Ok(());
+    }
+
+    YubihsmUi::display_info_message(&Cmdline, "Split wrap key? Note that the wrap key is already imported into the YubiHSM2. Key split is done outside the device")?;
+    if YubihsmUi::get_confirmation(&Cmdline, "Split wrap key?")? {
+        let n_shares = YubihsmUi::get_split_aes_n_shares(&Cmdline, "Enter the number of shares to create:")?;
+        let n_threshold = YubihsmUi::get_split_aes_m_threshold(&Cmdline, "Enter the number of shares necessary to re-create the key:", n_shares)?;
+        let split_key = WrapOps::split_wrap_key(&new_key, n_threshold, n_shares)?;
         display_wrapkey_shares(split_key.shares_data)?;
     }
 
@@ -206,34 +205,40 @@ fn import_full_key(session:&Session, authkey: &ObjectDescriptor) -> Result<(), M
 
 fn import_from_shares(session:&Session) -> Result<(), MgmError> {
     let shares = recover_wrapkey_shares()?;
-    let mut key_spec = WrapOps::get_wrapkey_from_shares(shares)?;
-    key_spec.object.label = get_label()?;
+    let mut new_key = WrapOps::get_wrapkey_from_shares(shares)?;
+    new_key.object.label = YubihsmUi::get_object_label(&Cmdline, "")?;
 
-    cliclack::note("Import wrap key with:", key_spec.object.to_string())?;
-
-    if cliclack::confirm("Import wrap key?").interact()? {
-        key_spec.object.id = WrapOps.import(session, &key_spec)?;
-        cliclack::log::success(
-            format!("Imported wrap key with ID 0x{:04x} on the device", key_spec.object.id))?;
+    if !YubihsmUi::get_note_confirmation(&Cmdline, "Import wrap key with:", new_key.object.to_string().as_str())? {
+        YubihsmUi::display_info_message(&Cmdline, "Key is not imported")?;
+        return Ok(());
     }
+
+    let spinner = YubihsmUi::start_spinner(&Cmdline, Some("Importing key..."));
+    new_key.object.id = WrapOps.import(session, &new_key)?;
+    YubihsmUi::stop_spinner(&Cmdline, spinner, None);
+
+    YubihsmUi::display_success_message(&Cmdline,
+            format!("Imported wrap key with ID 0x{:04x} on the device", new_key.object.id).as_str())?;
     Ok(())
 }
 
 fn export_wrapped(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
     let wrapkeys = WrapOps::get_wrapping_keys(session, authkey)?;
-    let wrapkey = select_one_object(
-        "Select the wrapping key to use for exporting objects:",
-        &wrapkeys)?;
+    let wrapkey = YubihsmUi::select_one_object(
+         &Cmdline,
+         &wrapkeys,
+        Some("Select the wrapping key to use for exporting objects:"))?;
     let wrapkey_type = WrapOps::get_wrapkey_type(wrapkey.object_type, wrapkey.algorithm)?;
 
     let wrap_type = match wrapkey_type {
         WrapKeyType::Aes =>
             WrapType::Object,
         WrapKeyType::RsaPublic => {
-            cliclack::select("Select type of wrapping:")
-                .item(WrapType::Object, WrapType::Object, "")
-                .item(WrapType::Key, WrapType::Key, "Available only for (a)symmetric keys")
-                .interact()?
+            YubihsmUi::select_one_item(
+                &Cmdline,
+                &SelectionItem::get_items(&[WrapType::Object, WrapType::Key]),
+                Some(&WrapType::Object),
+                Some("Select type of wrapping:"))?
         }
         _ => unreachable!()
     };
@@ -247,41 +252,57 @@ fn export_wrapped(session: &Session, authkey: &ObjectDescriptor) -> Result<(), M
     };
 
     let exportable_objects = WrapOps::get_exportable_objects(session, &wrapkey, wrap_type)?;
-    let export_objects = select_multiple_objects(
-        "Select objects to export",
-        &exportable_objects, false)?;
+    let export_objects = YubihsmUi::select_multiple_objects(
+        &Cmdline,
+        &exportable_objects,
+        false,
+        Some("Select objects to export"))?;
     if exportable_objects.iter().any(|x| x.algorithm == ObjectAlgorithm::Ed25519) {
-        wrap_op.include_ed_seed = cliclack::confirm("Include Ed25519 seed in the wrapped export? (required for importing Ed25519 keys)").interact()?
+        wrap_op.include_ed_seed = YubihsmUi::get_confirmation(&Cmdline, "Include Ed25519 seed in the wrapped export? (required for importing Ed25519 keys)")?;
     };
 
     if wrapkey_type == WrapKeyType::RsaPublic {
-        wrap_op.aes_algorithm = Some(select_algorithm(
-            "Select AES algorithm to use for wrapping",
-            &SymOps::get_object_algorithms(), Some(ObjectAlgorithm::Aes256))?);
-        wrap_op.oaep_algorithm = Some(select_algorithm(
-            "Select OAEP algorithm to use for wrapping",
-            &MgmAlgorithm::RSA_OAEP_ALGORITHMS, Some(ObjectAlgorithm::RsaOaepSha256))?);
+        wrap_op.aes_algorithm = Some(YubihsmUi::select_algorithm(
+            &Cmdline,
+            &SymOps::get_object_algorithms(),
+            Some(ObjectAlgorithm::Aes256),
+            Some("Select AES algorithm to use for wrapping"))?);
+        wrap_op.oaep_algorithm = Some(YubihsmUi::select_algorithm(
+            &Cmdline,
+            &MgmAlgorithm::RSA_OAEP_ALGORITHMS,
+            Some(ObjectAlgorithm::RsaOaepSha256),
+            Some("Select OAEP algorithm to use for wrapping"))?);
     }
 
-    let dir: String = get_directory("Enter path to backup directory:")?;
+    let dir = YubihsmUi::get_path_input(
+        &Cmdline,
+        "Enter path to backup directory:",
+        false,
+        Some("."),
+        Some("Default is current directory"))?;
 
     let wrapped_objects = WrapOps::export_wrapped(session, &wrap_op, &export_objects)?;
 
     for object in &wrapped_objects {
         if object.error.is_some() {
-            cliclack::log::warning(format!("Failed to wrap {} with ID 0x{:04x}: {}. Skipping...", object.object_type, object.object_id, object.error.as_ref().unwrap()))?;
+            YubihsmUi::display_warning(&Cmdline, format!("Failed to wrap {} with ID 0x{:04x}: {}. Skipping...", object.object_type, object.object_id, object.error.as_ref().unwrap()).as_str())?;
             continue;
         }
         let filename = format!("0x{:04x}-{}.yhw", object.object_id, object.object_type);
-        // utils::write_object_to_file(&dir, object.object_id, object.object_type, &object.wrapped_data)?;
-        write_bytes_to_file(base64::encode_block(&object.wrapped_data).as_bytes(), &dir, filename.as_str())?;
+        write_bytes_to_file(base64::encode_block(&object.wrapped_data).as_bytes(), filename.as_str(), Some(&dir))?;
     }
 
     Ok(())
 }
 
 fn import_wrapped(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let filepath = get_file_path("Enter absolute path to wrapped object file:")?;
+    let filepath = YubihsmUi::get_path_input(
+        &Cmdline,
+        "Enter absolute path to wrapped object file:",
+        true,
+        None,
+        Some("Files containing wrapped YubiHSM objects usually have the file extension .yhw"))?;
+
     let mut file = File::open(&filepath)?;
 
     let mut wrapped = String::new();
@@ -292,9 +313,10 @@ fn import_wrapped(session: &Session, authkey: &ObjectDescriptor) -> Result<(), M
     // let data = base64::decode_block(&wrapped)?;
 
     let wrapkeys = WrapOps::get_unwrapping_keys(session, authkey)?;
-    let wrapkey = select_one_object(
-        "Select the unwrapping key to use for importing objects:",
-        &wrapkeys)?;
+    let wrapkey = YubihsmUi::select_one_object(
+        &Cmdline,
+        &wrapkeys,
+        Some("Select the unwrapping key to use for importing objects:"))?;
     let wrapkey_type = WrapOps::get_wrapkey_type(wrapkey.object_type, wrapkey.algorithm)?;
 
     let mut wrap_op = WrapOpSpec {
@@ -306,9 +328,11 @@ fn import_wrapped(session: &Session, authkey: &ObjectDescriptor) -> Result<(), M
         oaep_algorithm: None,
     };
     if wrapkey_type == WrapKeyType::Rsa {
-        wrap_op.oaep_algorithm = Some(select_algorithm(
-            "Select OAEP algorithm to use for wrapping",
-            &MgmAlgorithm::RSA_OAEP_ALGORITHMS, Some(ObjectAlgorithm::RsaOaepSha256))?);
+        wrap_op.oaep_algorithm = Some(YubihsmUi::select_algorithm(
+            &Cmdline,
+            &MgmAlgorithm::RSA_OAEP_ALGORITHMS,
+            Some(ObjectAlgorithm::RsaOaepSha256),
+            Some("Select OAEP algorithm to use for wrapping"))?);
     }
 
     let res = WrapOps::import_wrapped(session, &wrap_op, wrapped.clone(), None);
@@ -316,22 +340,29 @@ fn import_wrapped(session: &Session, authkey: &ObjectDescriptor) -> Result<(), M
         Ok(h) => h,
         Err(e) => {
             if wrapkey_type == WrapKeyType::Rsa {
-                cliclack::log::info("Failed to unwrap as object, trying as key data...")?;
+                YubihsmUi::display_info_message(&Cmdline, "Failed to unwrap as object, trying as key data...")?;
 
-                let algo = select_algorithm("Select wrapped key algorithm", &WrapOps::get_unwrapped_key_algorithms(), None)?;
+                let algo = YubihsmUi::select_algorithm(
+                    &Cmdline,
+                    &WrapOps::get_unwrapped_key_algorithms(),
+                    None,
+                    Some("Select wrapped key algorithm"))?;
                 let caps = if SymOps::is_aes_algorithm(&algo) {
-                    SymOps::get_object_capabilities(&algo)
+                    SymOps::get_object_capabilities(&wrapkey, &algo)
                 } else {
-                    AsymOps::get_object_capabilities(&algo)
+                    AsymOps::get_object_capabilities(&wrapkey, &algo)
                 };
 
                 let mut new_key = ObjectSpec::empty();
                 new_key.algorithm = algo;
-                new_key.id = get_id()?;
-                new_key.label = get_label()?;
-                new_key.domains = select_domains(&authkey.domains)?;
-                new_key.capabilities = select_capabilities(
-                    "Select object capabilities", &wrapkey, &caps, &[])?;
+                new_key.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
+                new_key.label = YubihsmUi::get_object_label(&Cmdline, "")?;
+                new_key.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
+                new_key.capabilities = YubihsmUi::select_object_capabilities(
+                    &Cmdline,
+                    &caps,
+                    &[],
+                    Some("Select object capabilities"))?;
 
                 WrapOps::import_wrapped(session, &wrap_op, wrapped, Some(new_key))?
             } else {
@@ -340,110 +371,61 @@ fn import_wrapped(session: &Session, authkey: &ObjectDescriptor) -> Result<(), M
         }
     };
 
-    cliclack::log::success(format!("Successfully imported object {}, with ID 0x{:04x}", handle.object_type, handle.object_id))?;
+    YubihsmUi::display_success_message(&Cmdline, format!("Successfully imported object {}, with ID 0x{:04x}", handle.object_type, handle.object_id).as_str())?;
 
     Ok(())
 }
 
 pub fn display_wrapkey_shares(shares:Vec<String>) -> Result<(), MgmError> {
 
-    cliclack::log::warning(
+    YubihsmUi::display_warning(&Cmdline,
         "*************************************************************\n\
         * WARNING! The following shares will NOT be stored anywhere *\n\
         * Save them and store them safely if you wish to re-use   *\n\
         * the wrap key for this device in the future                *\n\
         *************************************************************")?;
 
-    let _str: String = cliclack::input("Press Enter to start saving key shares").required(false).interact()?;
+    YubihsmUi::get_string_input(&Cmdline, "Press Enter to start saving key shares", false)?;
 
     for share in shares {
         loop {
-            cliclack::clear_screen()?;
-            cliclack::note("", share.clone())?;
-            if cliclack::confirm("Have you saved the key share?").interact()? {
+            YubihsmUi::clear_screen(&Cmdline)?;
+            YubihsmUi::display_note(&Cmdline,   "", &share)?;
+            if YubihsmUi::get_confirmation(&Cmdline, "Have you saved the key share?")? {
                 break;
             }
         }
-        cliclack::clear_screen()?;
-        let _str: String = cliclack::input(
-            "Press any key to display next key share or to return to menu").required(false).interact()?;
-
+        YubihsmUi::clear_screen(&Cmdline)?;
+        YubihsmUi::get_string_input(&Cmdline,
+            "Press any key to display next key share or to return to menu", false)?;
     }
 
-    cliclack::clear_screen()?;
+    YubihsmUi::clear_screen(&Cmdline)?;
     Ok(())
 }
 
 fn recover_wrapkey_shares() -> Result<Vec<String>, MgmError> {
 
-    let n_shares = get_shares()?;
+    YubihsmUi::display_warning(&Cmdline, "Note that the wrap key will be recreated outside the YubiHSM before importing it in its whole into the device")?;
+    YubihsmUi::get_string_input(&Cmdline,
+                                "Press any key to recreate wrap key from shares", false)?;
 
+    let n_shares = YubihsmUi::get_split_aes_n_shares(
+        &Cmdline, "Enter the number of shares to re-create the AES wrap key:")?;
     let mut shares_vec = Vec::new();
-    let mut share_len = 0;
 
-    while shares_vec.len() != n_shares as usize {
-        cliclack::clear_screen()?;
-        loop {
-            let share: String = cliclack::input(format!("Enter share number {}:", shares_vec.len() + 1)).interact()?;
-            if share_len == 0 && ([52,63,74].contains(&share.len())) {
-                share_len = share.len();
-            }
+    YubihsmUi::clear_screen(&Cmdline)?;
+    shares_vec.push(YubihsmUi::get_split_aes_share(&Cmdline, "Enter share number 1:", None)?);
 
-            if share.len() != share_len ||
-                (!SHARE_RE_256.is_match(&share) && !SHARE_RE_192.is_match(&share) && !SHARE_RE_128.is_match(&share)) {
-                cliclack::log::warning("Malformed share. Continuing...")?;
-            } else {
-                shares_vec.push(share);
-                break;
-            }
+    if n_shares > 1 {
+        for i in 2..=n_shares {
+            YubihsmUi::clear_screen(&Cmdline)?;
+            shares_vec.push(YubihsmUi::get_split_aes_share(&Cmdline, format!("Enter share number {}:", i).as_str(), Some(shares_vec[0].len() as u8))?);
         }
-        cliclack::clear_screen()?;
     }
+    YubihsmUi::clear_screen(&Cmdline)?;
+
+    YubihsmUi::display_info_message(&Cmdline, format!("{} shares have been registered", n_shares).as_str())?;
 
     Ok(shares_vec)
-}
-
-pub fn get_shares() -> Result<u8, MgmError> {
-    let n: String = cliclack::input("Enter the number of shares:")
-        .placeholder("Must be greater than 0 and less than 256")
-        .validate(|input: &String| {
-            if input.parse::<u16>().is_err() {
-                Err("Must be a positive number")
-            } else if input.parse::<u16>().unwrap() == 0 || input.parse::<u16>().unwrap() > 0xFF {
-                Err("Must be greater than zero and less than 256")
-            } else {
-                Ok(())
-            }
-        })
-        .interact()?;
-    let n = n.parse::<u16>().unwrap();
-    Ok(n as u8)
-}
-
-pub fn get_threshold(shares:u8) -> Result<u8, MgmError> {
-    let n = shares as u16;
-    let t: String = cliclack::input("Enter the number of shared necessary to re-create:")
-        .placeholder(format!("Must be greater than 0 and less than {}", n).as_str())
-        .validate(move |input: &String| {
-            if input.parse::<u16>().is_err() {
-                Err("Must be a positive number")
-            } else if input.parse::<u16>().unwrap() == 0 || input.parse::<u16>().unwrap() > n {
-                Err("Must be greater than zero and less than the number of shares")
-            } else {
-                Ok(())
-            }
-        })
-        .interact()?;
-    let t = t.parse::<u16>().unwrap();
-
-    if t == 1 {
-        cliclack::log::warning("You have chosen a privacy threshold of one.\n\
-                 The resulting share(s) will contain the unmodified raw wrap key in plain text.\n\
-                 Make sure you understand the implications.")?;
-        if !cliclack::confirm("Continue anyway?").interact()? {
-            return  get_threshold(shares);
-        }
-    }
-
-    Ok(t as u8)
 }

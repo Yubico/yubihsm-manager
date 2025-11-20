@@ -30,21 +30,29 @@ extern crate comfy_table;
 extern crate core;
 
 
-use std::fs;
 use clap::Arg;
 use yubihsmrs::YubiHsm;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectType};
-use backend::asym::AsymOps;
+use traits::ui_traits::YubihsmUi;
+use ui::utils::get_pem_from_file;
+use cmd_ui::cmd_ui::Cmdline;
 use backend::error::MgmError;
+use backend::asym::AsymOps;
+use backend::common::get_id_from_string;
+use backend::validators::pem_private_ecp256_file_validator;
+
 pub mod backend;
 pub mod ui;
+pub mod traits;
+pub mod cmd_ui;
+
 
 macro_rules! unwrap_or_exit1 {
     ( $e:expr, $msg:expr) => {
         match $e {
             Ok(x) => x,
             Err(err) => {
-                cliclack::log::error(format!("{}. {}", $msg, err))?;
+                YubihsmUi::display_error_message(&Cmdline, format!("{}. {}", $msg, err).as_str())?;
                 std::process::exit(1);
             },
         }
@@ -54,19 +62,6 @@ macro_rules! unwrap_or_exit1 {
 const YH_EC_P256_PUBKEY_LEN: usize = 65;
 
 pub static MAIN_HEADER: &str = "YubiHSM Manager";
-
-fn parse_id(value: &str) -> Result<u16, String> {
-    let id = if value.starts_with("0x") {
-        u16::from_str_radix(&value[2..], 16)
-    } else {
-        value.parse()
-    };
-
-    match id {
-        Ok(id) => Ok(id),
-        Err(_) => Err("ID must be a number in [1, 65535]".to_string()),
-    }
-}
 
 fn main() -> Result<(), MgmError>{
     let matches = clap::Command::new(env!("CARGO_PKG_NAME"))
@@ -111,25 +106,17 @@ fn main() -> Result<(), MgmError>{
         .get_matches();
 
     let Some(connector) = matches.get_one::<String>("connector") else {
-        cliclack::log::error("Failed to read connector value")?;
+        YubihsmUi::display_error_message(&Cmdline, "Failed to read connector value")?;
         std::process::exit(1);
     };
 
-    if let Err(err) = yubihsmrs::init() {
-        cliclack::log::error(format!("Unable to initialize libyubihsm: {}", err))?;
-        std::process::exit(1);
-    };
-
+    unwrap_or_exit1!(yubihsmrs::init(), "Unable to initialize libyubihsm");
     let h = unwrap_or_exit1!(YubiHsm::new(connector), "Unable to create HSM object");
-
-    if let Err(err) = h.set_verbosity(matches.get_flag("verbose")) {
-        cliclack::log::error(format!("Unable to set verbosity: {}", err))?;
-        std::process::exit(1);
-    };
+    unwrap_or_exit1!(h.set_verbosity(matches.get_flag("verbose")), "Unable to set verbosity");
 
     if let Some("get-device-info") = matches.subcommand_name() {
         let info = h.get_device_info()?;
-        cliclack::log::success(info)?;
+        println!("{}\n",info);
         return Ok(());
     };
 
@@ -140,47 +127,39 @@ fn main() -> Result<(), MgmError>{
         return Ok(());
     };
 
-    let authkey = match matches.get_one::<String>("authkey") {
-        Some(auth_key) => {
-            parse_id(auth_key).unwrap_or_else(|err| {
-                cliclack::log::error(format!("Unable to parse authentication key ID: {}", err)).unwrap();
-                std::process::exit(1);
-            })
-        },
-        None => 1,
+    let authkey = if let Some(id) = matches.get_one::<String>("authkey") {
+        get_id_from_string(id)?
+    } else {
+        1
     };
-
-    cliclack::log::info(format!("Using authentication key 0x{:04x}", authkey))?;
+    YubihsmUi::display_info_message(&Cmdline, format!("Using authentication key 0x{:04x}", authkey).as_str())?;
 
     let session =
     if matches.contains_id("privkey") {
-        let filename = match matches.get_one::<String>("privkey") {
-            Some(filename) => filename.to_owned(),
-            None => {
-                cliclack::log::error("Unable to read private key file name").unwrap();
-                std::process::exit(1);
-            },
+        let filename = if let Some(f) = matches.get_one::<String>("privkey") {
+            f.to_owned()
+        } else {
+            YubihsmUi::display_error_message(&Cmdline, "Unable to read private key file name")?;
+            std::process::exit(1);
         };
 
-        let (_typ, _algo, privkey) = AsymOps::parse_asym_pem(pem::parse(fs::read_to_string(filename)?)?)?;
-        if _typ != ObjectType::AsymmetricKey || _algo != ObjectAlgorithm::EcP256 {
-            cliclack::log::error("Private key in PEM file is not an EC P256 key")?;
+        if pem_private_ecp256_file_validator(&filename).is_err() {
+            YubihsmUi::display_error_message(&Cmdline, "Private key in PEM file is not a private EC P256 key")?;
             std::process::exit(1);
         }
+
+        let (_, _, privkey) = AsymOps::parse_asym_pem(get_pem_from_file(&filename)?[0].clone())?;
         let device_pubkey = h.get_device_pubkey()?;
         if device_pubkey.len() != YH_EC_P256_PUBKEY_LEN {
-            cliclack::log::error("Wrong length of device public key").unwrap();
+            YubihsmUi::display_error_message(&Cmdline, "Wrong length of device public key")?;
             std::process::exit(1);
         }
         unwrap_or_exit1!(h.establish_session_asym(authkey, privkey.as_slice(), device_pubkey.as_slice()), "Unable to open asymmetric session")
     } else {
-        let password = match matches.get_one::<String>("password") {
-            Some(password) => password.to_owned(),
-            None => {
-                cliclack::password("Enter authentication password:")
-                    .mask('*')
-                    .interact()?
-            },
+        let password = if let Some(pwd) = matches.get_one::<String>("password") {
+            pwd.to_owned()
+        } else {
+            YubihsmUi::get_password(&Cmdline, "Enter authentication password:", false)?
         };
         unwrap_or_exit1!(h.establish_session(authkey, &password, true), "Unable to open session")
     };
@@ -194,9 +173,9 @@ fn main() -> Result<(), MgmError>{
                 "sym" => ui::sym_menu::exec_sym_command(&session, &authkey),
                 "auth" => ui::auth_menu::exec_auth_command(&session, &authkey),
                 "wrap" => ui::wrap_menu::exec_wrap_command(&session, &authkey),
-                "reset" => ui::device_menu::reset(&session),
                 "ksp" => ui::ksp_menu::guided_ksp_setup(&session, &authkey),
                 "sunpkcs11" => ui::java_menu::exec_java_command(&session, &authkey),
+                "reset" => ui::device_menu::reset(&session),
                 _ => unreachable!(),
             }
         },
@@ -206,21 +185,21 @@ fn main() -> Result<(), MgmError>{
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn id_test() {
-        let id = parse_id("0");
-        assert_eq!(id, Ok(0));
-        let id = parse_id("100");
-        assert_eq!(id, Ok(100));
-        let id = parse_id("0x64");
-        assert_eq!(id, Ok(100));
-        let id = parse_id("6553564");
-        assert!(id.is_err());
-        let id = parse_id("ID");
-        assert!(id.is_err());
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//
+//     #[test]
+//     fn id_test() {
+//         let id = parse_id("0");
+//         assert_eq!(id, Ok(0));
+//         let id = parse_id("100");
+//         assert_eq!(id, Ok(100));
+//         let id = parse_id("0x64");
+//         assert_eq!(id, Ok(100));
+//         let id = parse_id("6553564");
+//         assert!(id.is_err());
+//         let id = parse_id("ID");
+//         assert!(id.is_err());
+//     }
+// }

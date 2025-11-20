@@ -16,12 +16,11 @@
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::backend::algorithms::MgmAlgorithm;
-use crate::backend::object_ops::Importable;
-use crate::backend::types::{ImportObjectSpec, CommandSpec, YhCommand};
-use crate::backend::common::{get_descriptors_from_handlers, get_authorized_commands};
-use crate::backend::object_ops::{Deletable, Obtainable};
 use crate::backend::error::MgmError;
+use crate::backend::algorithms::MgmAlgorithm;
+use crate::backend::types::{ImportObjectSpec, MgmCommand, MgmCommandType};
+use crate::backend::common::{get_descriptors_from_handlers, get_authorized_commands};
+use crate::backend::object_ops::{Deletable, Obtainable, Importable};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UserType {
@@ -56,16 +55,12 @@ impl Obtainable for AuthOps {
         unimplemented!()
     }
 
-    fn get_object_capabilities(_: &ObjectAlgorithm) -> Vec<ObjectCapability> {
+    fn get_object_capabilities(_: &ObjectDescriptor, _: &ObjectAlgorithm) -> Vec<ObjectCapability> {
         unimplemented!()
     }
 }
 
 impl Deletable for AuthOps {
-    // fn delete(&self, session: &Session, object_id: u16, _: ObjectType) -> Result<(), MgmError> {
-    //     session.delete_object(object_id, ObjectType::AuthenticationKey)?;
-    //     Ok(())
-    // }
 }
 
 impl Importable for AuthOps {
@@ -133,63 +128,63 @@ impl AuthOps {
         ObjectCapability::ExportableUnderWrap,
     ];
 
-    const AUTH_COMMANDS: [CommandSpec;9] = [
-        CommandSpec {
-            command: YhCommand::List,
+    const AUTH_COMMANDS: [MgmCommand;9] = [
+        MgmCommand {
+            command: MgmCommandType::List,
             label: "List",
             description: "List all authentication keys stored in the YubiHSM",
             required_capabilities: &[],
             require_all_capabilities: false
         },
-        CommandSpec {
-            command: YhCommand::GetKeyProperties,
+        MgmCommand {
+            command: MgmCommandType::GetKeyProperties,
             label: "Get object properties",
-            description: "Get properties of an authentication key stored in the YubiHSM",
+            description: "Get properties of an authentication key stored on the YubiHSM",
             required_capabilities: &[],
             require_all_capabilities: false,
         },
-        CommandSpec {
-            command: YhCommand::Delete,
+        MgmCommand {
+            command: MgmCommandType::Delete,
             label: "Delete",
             description: "Delete an authentication key from the YubiHSM",
             required_capabilities: &[ObjectCapability::DeleteAuthenticationKey],
             require_all_capabilities: false,
         },
-        CommandSpec {
-            command: YhCommand::SetupUser,
+        MgmCommand {
+            command: MgmCommandType::SetupUser,
             label: "Setup (a)symmetric keys user",
-            description: "Can only use (a)symmetric keys stored in the YubiHSM",
+            description: "Can only use (a)symmetric keys stored on the YubiHSM",
             required_capabilities: &[ObjectCapability::PutAuthenticationKey],
             require_all_capabilities: false,
         },
-        CommandSpec {
-            command: YhCommand::SetupAdmin,
+        MgmCommand {
+            command: MgmCommandType::SetupAdmin,
             label: "Setup (a)symmetric keys admin",
-            description: "Can only manage (a)symmetric keys stored in the YubiHSM",
+            description: "Can only manage (a)symmetric keys stored on the YubiHSM",
             required_capabilities: &[ObjectCapability::PutAuthenticationKey],
             require_all_capabilities: false,
         },
-        CommandSpec {
-            command: YhCommand::SetupAuditor,
+        MgmCommand {
+            command: MgmCommandType::SetupAuditor,
             label: "Setup auditor user",
             description: "Can only perform audit functions on the YubiHSM",
             required_capabilities: &[ObjectCapability::PutAuthenticationKey],
             require_all_capabilities: false,
         },
-        CommandSpec {
-            command: YhCommand::SetupBackupAdmin,
+        MgmCommand {
+            command: MgmCommandType::SetupBackupAdmin,
             label: "Setup custom user",
             description: "Can have all capabilities of the current user",
             required_capabilities: &[ObjectCapability::PutAuthenticationKey],
             require_all_capabilities: false,
         },
-        CommandSpec::RETURN_COMMAND,
-        CommandSpec::EXIT_COMMAND,
+        MgmCommand::RETURN_COMMAND,
+        MgmCommand::EXIT_COMMAND,
     ];
 
     pub fn get_authorized_commands(
         authkey: &ObjectDescriptor,
-    ) -> Vec<CommandSpec> {
+    ) -> Vec<MgmCommand> {
         get_authorized_commands(authkey, &Self::AUTH_COMMANDS)
     }
 }

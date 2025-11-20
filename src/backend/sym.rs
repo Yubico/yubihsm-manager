@@ -16,13 +16,12 @@
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::backend::algorithms::MgmAlgorithm;
-use crate::backend::common::get_authorized_commands;
-use crate::backend::common::get_op_keys;
-use crate::backend::common::get_descriptors_from_handlers;
-use crate::backend::object_ops::{Deletable, Generatable, Importable, Obtainable};
-use crate::backend::types::{CommandSpec, ImportObjectSpec, ObjectSpec, YhCommand};
 use crate::backend::error::MgmError;
+use crate::backend::common::{get_applicable_capabilities, get_authorized_commands, get_op_keys, get_descriptors_from_handlers};
+use crate::backend::algorithms::MgmAlgorithm;
+use crate::backend::object_ops::{Deletable, Generatable, Importable, Obtainable};
+use crate::backend::types::{MgmCommand, ImportObjectSpec, ObjectSpec, MgmCommandType};
+
 
 pub struct SymOps;
 
@@ -63,17 +62,12 @@ impl Obtainable for SymOps {
         MgmAlgorithm::AES_KEY_ALGORITHMS.to_vec()
     }
 
-    fn get_object_capabilities(_: &ObjectAlgorithm) -> Vec<ObjectCapability> {
-        Self::AES_KEY_CAPABILITIES.to_vec()
+    fn get_object_capabilities(authkey: &ObjectDescriptor, _: &ObjectAlgorithm) -> Vec<ObjectCapability> {
+        get_applicable_capabilities(authkey, &Self::AES_KEY_CAPABILITIES)
     }
 }
 
-impl Deletable for SymOps {
-    // fn delete(&self, session: &Session, object_id: u16, _: ObjectType) -> Result<(), MgmError> {
-    //     session.delete_object(object_id, ObjectType::SymmetricKey)?;
-    //     Ok(())
-    // }
-}
+impl Deletable for SymOps {}
 
 impl Generatable for SymOps {
     fn generate(&self, session: &Session, spec: &ObjectSpec) -> Result<u16, MgmError> {
@@ -109,63 +103,70 @@ impl SymOps {
         ObjectCapability::DecryptEcb,
         ObjectCapability::ExportableUnderWrap];
 
-    const SYM_COMMANDS: [CommandSpec;9] = [
-        CommandSpec {
-            command: YhCommand::List,
+    const SYM_COMMANDS: [MgmCommand;10] = [
+        MgmCommand {
+            command: MgmCommandType::List,
             label: "List",
-            description: "List all asymmetric keys and X509 certificates stored in the YubiHSM",
+            description: "List all asymmetric keys and X509 certificates stored on the YubiHSM",
             required_capabilities: &[],
             require_all_capabilities: false
         },
-        CommandSpec {
-            command: YhCommand::GetKeyProperties,
+        MgmCommand {
+            command: MgmCommandType::GetKeyProperties,
             label: "Get Object Properties",
-            description: "Get properties of an asymmetric key or X509 certificate stored in the YubiHSM",
+            description: "Get properties of an asymmetric key or X509 certificate stored on the YubiHSM",
             required_capabilities: &[],
             require_all_capabilities: false,
         },
-        CommandSpec {
-            command: YhCommand::Generate,
+        MgmCommand {
+            command: MgmCommandType::Generate,
             label: "Generate",
             description: "Generate a new asymmetric key inside the YubiHSM",
             required_capabilities: &[ObjectCapability::GenerateSymmetricKey],
             require_all_capabilities: false,
         },
-        CommandSpec {
-            command: YhCommand::Import,
+        MgmCommand {
+            command: MgmCommandType::Import,
             label: "Import",
             description: "Import an asymmetric key or X509 certificate into the YubiHSM",
             required_capabilities: &[ObjectCapability::PutSymmetricKey],
             require_all_capabilities: false,
         },
-        CommandSpec {
-            command: YhCommand::Delete,
+        MgmCommand {
+            command: MgmCommandType::Delete,
             label: "Delete",
             description: "Delete an asymmetric key or X509 certificate from the YubiHSM",
             required_capabilities: &[ObjectCapability::DeleteSymmetricKey],
             require_all_capabilities: false,
         },
-        CommandSpec {
-            command: YhCommand::Encrypt,
+        MgmCommand {
+            command: MgmCommandType::Encrypt,
             label: "Encrypt",
-            description: "Encrypt data using an AES key stored in the YubiHSM",
+            description: "Encrypt data using an AES key stored on the YubiHSM",
             required_capabilities: &[ObjectCapability::EncryptEcb, ObjectCapability::EncryptCbc],
             require_all_capabilities: false,
         },
-        CommandSpec {
-            command: YhCommand::Decrypt,
+        MgmCommand {
+            command: MgmCommandType::Decrypt,
             label: "Decrypt",
-            description: "Decrypt data using an AES key stored in the YubiHSM",
+            description: "Decrypt data using an AES key stored on the YubiHSM",
             required_capabilities: &[ObjectCapability::DecryptEcb, ObjectCapability::DecryptCbc],
             require_all_capabilities: false,
         },
-        CommandSpec::RETURN_COMMAND,
-        CommandSpec::EXIT_COMMAND,
+        MgmCommand {
+            command: MgmCommandType::GetRandom,
+            label: "Generate pseudo random number",
+            description: "Get pseudo random bytes generated by the YubiHSM",
+            required_capabilities: &[ObjectCapability::GetPseudoRandom],
+            require_all_capabilities: false,
+        },
+        MgmCommand::RETURN_COMMAND,
+        MgmCommand::EXIT_COMMAND,
     ];
 
     pub fn get_authorized_commands(
         authkey: &ObjectDescriptor,
-    ) -> Vec<CommandSpec> {
+    ) -> Vec<MgmCommand> {
         get_authorized_commands(authkey, &Self::SYM_COMMANDS)
     }
 

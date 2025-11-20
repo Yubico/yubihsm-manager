@@ -16,10 +16,22 @@
 
 extern crate yubihsmrs;
 
+use std::str::FromStr;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
-use crate::backend::types::CommandSpec;
 use crate::backend::error::MgmError;
+use crate::backend::validators::object_id_validator;
+use crate::backend::types::MgmCommand;
+
+pub fn get_id_from_string(id_str: &str) -> Result<u16, MgmError> {
+    object_id_validator(id_str)?;
+    let id = if let Some(hex) = id_str.strip_prefix("0x") {
+        u16::from_str_radix(hex, 16).unwrap()
+    } else {
+        u16::from_str(&id_str).unwrap()
+    };
+    Ok(id)
+}
 
 pub fn get_descriptors_from_handlers(session:&Session, handlers: &[ObjectHandle]) -> Result<Vec<ObjectDescriptor>, MgmError> {
     let descriptors: Vec<ObjectDescriptor> = handlers
@@ -39,11 +51,22 @@ pub fn delete_objects(session: &Session, objects: &Vec<ObjectDescriptor>) -> Vec
     failed
 }
 
+pub fn delete_object(session: &Session, object_id: u16, object_type: ObjectType) -> Result<(), MgmError> {
+        Ok(session.delete_object(object_id, object_type)?)
+}
+
 pub fn get_delegated_capabilities(object: &ObjectDescriptor) -> Vec<ObjectCapability>  {
     match &object.delegated_capabilities {
         Some(caps) => caps.clone(),
         None => Vec::new()
     }
+}
+
+pub fn get_applicable_capabilities(authkey: &ObjectDescriptor, capabilities: &[ObjectCapability]) -> Vec<ObjectCapability> {
+    let auth_delegated = get_delegated_capabilities(authkey);
+    let mut caps = capabilities.to_vec();
+    caps.retain(|c| auth_delegated.contains(c));
+    caps
 }
 
 pub fn get_op_keys(
@@ -80,8 +103,8 @@ pub fn contains_all(set: &[ObjectCapability], subset: &[ObjectCapability]) -> bo
 
 pub fn get_authorized_commands(
     authkey: &ObjectDescriptor,
-    commands: &[CommandSpec],
-) -> Vec<CommandSpec> {
+    commands: &[MgmCommand],
+) -> Vec<MgmCommand> {
     let mut authorized_commands = commands.to_vec();
     authorized_commands.retain(|cmd| {
         cmd.is_authkey_authorized(authkey)

@@ -15,6 +15,7 @@
  */
 
 pub mod error;
+pub mod validators;
 pub mod common;
 pub mod types;
 pub mod algorithms;

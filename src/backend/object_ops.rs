@@ -16,16 +16,16 @@
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
+use crate::backend::error::MgmError;
 use crate::backend::algorithms::MgmAlgorithm;
 use crate::backend::types::{ImportObjectSpec, ObjectSpec};
-use crate::backend::error::MgmError;
 
 pub trait Obtainable {
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError>;
 
     fn get_object_algorithms() -> Vec<MgmAlgorithm>;
 
-    fn get_object_capabilities(object_algorithm: &ObjectAlgorithm) -> Vec<ObjectCapability>;
+    fn get_object_capabilities(authkey: &ObjectDescriptor, object_algorithm: &ObjectAlgorithm) -> Vec<ObjectCapability>;
 }
 
 /// Trait for generating a new object.

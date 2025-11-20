@@ -14,129 +14,147 @@
  * limitations under the License.
  */
 
-use yubihsmrs::object::{ObjectCapability, ObjectDescriptor};
+use yubihsmrs::object::{ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::ui::cmd_utils::{fill_object_spec, print_failed_delete, print_menu_headers, print_object_properties, select_algorithm, select_delete_objects};
-use crate::backend::types::YhCommand;
-use crate::ui::cmd_utils::select_command;
-use crate::ui::cmd_utils::select_one_object;
-use crate::backend::sym::AesOperationSpec;
-use crate::backend::sym::{AesMode, EncryptionMode};
-use crate::backend::object_ops::{Deletable, Generatable, Importable, Obtainable};
-use crate::backend::sym::SymOps;
-use crate::backend::types::{ImportObjectSpec, ObjectSpec};
-use crate::ui::cmd_utils::list_objects;
-use crate::ui::io_utils::{read_aes_key_hex, read_input_bytes, write_bytes_to_file};
+use crate::traits::ui_traits::YubihsmUi;
+use crate::ui::utils::{display_menu_headers, write_bytes_to_file, delete_objects, display_object_properties, get_hex_or_bytes_from_file};
+use crate::ui::device_menu;
+use crate::cmd_ui::cmd_ui::Cmdline;
 use crate::backend::error::MgmError;
+use crate::backend::types::{MgmCommandType, ImportObjectSpec, ObjectSpec, SelectionItem};
+use crate::backend::sym::{SymOps, AesMode, EncryptionMode, AesOperationSpec};
+use crate::backend::object_ops::{Generatable, Importable, Obtainable};
 
 static SYM_HEADER: &str = "Symmetric keys";
 
 pub fn exec_sym_command(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
 
     loop {
-        print_menu_headers(&[crate::MAIN_HEADER, SYM_HEADER]);
+        display_menu_headers(&[crate::MAIN_HEADER, SYM_HEADER],
+                             "Symmetric key operations allow you to manage and use symmetric keys stored on the YubiHSM")?;
 
-        let cmd = select_command(&SymOps::get_authorized_commands(authkey))?;
-        print_menu_headers(&[crate::MAIN_HEADER, SYM_HEADER, cmd.label]);
+        let cmd = YubihsmUi::select_command(&Cmdline, &SymOps::get_authorized_commands(authkey))?;
+        display_menu_headers(&[crate::MAIN_HEADER, SYM_HEADER, cmd.label], cmd.description)?;
 
         let res = match cmd.command {
-            YhCommand::List => list(session),
-            YhCommand::GetKeyProperties => print_key_properties(session),
-            YhCommand::Generate => generate(session, authkey),
-            YhCommand::Import => import(session, authkey),
-            YhCommand::Delete => delete(session),
-            YhCommand::Encrypt => operate(session, authkey, EncryptionMode::Encrypt),
-            YhCommand::Decrypt => operate(session, authkey, EncryptionMode::Decrypt),
-            YhCommand::ReturnToMainMenu => return Ok(()),
-            YhCommand::Exit => std::process::exit(0),
+            MgmCommandType::List => list(session),
+            MgmCommandType::GetKeyProperties => print_key_properties(session),
+            MgmCommandType::Generate => generate(session, authkey),
+            MgmCommandType::Import => import(session, authkey),
+            MgmCommandType::Delete => delete(session),
+            MgmCommandType::Encrypt => operate(session, authkey, EncryptionMode::Encrypt),
+            MgmCommandType::Decrypt => operate(session, authkey, EncryptionMode::Decrypt),
+            MgmCommandType::GetRandom => device_menu::get_random(session),
+            MgmCommandType::ReturnToMainMenu => return Ok(()),
+            MgmCommandType::Exit => std::process::exit(0),
             _ => unreachable!()
         };
 
         if let Err(e) = res {
-            cliclack::log::error(e)?
+            YubihsmUi::display_error_message(&Cmdline, e.to_string().as_str())?
         }
     }
 }
 
 fn list(session: &Session) -> Result<(), MgmError> {
     let keys = SymOps.get_all_objects(session)?;
-    list_objects(&keys)
+    YubihsmUi::display_objects_basic(&Cmdline, &keys)
 }
 
 fn print_key_properties(session: &Session) -> Result<(), MgmError> {
-    print_object_properties(&SymOps.get_all_objects(session)?)
+    display_object_properties(&SymOps.get_all_objects(session)?)
 }
 
 fn delete(session: &Session) -> Result<(), MgmError> {
-    let objects = select_delete_objects(&SymOps.get_all_objects(session)?)?;
-    let failed = SymOps.delete_multiple(session, &objects);
-    print_failed_delete(&failed)
+    delete_objects(session, &SymOps.get_all_objects(session)?)
 }
 
 pub fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let key_algo = select_algorithm("Select AES key algorithm:", &SymOps::get_object_algorithms(), None)?;
-
     let mut new_key = ObjectSpec::empty();
-    new_key.algorithm = key_algo;
-    fill_object_spec(authkey, &mut new_key,  &SymOps::get_object_capabilities(&key_algo), &[])?;
+    new_key.object_type = ObjectType::SymmetricKey;
+    new_key.algorithm = YubihsmUi::select_algorithm(
+        &Cmdline,
+        &SymOps::get_object_algorithms(),
+        None,
+        Some("Select AES key algorithm:"))?;
+    new_key.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
+    new_key.label = YubihsmUi::get_object_label(&Cmdline, "")?;
+    new_key.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
+    new_key.capabilities = YubihsmUi::select_object_capabilities(
+        &Cmdline,
+        &SymOps::get_object_capabilities(authkey, &new_key.algorithm),
+        &[],
+        None)?;
 
-    cliclack::note("Generating AES key with:", new_key.to_string())?;
-
-    if cliclack::confirm("Generate key?").interact()? {
-        let mut spinner = cliclack::spinner();
-        spinner.start("Generating AES key...");
-        new_key.id = SymOps.generate(session, &new_key)?;
-        spinner.stop("");
-        cliclack::log::success(
-            format!("Generated AES key with ID 0x{:04x} on the device", new_key.id))?;
+    if !YubihsmUi::get_note_confirmation(&Cmdline, "Generating symmetric key with:", &new_key.to_string())? {
+        YubihsmUi::display_info_message(&Cmdline, "Key is not generated")?;
+        return Ok(());
     }
+
+    let spinner = YubihsmUi::start_spinner(&Cmdline, Some("Generating key..."));
+    new_key.id = SymOps.generate(session, &new_key)?;
+    YubihsmUi::stop_spinner(&Cmdline, spinner, None);
+    YubihsmUi::display_success_message(&Cmdline,
+                                       format!("Generated symmetric key with ID 0x{:04x} on the YubiHSM", new_key.id).as_str())?;
     Ok(())
 }
 
 pub fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let key = read_aes_key_hex("Enter AES key in HEX format:")?;
-    let key_algo = SymOps::get_symkey_algorithm_from_keylen(key.len())?;
-
     let mut new_key = ImportObjectSpec::empty();
-    new_key.data.push(key.clone());
-    new_key.object.algorithm = key_algo;
-    fill_object_spec(authkey, &mut new_key.object,  &SymOps::get_object_capabilities(&key_algo), &[])?;
+    new_key.object.object_type = ObjectType::SymmetricKey;
+    new_key.data.push(YubihsmUi::get_aes_key_hex(&Cmdline, "Enter AES key in HEX format:")?);
+    new_key.object.algorithm = SymOps::get_symkey_algorithm_from_keylen(new_key.data[0].len())?;
+    new_key.object.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
+    new_key.object.label = YubihsmUi::get_object_label(&Cmdline, "")?;
+    new_key.object.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
+    new_key.object.capabilities = YubihsmUi::select_object_capabilities(
+        &Cmdline,
+        &SymOps::get_object_capabilities(authkey, &new_key.object.algorithm),
+        &[],
+        None)?;
 
-    cliclack::note("Import AES key with:", new_key.object.to_string())?;
-
-    if cliclack::confirm("Import key?").interact()? {
-        new_key.object.id = SymOps.import(session, &new_key)?;
-        cliclack::log::success(
-            format!("Imported AES key with ID 0x{:04x} on the device", new_key.object.id))?;
+    if !YubihsmUi::get_note_confirmation(
+        &Cmdline,
+        "Importing symmetric object with:",
+        &new_key.object.to_string())? {
+        YubihsmUi::display_info_message(&Cmdline, "Object is not imported")?;
+        return Ok(());
     }
-    Ok(())
-}
+
+    new_key.object.id = SymOps.import(session, &new_key)?;
+    YubihsmUi::display_success_message(&Cmdline,
+                                       format!("Imported symmetric key with ID 0x{:04x} into the YubiHSM", new_key.object.id).as_str())?;
+    Ok(())}
 
 fn operate(session: &Session, authkey: &ObjectDescriptor, enc_mode: EncryptionMode) -> Result<(), MgmError> {
-
-    let mut aes_mode = cliclack::select("Select AES encryption mode");
+    let mut aes_mode = vec![];
     if (enc_mode == EncryptionMode::Encrypt && authkey.capabilities.contains(&ObjectCapability::EncryptEcb)) ||
         (enc_mode == EncryptionMode::Decrypt && authkey.capabilities.contains(&ObjectCapability::DecryptEcb)) {
-        aes_mode = aes_mode.item(AesMode::Ecb, "ECB", "");
+        aes_mode.push(SelectionItem::new(AesMode::Ecb, "ECB".to_string(),"".to_string()));
     }
     if (enc_mode == EncryptionMode::Encrypt && authkey.capabilities.contains(&ObjectCapability::EncryptCbc)) ||
         (enc_mode == EncryptionMode::Decrypt && authkey.capabilities.contains(&ObjectCapability::DecryptCbc)) {
-        aes_mode = aes_mode.item(AesMode::Cbc, "CBC", "")
+        aes_mode.push(SelectionItem::new(AesMode::Cbc, "CBC".to_string(),"".to_string()));
     }
-    let aes_mode = aes_mode.interact()?;
+    let aes_mode = YubihsmUi::select_one_item(
+        &Cmdline,
+        &aes_mode,
+        None,
+        Some("Select AES encryption mode:"))?;
 
-    let key = select_one_object(
-        "Select AES key for operation:",
-        &SymOps::get_operation_keys(session, authkey, enc_mode, aes_mode)?)?;
+    let key = YubihsmUi::select_one_object(&Cmdline,
+        &SymOps::get_operation_keys(session, authkey, enc_mode, aes_mode)?, Some("Select AES key for operation:"))?;
 
-    let in_data = read_input_bytes(
-        "Enter data in hex or path to binary file (data must be a multiple of 16 bytes long):", true)?;
+
+    let in_data = YubihsmUi::get_string_input(
+        &Cmdline, "Enter data in hex or absolut path to binary file (data must be a multiple of 16 bytes long):", true)?;
+    let in_data = get_hex_or_bytes_from_file(in_data)?;
     if in_data.len() % 16 != 0 {
-        return Err(MgmError::InvalidInput("Input data not a multiple of 16 bytes".to_string()))
+        return Err(MgmError::InvalidInput("Input data must be a multiple of 16 bytes".to_string()))
     }
 
     let iv = if aes_mode == AesMode::Cbc {
-        get_iv()?
+        YubihsmUi::get_aes_iv_hex(&Cmdline, "Enter 16 bytes IV in HEX format:", false, Some("00000000000000000000000000000000"))?
     } else {
         vec![]
     };
@@ -150,30 +168,14 @@ fn operate(session: &Session, authkey: &ObjectDescriptor, enc_mode: EncryptionMo
     };
     let out_data = SymOps::operate(session, op_spec)?;
 
-    cliclack::log::success(hex::encode(&out_data))?;
+    YubihsmUi::display_success_message(&Cmdline, hex::encode(&out_data).as_str())?;
 
-    if cliclack::confirm("Write to binary file?").interact()? {
+    if YubihsmUi::get_confirmation(&Cmdline, "Write to binary file?")? {
         let filename = if enc_mode == EncryptionMode::Encrypt {"data.enc"} else {"data.dec"};
-        if let Err(err) = write_bytes_to_file(&out_data, "", filename) {
-            cliclack::log::error(format!("Failed to write binary data to file. {}", err))?;
+        if let Err(err) = write_bytes_to_file(&out_data, filename, None) {
+            YubihsmUi::display_error_message(&Cmdline, format!("Failed to write binary data to file. {}", err).as_str())?;
         }
     }
 
     Ok(())
-}
-
-fn get_iv() -> Result<Vec<u8>, MgmError> {
-    let iv: String = cliclack::input("Enter 16 bytes IV in HEX format:")
-        .default_input("00000000000000000000000000000000")
-        .validate(|input: &String| {
-            let hex = hex::decode(input);
-            if hex.is_err() {
-                Err("Input must be in hex format")
-            } else if hex.unwrap().len() != 16 {
-                Err("IV must be 16 bytes long")
-            } else {
-                Ok(())
-            }
-        }).interact()?;
-    Ok(hex::decode(iv)?)
 }
