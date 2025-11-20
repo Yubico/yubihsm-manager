@@ -16,6 +16,7 @@
 
 use yubihsmrs::object::{ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
+use crate::traits::backend_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::utils::{display_menu_headers, write_bytes_to_file, delete_objects, display_object_properties, get_hex_or_bytes_from_file};
 use crate::ui::device_menu;
@@ -23,7 +24,6 @@ use crate::cmd_ui::cmd_ui::Cmdline;
 use crate::backend::error::MgmError;
 use crate::backend::types::{MgmCommandType, ImportObjectSpec, ObjectSpec, SelectionItem};
 use crate::backend::sym::{SymOps, AesMode, EncryptionMode, AesOperationSpec};
-use crate::backend::object_ops::{Generatable, Importable, Obtainable};
 
 static SYM_HEADER: &str = "Symmetric keys";
 
@@ -33,7 +33,7 @@ pub fn exec_sym_command(session: &Session, authkey: &ObjectDescriptor) -> Result
         display_menu_headers(&[crate::MAIN_HEADER, SYM_HEADER],
                              "Symmetric key operations allow you to manage and use symmetric keys stored on the YubiHSM")?;
 
-        let cmd = YubihsmUi::select_command(&Cmdline, &SymOps::get_authorized_commands(authkey))?;
+        let cmd = YubihsmUi::select_command(&Cmdline, &SymOps.get_authorized_commands(authkey))?;
         display_menu_headers(&[crate::MAIN_HEADER, SYM_HEADER, cmd.label], cmd.description)?;
 
         let res = match cmd.command {
@@ -74,7 +74,7 @@ pub fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), Mgm
     new_key.object_type = ObjectType::SymmetricKey;
     new_key.algorithm = YubihsmUi::select_algorithm(
         &Cmdline,
-        &SymOps::get_object_algorithms(),
+        &SymOps.get_generation_algorithms(),
         None,
         Some("Select AES key algorithm:"))?;
     new_key.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
@@ -82,7 +82,7 @@ pub fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), Mgm
     new_key.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
     new_key.capabilities = YubihsmUi::select_object_capabilities(
         &Cmdline,
-        &SymOps::get_object_capabilities(authkey, &new_key.algorithm),
+        &SymOps.get_applicable_capabilities(authkey, None, None)?,
         &[],
         None)?;
 
@@ -109,7 +109,7 @@ pub fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmEr
     new_key.object.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
     new_key.object.capabilities = YubihsmUi::select_object_capabilities(
         &Cmdline,
-        &SymOps::get_object_capabilities(authkey, &new_key.object.algorithm),
+        &SymOps.get_applicable_capabilities(authkey, None, None)?,
         &[],
         None)?;
 

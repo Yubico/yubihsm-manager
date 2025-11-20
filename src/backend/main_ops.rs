@@ -18,12 +18,12 @@ use std::fmt;
 use std::fmt::Display;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
+use crate::traits::backend_traits::{YubihsmOperations, YubihsmOperationsCommon};
 use crate::backend::error::MgmError;
 use crate::backend::asym::{AsymOps, JavaOps};
 use crate::backend::sym::SymOps;
 use crate::backend::wrap::WrapOps;
-use crate::backend::object_ops::Deletable;
-use crate::backend::common::{get_descriptors_from_handlers, get_authorized_commands};
+use crate::backend::common::get_authorized_commands;
 use crate::backend::types::{MgmCommand, MgmCommandType};
 
 #[derive(Debug, Clone, PartialEq,  Eq, Default)]
@@ -89,8 +89,6 @@ impl Into<ObjectType> for MgmObjectType {
 
 
 pub struct MainOps;
-
-impl Deletable for MainOps {}
 
 impl MainOps {
     const MAIN_COMMANDS: [MgmCommand;9] = [
@@ -187,7 +185,7 @@ impl MainOps {
             filter
         };
 
-        let mut objects = get_descriptors_from_handlers(session, &objects)?;
+        let mut objects = YubihsmOperationsCommon.get_object_descriptors(session, &objects)?;
         match f {
             FilterType::Id(id) => {
                 objects.retain(|obj| id == obj.id);
@@ -236,16 +234,16 @@ impl MainOps {
 
     pub fn get_generatable_types(authkey: &ObjectDescriptor) -> Vec<MgmObjectType> {
         let mut types = Vec::new();
-        if MgmCommand::contains_command(&AsymOps::get_authorized_commands(authkey), &MgmCommandType::Generate) {
+        if MgmCommand::contains_command(&AsymOps.get_authorized_commands(authkey), &MgmCommandType::Generate) {
             types.push(MgmObjectType::Asymmetric);
         }
-        if MgmCommand::contains_command(&SymOps::get_authorized_commands(authkey), &MgmCommandType::Generate) {
+        if MgmCommand::contains_command(&SymOps.get_authorized_commands(authkey), &MgmCommandType::Generate) {
             types.push(MgmObjectType::Symmetric);
         }
-        if MgmCommand::contains_command(&WrapOps::get_authorized_commands(authkey), &MgmCommandType::Generate) {
+        if MgmCommand::contains_command(&WrapOps.get_authorized_commands(authkey), &MgmCommandType::Generate) {
             types.push(MgmObjectType::Wrap);
         }
-        if MgmCommand::contains_command(&JavaOps::get_authorized_commands(authkey), &MgmCommandType::Generate) {
+        if MgmCommand::contains_command(&JavaOps.get_authorized_commands(authkey), &MgmCommandType::Generate) {
             types.push(MgmObjectType::Java);
         }
         types
@@ -254,16 +252,16 @@ impl MainOps {
 
     pub fn get_importable_types(authkey: &ObjectDescriptor) -> Vec<MgmObjectType> {
         let mut types = Vec::new();
-        if MgmCommand::contains_command(&AsymOps::get_authorized_commands(authkey), &MgmCommandType::Import) {
+        if MgmCommand::contains_command(&AsymOps.get_authorized_commands(authkey), &MgmCommandType::Import) {
             types.push(MgmObjectType::Asymmetric);
         }
-        if MgmCommand::contains_command(&SymOps::get_authorized_commands(authkey), &MgmCommandType::Import) {
+        if MgmCommand::contains_command(&SymOps.get_authorized_commands(authkey), &MgmCommandType::Import) {
             types.push(MgmObjectType::Symmetric);
         }
-        if MgmCommand::contains_command(&WrapOps::get_authorized_commands(authkey), &MgmCommandType::Import) {
+        if MgmCommand::contains_command(&WrapOps.get_authorized_commands(authkey), &MgmCommandType::Import) {
             types.push(MgmObjectType::Wrap);
         }
-        if MgmCommand::contains_command(&JavaOps::get_authorized_commands(authkey), &MgmCommandType::Import) {
+        if MgmCommand::contains_command(&JavaOps.get_authorized_commands(authkey), &MgmCommandType::Import) {
             types.push(MgmObjectType::Java);
         }
         types

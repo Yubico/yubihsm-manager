@@ -16,19 +16,19 @@
 
 use yubihsmrs::Session;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
+use crate::traits::backend_traits::YubihsmOperations;
 use crate::backend::error::MgmError;
 use crate::backend::common::contains_all;
 use crate::backend::wrap::{WrapKeyShares, WrapOps};
 use crate::backend::auth::AuthOps;
-use crate::backend::object_ops::Importable;
 use crate::backend::types::{ImportObjectSpec, ObjectSpec};
 
-pub struct KspSetup {
-    pub wrapkey_id: u16,
-    pub wrapkey: WrapKeyShares,
-    pub appkey: ObjectDescriptor,
-    pub auditkey: Option<ObjectDescriptor>,
-}
+// pub struct KspSetup {
+//     pub wrapkey_id: u16,
+//     pub wrapkey: WrapKeyShares,
+//     pub appkey: ObjectDescriptor,
+//     pub auditkey: Option<ObjectDescriptor>,
+// }
 
 pub struct KspOps;
 
@@ -136,7 +136,7 @@ impl KspOps {
             vec![password.into_bytes()],
         );
 
-        new_key.object.id = Importable::import(&AuthOps, session, &new_key)?;
+        new_key.object.id = AuthOps.import(session, &new_key)?;
 
         Ok(new_key.object.into())
     }
@@ -156,71 +156,71 @@ impl KspOps {
             vec![password.into_bytes()],
         );
 
-        new_key.object.id = Importable::import(&AuthOps, session, &new_key)?;
+        new_key.object.id = AuthOps.import(session, &new_key)?;
 
         Ok(new_key.object.into())
     }
 
-    pub fn setup_ksp(session: &Session,
-                     current_authkey: &ObjectDescriptor,
-                     delete_current_authkey: bool,
-                     rsa_decrypt: bool,
-                     domains: &[ObjectDomain],
-                     wrapkey_id: u16,
-                     wrapkey_threshold: u8,
-                     wrapkey_shares: u8,
-                     appkey_id: u16,
-                     appkey_password: String,
-                     auditkey_id: Option<u16>,
-                     auditkey_password: Option<String>
-    ) -> Result<KspSetup, MgmError>{
-        Self::check_privileges(current_authkey)?;
-
-        let (wrapkey_id, wrapkey) = Self::import_ksp_wrapkey(
-            session,
-            wrapkey_id,
-            domains,
-            rsa_decrypt,
-            wrapkey_shares,
-            wrapkey_threshold,
-        )?;
-
-        let appkey = Self::import_app_authkey(
-            session,
-            appkey_id,
-            domains,
-            rsa_decrypt,
-            appkey_password,
-        )?;
-
-        if (auditkey_id.is_some() && auditkey_password.is_none()) ||
-           (auditkey_id.is_none() && auditkey_password.is_some()) {
-            return Err(MgmError::InvalidInput("Both audit key ID and password must be provided to create an audit key".to_string()));
-        }
-
-        let auditkey = if let (Some(id), Some(pw)) = (auditkey_id, auditkey_password) {
-            Some(Self::import_audit_authkey(
-                session,
-                id,
-                domains,
-                pw,
-            )?)
-        } else {
-            None
-        };
-
-        if delete_current_authkey {
-            session.delete_object(current_authkey.id, ObjectType::AuthenticationKey)?;
-        }
-
-        Ok(KspSetup {
-            wrapkey_id,
-            wrapkey,
-            appkey,
-            auditkey,
-        })
-    }
-
+//     pub fn setup_ksp(session: &Session,
+//                      current_authkey: &ObjectDescriptor,
+//                      delete_current_authkey: bool,
+//                      rsa_decrypt: bool,
+//                      domains: &[ObjectDomain],
+//                      wrapkey_id: u16,
+//                      wrapkey_threshold: u8,
+//                      wrapkey_shares: u8,
+//                      appkey_id: u16,
+//                      appkey_password: String,
+//                      auditkey_id: Option<u16>,
+//                      auditkey_password: Option<String>
+//     ) -> Result<KspSetup, MgmError>{
+//         Self::check_privileges(current_authkey)?;
+//
+//         let (wrapkey_id, wrapkey) = Self::import_ksp_wrapkey(
+//             session,
+//             wrapkey_id,
+//             domains,
+//             rsa_decrypt,
+//             wrapkey_shares,
+//             wrapkey_threshold,
+//         )?;
+//
+//         let appkey = Self::import_app_authkey(
+//             session,
+//             appkey_id,
+//             domains,
+//             rsa_decrypt,
+//             appkey_password,
+//         )?;
+//
+//         if (auditkey_id.is_some() && auditkey_password.is_none()) ||
+//            (auditkey_id.is_none() && auditkey_password.is_some()) {
+//             return Err(MgmError::InvalidInput("Both audit key ID and password must be provided to create an audit key".to_string()));
+//         }
+//
+//         let auditkey = if let (Some(id), Some(pw)) = (auditkey_id, auditkey_password) {
+//             Some(Self::import_audit_authkey(
+//                 session,
+//                 id,
+//                 domains,
+//                 pw,
+//             )?)
+//         } else {
+//             None
+//         };
+//
+//         if delete_current_authkey {
+//             session.delete_object(current_authkey.id, ObjectType::AuthenticationKey)?;
+//         }
+//
+//         Ok(KspSetup {
+//             wrapkey_id,
+//             wrapkey,
+//             appkey,
+//             auditkey,
+//         })
+//     }
+//
     fn expand_capabilities(capabilities: &[ObjectCapability], expand: bool) -> Vec<ObjectCapability> {
         let mut caps = capabilities.to_vec();
         if expand {

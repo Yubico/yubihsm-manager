@@ -19,13 +19,13 @@ use std::fmt::Display;
 use openssl::base64;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
+use crate::traits::backend_traits::{YubihsmOperations, YubihsmOperationsCommon};
 use crate::backend::error::MgmError;
 use crate::backend::algorithms::MgmAlgorithm;
 use crate::backend::types::{MgmCommand, MgmCommandType, ImportObjectSpec, ObjectSpec};
 use crate::backend::asym::AsymOps;
-use crate::backend::common::{contains_all, get_authorized_commands, get_descriptors_from_handlers};
+use crate::backend::common::contains_all;
 use crate::backend::sym::SymOps;
-use crate::backend::object_ops::{Deletable, Generatable, Obtainable, Importable};
 
 
 pub struct WrapOps;
@@ -96,33 +96,47 @@ const PUBLIC_WRAP_KEY_CAPABILITIES: [ObjectCapability; 2] = [
     ObjectCapability::ExportableUnderWrap,
 ];
 
-impl Obtainable for WrapOps {
+impl YubihsmOperations for WrapOps {
+    fn get_commands(&self) -> Vec<MgmCommand> {
+        WrapOps::WRAP_COMMANDS.to_vec()
+    }
+
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
         let mut keys = session.list_objects_with_filter(
             0, ObjectType::WrapKey, "", ObjectAlgorithm::ANY, &Vec::new())?;
         keys.extend_from_slice(&session.list_objects_with_filter(
             0, ObjectType::PublicWrapKey, "", ObjectAlgorithm::ANY,
             &Vec::new())?);
-        get_descriptors_from_handlers(session, keys.as_slice())
+        YubihsmOperationsCommon.get_object_descriptors(session, &keys)
     }
 
-    fn get_object_algorithms() -> Vec<MgmAlgorithm> {
+    fn get_generation_algorithms(&self) -> Vec<MgmAlgorithm> {
         MgmAlgorithm::WRAP_KEY_ALGORITHMS.to_vec()
     }
 
-    fn get_object_capabilities(_: &ObjectDescriptor, _object_algorithm: &ObjectAlgorithm) -> Vec<ObjectCapability> {
-        unimplemented!()
+    fn get_object_capabilities(
+        &self,
+        object_type: Option<ObjectType>,
+        object_algorithm: Option<ObjectAlgorithm>) -> Result<Vec<ObjectCapability>, MgmError> {
+
+        if object_type.is_none() || object_algorithm.is_none() {
+            return Err(MgmError::InvalidInput(
+                "Missing object type and/or object algorithm".to_string(),
+            ));
+        }
+
+        let key_type = Self::get_wrapkey_type(
+            object_type.unwrap(),
+            object_algorithm.unwrap(),
+        )?;
+
+        match key_type {
+            WrapKeyType::Aes => Ok(AES_WRAP_KEY_CAPABILITIES.to_vec()),
+            WrapKeyType::Rsa => Ok(RSA_WRAP_KEY_CAPABILITIES.to_vec()),
+            WrapKeyType::RsaPublic => Ok(PUBLIC_WRAP_KEY_CAPABILITIES.to_vec()),
+        }
     }
-}
 
-impl Deletable for WrapOps {
-    // fn delete(&self, session: &Session, object_id: u16, object_type: ObjectType) -> Result<(), MgmError> {
-    //     session.delete_object(object_id, object_type)?;
-    //     Ok(())
-    // }
-}
-
-impl Generatable for WrapOps {
     fn generate(&self, session: &Session, spec: &ObjectSpec) -> Result<u16, MgmError> {
         let id = session
             .generate_wrap_key(
@@ -132,11 +146,8 @@ impl Generatable for WrapOps {
                 &spec.capabilities,
                 spec.algorithm,
                 &spec.delegated_capabilities)?;
-        Ok(id)
-    }
-}
+        Ok(id)    }
 
-impl Importable for WrapOps {
     fn import(&self, session: &Session, spec: &ImportObjectSpec) -> Result<u16, MgmError> {
         let id = match spec.object.object_type {
             ObjectType::WrapKey => session.import_wrap_key(
@@ -161,8 +172,7 @@ impl Importable for WrapOps {
                 ));
             }
         };
-        Ok(id)
-    }
+        Ok(id)    }
 }
 
 impl WrapOps {
@@ -235,12 +245,6 @@ impl WrapOps {
         MgmCommand::EXIT_COMMAND,
     ];
 
-    pub fn get_authorized_commands(
-        authkey: &ObjectDescriptor,
-    ) -> Vec<MgmCommand> {
-        get_authorized_commands(authkey, &Self::WRAP_COMMANDS)
-    }
-
     pub fn get_algorithm_from_keylen(keylen: usize) -> Result<ObjectAlgorithm, MgmError> {
         match keylen {
             16 => Ok(ObjectAlgorithm::Aes128CcmWrap),
@@ -250,15 +254,6 @@ impl WrapOps {
             384 => Ok(ObjectAlgorithm::Rsa3072),
             512 => Ok(ObjectAlgorithm::Rsa4096),
             _ => Err(MgmError::Error(format!("Unsupported key length {}", keylen))),
-        }
-    }
-
-
-    pub fn get_wrapkey_capabilities(key_type: WrapKeyType) -> Vec<ObjectCapability> {
-        match key_type {
-            WrapKeyType::Aes => AES_WRAP_KEY_CAPABILITIES.to_vec(),
-            WrapKeyType::Rsa => RSA_WRAP_KEY_CAPABILITIES.to_vec(),
-            WrapKeyType::RsaPublic => PUBLIC_WRAP_KEY_CAPABILITIES.to_vec(),
         }
     }
 
@@ -289,11 +284,11 @@ impl WrapOps {
             let keys = session.list_objects_with_filter(
                 0, ObjectType::PublicWrapKey, "", ObjectAlgorithm::ANY,
                 &Vec::new())?;
-            Ok(get_descriptors_from_handlers(session, keys.as_slice())?)
+            Ok(YubihsmOperationsCommon.get_object_descriptors(session, keys.as_slice())?)
         } else {
             let keys = session.list_objects_with_filter(
                 0, ObjectType::WrapKey, "", ObjectAlgorithm::ANY, &Vec::new())?;
-            let mut keys = get_descriptors_from_handlers(session, keys.as_slice())?;
+            let mut keys = YubihsmOperationsCommon.get_object_descriptors(session, keys.as_slice())?;
             if key_type == WrapKeyType::Aes {
                 keys.retain(|k| !AsymOps::is_rsa_key_algorithm(&k.algorithm));
             } else if key_type == WrapKeyType::Rsa {
@@ -341,7 +336,7 @@ impl WrapOps {
             "",
             ObjectAlgorithm::ANY,
             &[ObjectCapability::ExportableUnderWrap])?;
-        let mut objects = get_descriptors_from_handlers(session, objects.as_slice())?;
+        let mut objects = YubihsmOperationsCommon.get_object_descriptors(session, objects.as_slice())?;
         objects.retain(|obj| contains_all(delegated, &obj.capabilities));
         if wrap_type == WrapType::Key {
             objects.retain(|obj| obj.object_type == ObjectType::AsymmetricKey || obj.object_type == ObjectType::SymmetricKey);
@@ -351,8 +346,8 @@ impl WrapOps {
 
     pub fn get_unwrapped_key_algorithms() -> Vec<MgmAlgorithm> {
         let mut algos = Vec::new();
-        algos.extend_from_slice(AsymOps::get_object_algorithms().as_slice());
-        algos.extend_from_slice(SymOps::get_object_algorithms().as_slice());
+        algos.extend_from_slice(AsymOps.get_generation_algorithms().as_slice());
+        algos.extend_from_slice(SymOps.get_generation_algorithms().as_slice());
         algos
     }
 

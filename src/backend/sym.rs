@@ -16,10 +16,10 @@
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
+use crate::traits::backend_traits::{YubihsmOperations, YubihsmOperationsCommon};
 use crate::backend::error::MgmError;
-use crate::backend::common::{get_applicable_capabilities, get_authorized_commands, get_op_keys, get_descriptors_from_handlers};
+use crate::backend::common::{get_op_keys};
 use crate::backend::algorithms::MgmAlgorithm;
-use crate::backend::object_ops::{Deletable, Generatable, Importable, Obtainable};
 use crate::backend::types::{MgmCommand, ImportObjectSpec, ObjectSpec, MgmCommandType};
 
 
@@ -47,7 +47,12 @@ pub struct AesOperationSpec {
     pub data: Vec<u8>,
 }
 
-impl Obtainable for SymOps {
+impl YubihsmOperations for SymOps {
+
+    fn get_commands(&self) -> Vec<MgmCommand> {
+        SymOps::SYM_COMMANDS.to_vec()
+    }
+
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
         let keys = session.list_objects_with_filter(
             0,
@@ -55,21 +60,20 @@ impl Obtainable for SymOps {
             "",
             ObjectAlgorithm::ANY,
             &Vec::new())?;
-        get_descriptors_from_handlers(session, &keys)
+        YubihsmOperationsCommon.get_object_descriptors(session, &keys)
     }
 
-    fn get_object_algorithms() -> Vec<MgmAlgorithm> {
+    fn get_generation_algorithms(&self) -> Vec<MgmAlgorithm> {
         MgmAlgorithm::AES_KEY_ALGORITHMS.to_vec()
     }
 
-    fn get_object_capabilities(authkey: &ObjectDescriptor, _: &ObjectAlgorithm) -> Vec<ObjectCapability> {
-        get_applicable_capabilities(authkey, &Self::AES_KEY_CAPABILITIES)
+    fn get_object_capabilities(
+        &self,
+        _object_type: Option<ObjectType>,
+        _object_algorithm: Option<ObjectAlgorithm>) -> Result<Vec<ObjectCapability>, MgmError> {
+        Ok(Self::AES_KEY_CAPABILITIES.to_vec())
     }
-}
 
-impl Deletable for SymOps {}
-
-impl Generatable for SymOps {
     fn generate(&self, session: &Session, spec: &ObjectSpec) -> Result<u16, MgmError> {
         Ok(session
             .generate_aes_key(
@@ -79,9 +83,7 @@ impl Generatable for SymOps {
                 &spec.domains,
                 spec.algorithm)?)
     }
-}
 
-impl Importable for SymOps {
     fn import(&self, session: &Session, spec: &ImportObjectSpec) -> Result<u16, MgmError> {
         Ok(session
             .import_aes_key(
@@ -163,12 +165,6 @@ impl SymOps {
         MgmCommand::RETURN_COMMAND,
         MgmCommand::EXIT_COMMAND,
     ];
-
-    pub fn get_authorized_commands(
-        authkey: &ObjectDescriptor,
-    ) -> Vec<MgmCommand> {
-        get_authorized_commands(authkey, &Self::SYM_COMMANDS)
-    }
 
     pub fn is_aes_algorithm(algorithm: &ObjectAlgorithm) -> bool {
         MgmAlgorithm::AES_KEY_ALGORITHMS.iter().any(|a| a.algorithm() == *algorithm)

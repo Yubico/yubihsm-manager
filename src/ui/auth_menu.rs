@@ -16,13 +16,13 @@
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
+use crate::traits::backend_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::cmd_ui::cmd_ui::Cmdline;
 use crate::ui::utils::{delete_objects, display_object_properties, get_pem_from_file, display_menu_headers};
 use crate::backend::error::MgmError;
 use crate::backend::asym::AsymOps;
 use crate::backend::types::{ImportObjectSpec, ObjectSpec, MgmCommandType, SelectionItem};
-use crate::backend::object_ops::{Obtainable, Importable};
 use crate::backend::common::get_delegated_capabilities;
 use crate::backend::auth::{AuthOps, AuthenticationType, UserType};
 
@@ -35,7 +35,7 @@ pub fn exec_auth_command(session: &Session, authkey: &ObjectDescriptor) -> Resul
                              "Authentication key operations allow you to setup users by managing authentication keys stored on the YubiHSM")?;
 
         let cmd = YubihsmUi::select_command(
-            &Cmdline, &AuthOps::get_authorized_commands(authkey))?;
+            &Cmdline, &AuthOps.get_authorized_commands(authkey))?;
         display_menu_headers(&[crate::MAIN_HEADER, AUTH_HEADER, cmd.label], cmd.description)?;
 
         let res = match cmd.command {

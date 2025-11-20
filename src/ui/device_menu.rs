@@ -18,13 +18,13 @@ use std::fs::File;
 use std::io::Read;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor};
 use yubihsmrs::Session;
+use crate::traits::backend_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::utils::{display_menu_headers, write_bytes_to_file};
 use crate::cmd_ui::cmd_ui::Cmdline;
 use crate::backend::error::MgmError;
 use crate::backend::algorithms::MgmAlgorithm;
 use crate::backend::device::DeviceOps;
-use crate::backend::object_ops::Obtainable;
 use crate::backend::sym::SymOps;
 use crate::backend::types::MgmCommandType;
 use crate::backend::wrap::{WrapKeyType, WrapOps, WrapOpSpec, WrapType};
@@ -66,7 +66,7 @@ pub fn get_random(session: &Session) -> Result<(), MgmError> {
         1,
         2028)?;
     let bytes = DeviceOps::get_random(session, n)?;
-    YubihsmUi::display_success_message(&Cmdline, format!("{}", hex::encode(bytes)).as_str())?;
+    YubihsmUi::display_success_message(&Cmdline, hex::encode(bytes).to_string().as_str())?;
     Ok(())
 }
 
@@ -96,7 +96,7 @@ fn backup(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError>
     if wrapkey_type == WrapKeyType::RsaPublic {
         wrap_op.aes_algorithm = Some(YubihsmUi::select_algorithm(
             &Cmdline,
-            &SymOps::get_object_algorithms(),
+            &SymOps.get_generation_algorithms(),
             Some(ObjectAlgorithm::Aes256),
             Some("Select AES algorithm to use for wrapping"))?);
         wrap_op.oaep_algorithm = Some(YubihsmUi::select_algorithm(

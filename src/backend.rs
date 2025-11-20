@@ -19,7 +19,6 @@ pub mod validators;
 pub mod common;
 pub mod types;
 pub mod algorithms;
-pub mod object_ops;
 pub mod main_ops;
 pub mod asym;
 pub mod sym;

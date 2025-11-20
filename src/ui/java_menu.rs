@@ -21,10 +21,10 @@ use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::utils::{display_menu_headers, display_object_properties, get_pem_from_file};
 use crate::cmd_ui::cmd_ui::Cmdline;
+use crate::traits::backend_traits::YubihsmOperations;
 use crate::backend::error::MgmError;
 use crate::backend::types::{MgmCommandType, ImportObjectSpec, ObjectSpec};
 use crate::backend::asym::{AsymOps, JavaOps};
-use crate::backend::object_ops::{Deletable, Generatable, Obtainable, Importable};
 
 
 static JAVA_HEADER: &str = "SunPKCS11 keys";
@@ -36,7 +36,7 @@ pub fn exec_java_command(session: &Session, authkey: &ObjectDescriptor) -> Resul
         display_menu_headers(&[crate::MAIN_HEADER, JAVA_HEADER],
             "SunPKCS11 compatible keys entails that an asymmetric key and its equivalent X509Certificate are store in the device with the same ObjectID")?;
 
-        let cmd = YubihsmUi::select_command(&Cmdline, &JavaOps::get_authorized_commands(authkey))?;
+        let cmd = YubihsmUi::select_command(&Cmdline, &JavaOps.get_authorized_commands(authkey))?;
         display_menu_headers(&[crate::MAIN_HEADER, JAVA_HEADER, cmd.label], cmd.description)?;
 
         let res = match cmd.command {
@@ -65,11 +65,6 @@ fn dislpay_key_properties(session: &Session) -> Result<(), MgmError> {
 }
 
 fn delete(session: &Session) -> Result<(), MgmError> {
-    // let keys = JavaOps.get_all_objects(session)?;
-    // let delete_keys = select_delete_objects(&keys)?;
-    // let failed = JavaOps.delete_multiple(session, &delete_keys);
-    // print_failed_delete(&failed)
-
     let objects = YubihsmUi::select_multiple_objects(
         &Cmdline,
         &JavaOps.get_all_objects(session)?,
@@ -108,7 +103,7 @@ pub fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), Mgm
     new_key.object_type = ObjectType::AsymmetricKey;
     new_key.algorithm = YubihsmUi::select_algorithm(
         &Cmdline,
-        &JavaOps::get_object_algorithms(),
+        &JavaOps.get_generation_algorithms(),
         None,
         Some("Select algorithm for the new SunPKCS11 compatible key"))?;
 
@@ -117,7 +112,7 @@ pub fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), Mgm
     new_key.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
     new_key.capabilities = YubihsmUi::select_object_capabilities(
         &Cmdline,
-        &JavaOps::get_object_capabilities(authkey, &new_key.algorithm),
+        &JavaOps.get_applicable_capabilities(authkey, None,Some(new_key.algorithm))?,
         &[],
         None)?;
 
@@ -180,7 +175,7 @@ pub fn import(session: &Session, authkey: &ObjectDescriptor ) -> Result<(), MgmE
     new_key.object.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
     new_key.object.capabilities = YubihsmUi::select_object_capabilities(
         &Cmdline,
-        &AsymOps::get_object_capabilities(authkey, &new_key.object.algorithm),
+        &AsymOps.get_applicable_capabilities(authkey, None, Some(new_key.object.algorithm))?,
         &[],
         Some("Select object capabilities"))?;
 

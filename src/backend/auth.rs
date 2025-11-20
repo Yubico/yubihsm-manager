@@ -16,11 +16,11 @@
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
+use crate::traits::backend_traits::{YubihsmOperations, YubihsmOperationsCommon};
+use crate::backend::types::ObjectSpec;
 use crate::backend::error::MgmError;
 use crate::backend::algorithms::MgmAlgorithm;
 use crate::backend::types::{ImportObjectSpec, MgmCommand, MgmCommandType};
-use crate::backend::common::{get_descriptors_from_handlers, get_authorized_commands};
-use crate::backend::object_ops::{Deletable, Obtainable, Importable};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UserType {
@@ -40,7 +40,12 @@ pub enum AuthenticationType {
 
 pub struct AuthOps;
 
-impl Obtainable for AuthOps {
+impl YubihsmOperations for AuthOps {
+
+    fn get_commands(&self) -> Vec<MgmCommand> {
+        AuthOps::AUTH_COMMANDS.to_vec()
+    }
+
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
         let keys = session.list_objects_with_filter(
             0,
@@ -48,22 +53,28 @@ impl Obtainable for AuthOps {
             "",
             ObjectAlgorithm::ANY,
             &Vec::new())?;
-        get_descriptors_from_handlers(session, &keys)
+        YubihsmOperationsCommon.get_object_descriptors(session, &keys)
     }
 
-    fn get_object_algorithms() -> Vec<MgmAlgorithm> {
+    fn get_generation_algorithms(&self) -> Vec<MgmAlgorithm> {
         unimplemented!()
     }
 
-    fn get_object_capabilities(_: &ObjectDescriptor, _: &ObjectAlgorithm) -> Vec<ObjectCapability> {
+    fn get_object_capabilities(
+        &self,
+        _object_type: Option<ObjectType>,
+        _object_algorithm: Option<ObjectAlgorithm>) -> Result<Vec<ObjectCapability>, MgmError> {
         unimplemented!()
     }
-}
 
-impl Deletable for AuthOps {
-}
+    fn get_applicable_capabilities(&self, _authkey: &ObjectDescriptor, _object_type: Option<ObjectType>, _object_algorithm: Option<ObjectAlgorithm>) -> Result<Vec<ObjectCapability>, MgmError> {
+        unimplemented!()
+    }
 
-impl Importable for AuthOps {
+    fn generate(&self, _session: &Session, _spec: &ObjectSpec) -> Result<u16, MgmError> {
+        unimplemented!()
+    }
+
     fn import(&self, session: &Session, spec: &ImportObjectSpec) -> Result<u16, MgmError> {
         let id = match spec.object.algorithm {
             ObjectAlgorithm::Aes128YubicoAuthentication => {
@@ -182,9 +193,4 @@ impl AuthOps {
         MgmCommand::EXIT_COMMAND,
     ];
 
-    pub fn get_authorized_commands(
-        authkey: &ObjectDescriptor,
-    ) -> Vec<MgmCommand> {
-        get_authorized_commands(authkey, &Self::AUTH_COMMANDS)
-    }
 }

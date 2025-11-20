@@ -94,88 +94,88 @@ pub fn guided_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result
     Ok(())
 }
 
-pub fn full_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError>{
-
-    let intro_text = "Follow this guided setup to prepare the YubiHSM to be used with Windows KSP/CNG provider.\n\
-    You will be prompted to enter values for the wrap key and authentication keys.\n\
-    Please ensure you have the necessary permissions and that you record the wrap key shares securely.";
-
-    display_menu_headers(&[crate::MAIN_HEADER, KSP_HEADER], intro_text)?;
-
-
-    let rsa_decrypt = YubihsmUi::get_confirmation(&Cmdline, "Add RSA decryption capabilities?")?;
-    let domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
-
-    YubihsmUi::display_info_message(&Cmdline, "Enter values for wrap key:")?;
-    let wrap_id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
-    YubihsmUi::display_info_message(&Cmdline, "The wrap key will be split into shares. Please enter the number of shares and the threshold for reconstruction.")?;
-    let shares = YubihsmUi::get_split_aes_n_shares(&Cmdline, "Enter the number of shares to create:")?;
-    let threshold = YubihsmUi::get_split_aes_m_threshold(&Cmdline, "Enter the number of shares necessary to re-create the key:", shares)?;
-
-
-    // Create an authentication key for usage with the above wrap key
-    YubihsmUi::display_info_message(&Cmdline, "Enter values for application authentication key:")?;
-    let appkey_id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
-    let appkey_pwd = YubihsmUi::get_password(&Cmdline, "Enter application authentication key password:", true)?;
-
-    let (audit_id, audit_pwd) =
-        if YubihsmUi::get_confirmation(&Cmdline, "Create an audit key? ")? {
-            YubihsmUi::display_info_message(&Cmdline, "Enter values for audit key:")?;
-            (Some(YubihsmUi::get_new_object_id(&Cmdline, 0)?),
-             Some(YubihsmUi::get_password(&Cmdline, "Enter audit key password:", true)?))
-        } else {
-            (None, None)
-        };
-
-    let ksp_setup= KspOps::setup_ksp(
-        session,
-        authkey,
-        false,
-        rsa_decrypt,
-        &domains,
-        wrap_id,
-        threshold,
-        shares,
-        appkey_id,
-        appkey_pwd,
-        audit_id,
-        audit_pwd,
-    )?;
-
-    YubihsmUi::display_success_message(&Cmdline, format!(
-        "\nKSP setup completed successfully!\n\
-        Created wrap key with ID: 0x{:04x}\n\
-        Created application authentication Key with ID: 0x{:04x}\
-        {}",
-        ksp_setup.wrapkey_id,
-        ksp_setup.appkey.id,
-        if ksp_setup.auditkey.is_some() {
-            format!("\nCreated audit key with ID: 0x{:04x}", ksp_setup.auditkey.clone().unwrap().id)
-        } else {
-            "".to_string()
-        }
-    ).as_str())?;
-
-    YubihsmUi::display_info_message(&Cmdline, "Please be prepared to record wrap key shares")?;
-    loop {
-        if YubihsmUi::get_confirmation(&Cmdline,"Ready to record wrap key shares? ")? {
-            break;
-        }
-    }
-    display_wrapkey_shares(ksp_setup.wrapkey.shares_data)?;
-
-    YubihsmUi::display_info_message(&Cmdline, "All key shares have been recorded and cannot be displayed again")?;
-
-    if YubihsmUi::get_confirmation(&Cmdline, "Export keys? ")? {
-        export_keys(session, ksp_setup.wrapkey_id, ksp_setup.appkey, ksp_setup.auditkey)?;
-    }
-
-    if YubihsmUi::get_confirmation(&Cmdline, "Delete the current authentication key (strongly recommended)?")? {
-        session.delete_object(authkey.id, ObjectType::AuthenticationKey)?;
-    }
-
-    Ok(())
-}
+// pub fn full_ksp_setup(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError>{
+//
+//     let intro_text = "Follow this guided setup to prepare the YubiHSM to be used with Windows KSP/CNG provider.\n\
+//     You will be prompted to enter values for the wrap key and authentication keys.\n\
+//     Please ensure you have the necessary permissions and that you record the wrap key shares securely.";
+//
+//     display_menu_headers(&[crate::MAIN_HEADER, KSP_HEADER], intro_text)?;
+//
+//
+//     let rsa_decrypt = YubihsmUi::get_confirmation(&Cmdline, "Add RSA decryption capabilities?")?;
+//     let domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
+//
+//     YubihsmUi::display_info_message(&Cmdline, "Enter values for wrap key:")?;
+//     let wrap_id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
+//     YubihsmUi::display_info_message(&Cmdline, "The wrap key will be split into shares. Please enter the number of shares and the threshold for reconstruction.")?;
+//     let shares = YubihsmUi::get_split_aes_n_shares(&Cmdline, "Enter the number of shares to create:")?;
+//     let threshold = YubihsmUi::get_split_aes_m_threshold(&Cmdline, "Enter the number of shares necessary to re-create the key:", shares)?;
+//
+//
+//     // Create an authentication key for usage with the above wrap key
+//     YubihsmUi::display_info_message(&Cmdline, "Enter values for application authentication key:")?;
+//     let appkey_id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
+//     let appkey_pwd = YubihsmUi::get_password(&Cmdline, "Enter application authentication key password:", true)?;
+//
+//     let (audit_id, audit_pwd) =
+//         if YubihsmUi::get_confirmation(&Cmdline, "Create an audit key? ")? {
+//             YubihsmUi::display_info_message(&Cmdline, "Enter values for audit key:")?;
+//             (Some(YubihsmUi::get_new_object_id(&Cmdline, 0)?),
+//              Some(YubihsmUi::get_password(&Cmdline, "Enter audit key password:", true)?))
+//         } else {
+//             (None, None)
+//         };
+//
+//     let ksp_setup= KspOps::setup_ksp(
+//         session,
+//         authkey,
+//         false,
+//         rsa_decrypt,
+//         &domains,
+//         wrap_id,
+//         threshold,
+//         shares,
+//         appkey_id,
+//         appkey_pwd,
+//         audit_id,
+//         audit_pwd,
+//     )?;
+//
+//     YubihsmUi::display_success_message(&Cmdline, format!(
+//         "\nKSP setup completed successfully!\n\
+//         Created wrap key with ID: 0x{:04x}\n\
+//         Created application authentication Key with ID: 0x{:04x}\
+//         {}",
+//         ksp_setup.wrapkey_id,
+//         ksp_setup.appkey.id,
+//         if ksp_setup.auditkey.is_some() {
+//             format!("\nCreated audit key with ID: 0x{:04x}", ksp_setup.auditkey.clone().unwrap().id)
+//         } else {
+//             "".to_string()
+//         }
+//     ).as_str())?;
+//
+//     YubihsmUi::display_info_message(&Cmdline, "Please be prepared to record wrap key shares")?;
+//     loop {
+//         if YubihsmUi::get_confirmation(&Cmdline,"Ready to record wrap key shares? ")? {
+//             break;
+//         }
+//     }
+//     display_wrapkey_shares(ksp_setup.wrapkey.shares_data)?;
+//
+//     YubihsmUi::display_info_message(&Cmdline, "All key shares have been recorded and cannot be displayed again")?;
+//
+//     if YubihsmUi::get_confirmation(&Cmdline, "Export keys? ")? {
+//         export_keys(session, ksp_setup.wrapkey_id, ksp_setup.appkey, ksp_setup.auditkey)?;
+//     }
+//
+//     if YubihsmUi::get_confirmation(&Cmdline, "Delete the current authentication key (strongly recommended)?")? {
+//         session.delete_object(authkey.id, ObjectType::AuthenticationKey)?;
+//     }
+//
+//     Ok(())
+// }
 
 fn export_keys(session: &Session, wrapkey_id: u16, appkey: ObjectDescriptor, auditkey: Option<ObjectDescriptor>) -> Result<(), MgmError> {
     let dir = YubihsmUi::get_path_input(

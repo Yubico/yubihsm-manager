@@ -21,11 +21,11 @@ use std::io::Write;
 use pem::Pem;
 use yubihsmrs::object::ObjectDescriptor;
 use yubihsmrs::Session;
+use crate::traits::backend_traits::YubihsmOperationsCommon;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::cmd_ui::cmd_ui::Cmdline;
 use crate::backend::error::MgmError;
-use crate::backend::types::{MgmCommand};
-use crate::backend::common;
+use crate::backend::types::MgmCommand;
 
 static ESC_HELP_TEXT: &str = "You can always press 'Esc' to cancel current operation and return to previous menu";
 
@@ -66,7 +66,7 @@ pub fn delete_objects(session: &Session, available_objects: &[ObjectDescriptor])
     }
 
     for object in objects {
-        match common::delete_object(session, object.id, object.object_type) {
+        match YubihsmOperationsCommon.delete(session, object.id, object.object_type) {
             Ok(_) => {
                 YubihsmUi::display_success_message(&Cmdline,
                                                    format!("Successfully deleted {} object with ID 0x{:04x} from the YubiHSM", object.object_type, object.id).as_str())?;

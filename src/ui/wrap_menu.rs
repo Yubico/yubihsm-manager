@@ -20,6 +20,7 @@ use std::io::Read;
 use openssl::base64;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
+use crate::traits::backend_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::{asym_menu, device_menu};
 use crate::ui::utils::{display_menu_headers, write_bytes_to_file, delete_objects, display_object_properties, get_pem_from_file};
@@ -31,7 +32,6 @@ use crate::backend::algorithms::MgmAlgorithm;
 use crate::backend::asym::AsymOps;
 use crate::backend::sym::SymOps;
 use crate::backend::wrap::{WrapOps, WrapOpSpec, WrapType, WrapKeyType};
-use crate::backend::object_ops::{Generatable, Obtainable, Importable};
 use crate::backend::common::get_delegated_capabilities;
 
 static WRAP_HEADER: &str = "Wrap keys";
@@ -42,7 +42,7 @@ pub fn exec_wrap_command(session: &Session, authkey: &ObjectDescriptor) -> Resul
         display_menu_headers(&[crate::MAIN_HEADER, WRAP_HEADER],
                              "Wrap key operations allow you to manage and use wrap keys keys stored on the YubiHSM")?;
 
-        let cmd = YubihsmUi::select_command(&Cmdline, &WrapOps::get_authorized_commands(authkey))?;
+        let cmd = YubihsmUi::select_command(&Cmdline, &WrapOps.get_authorized_commands(authkey))?;
         display_menu_headers(&[crate::MAIN_HEADER, WRAP_HEADER, cmd.label], cmd.description)?;
 
         let result = match cmd.command {
@@ -83,17 +83,16 @@ pub fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), Mgm
     new_key.object_type = ObjectType::WrapKey;
     new_key.algorithm = YubihsmUi::select_algorithm(
         &Cmdline,
-        &WrapOps::get_object_algorithms(),
+        &WrapOps.get_generation_algorithms(),
         None,
         Some("Select wrap key algorithm"))?;
-    let key_type = if AsymOps::is_rsa_key_algorithm(&new_key.algorithm) { WrapKeyType::Rsa } else { WrapKeyType::Aes };
 
     new_key.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
     new_key.label = YubihsmUi::get_object_label(&Cmdline, "")?;
     new_key.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
     new_key.capabilities = YubihsmUi::select_object_capabilities(
         &Cmdline,
-        &WrapOps::get_wrapkey_capabilities(key_type),
+        &WrapOps.get_applicable_capabilities(authkey, Some(new_key.object_type), Some(new_key.algorithm))?,
         &[],
         None)?;
     new_key.delegated_capabilities = YubihsmUi::select_object_capabilities(
@@ -164,7 +163,7 @@ fn import_full_key(session:&Session, authkey: &ObjectDescriptor) -> Result<(), M
     new_key.object.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
     new_key.object.capabilities = YubihsmUi::select_object_capabilities(
         &Cmdline,
-        &WrapOps::get_wrapkey_capabilities(key_type),
+        &WrapOps.get_applicable_capabilities(authkey, Some(new_key.object.object_type), Some(new_key.object.algorithm))?,
         &[],
         Some("Select object capabilities"))?;
     new_key.object.delegated_capabilities = YubihsmUi::select_object_capabilities(
@@ -264,7 +263,7 @@ fn export_wrapped(session: &Session, authkey: &ObjectDescriptor) -> Result<(), M
     if wrapkey_type == WrapKeyType::RsaPublic {
         wrap_op.aes_algorithm = Some(YubihsmUi::select_algorithm(
             &Cmdline,
-            &SymOps::get_object_algorithms(),
+            &SymOps.get_generation_algorithms(),
             Some(ObjectAlgorithm::Aes256),
             Some("Select AES algorithm to use for wrapping"))?);
         wrap_op.oaep_algorithm = Some(YubihsmUi::select_algorithm(
@@ -348,9 +347,9 @@ fn import_wrapped(session: &Session, authkey: &ObjectDescriptor) -> Result<(), M
                     None,
                     Some("Select wrapped key algorithm"))?;
                 let caps = if SymOps::is_aes_algorithm(&algo) {
-                    SymOps::get_object_capabilities(&wrapkey, &algo)
+                    SymOps.get_applicable_capabilities(&wrapkey, None, None)?
                 } else {
-                    AsymOps::get_object_capabilities(&wrapkey, &algo)
+                    AsymOps.get_applicable_capabilities(&wrapkey, None, Some(algo))?
                 };
 
                 let mut new_key = ObjectSpec::empty();

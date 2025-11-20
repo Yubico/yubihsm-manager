@@ -28,27 +28,11 @@ use openssl::pkey::PKey;
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
 use yubihsmrs::Session;
+use crate::traits::backend_traits::{YubihsmOperations, YubihsmOperationsCommon};
 use crate::backend::error::MgmError;
 use crate::backend::algorithms::MgmAlgorithm;
-use crate::backend::common::{get_authorized_commands, get_op_keys, get_applicable_capabilities, get_descriptors_from_handlers};
-use crate::backend::object_ops::{Deletable, Generatable, Importable, Obtainable};
+use crate::backend::common::{get_op_keys};
 use crate::backend::types::{MgmCommand, ObjectSpec, MgmCommandType, ImportObjectSpec};
-
-#[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
-pub enum AsymmetricType {
-    #[default]
-    Key,
-    X509Certificate,
-}
-
-impl Display for AsymmetricType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            AsymmetricType::Key => write!(f, "Private keys"),
-            AsymmetricType::X509Certificate => write!(f, "X509Certificates"),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
 pub enum AttestationType {
@@ -70,101 +54,91 @@ impl Display for AttestationType {
 
 pub struct AsymOps;
 
-impl Obtainable for AsymOps {
-    fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
-        Self::get_asymmetric_objects(session, &[AsymmetricType::Key, AsymmetricType::X509Certificate])
+impl YubihsmOperations for AsymOps {
+    fn get_commands(&self) -> Vec<MgmCommand> {
+        Self::ASYM_COMMANDS.to_vec()
     }
 
-    fn get_object_algorithms() -> Vec<MgmAlgorithm> {
+    fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
+        Self::get_asymmetric_objects(session, &[ObjectType::AsymmetricKey, ObjectType::Opaque])
+    }
+
+    fn get_generation_algorithms(&self) -> Vec<MgmAlgorithm> {
         let mut algos = MgmAlgorithm::RSA_KEY_ALGORITHMS.to_vec();
         algos.extend(MgmAlgorithm::EC_KEY_ALGORITHMS.to_vec());
         algos.extend(MgmAlgorithm::ED_KEY_ALGORITHMS.to_vec());
         algos
     }
 
-    fn get_object_capabilities(authkey: &ObjectDescriptor, object_algorithm: &ObjectAlgorithm) -> Vec<ObjectCapability> {
-        let caps = if Self::is_rsa_key_algorithm(object_algorithm) {
+    fn get_object_capabilities(&self, _: Option<ObjectType>, object_algorithm: Option<ObjectAlgorithm>) -> Result<Vec<ObjectCapability>, MgmError> {
+        let algo = if let Some(a) = object_algorithm {
+            a
+        } else {
+            return Err(MgmError::InvalidInput("Missing asymmetric object algorithm".to_string()));
+        };
+        let caps = if Self::is_rsa_key_algorithm(&algo) {
             Self::RSA_KEY_CAPABILITIES.to_vec()
-        } else if Self::is_ec_key_algorithm(object_algorithm) {
+        } else if Self::is_ec_key_algorithm(&algo) {
             Self::EC_KEY_CAPABILITIES.to_vec()
-        } else if *object_algorithm == ObjectAlgorithm::Ed25519 {
+        } else if algo == ObjectAlgorithm::Ed25519 {
             Self::ED_KEY_CAPABILITIES.to_vec()
-        } else if *object_algorithm == ObjectAlgorithm::OpaqueX509Certificate {
+        } else if algo == ObjectAlgorithm::OpaqueX509Certificate {
             Self::OPAQUE_CAPABILITIES.to_vec()
         } else {
-            Vec::new()
+            return Err(MgmError::InvalidInput(
+                format!("Unsupported asymmetric object algorithm {:?}", object_algorithm)));
         };
-        get_applicable_capabilities(authkey, &caps)
+        Ok(caps)
     }
-}
 
-// impl Describable for AsymOps {
-//     fn get_properties(&self, session: &Session, id: u16, object_type: ObjectType) -> Result<ObjectDescriptor, MgmError> {
-//         Ok(session.get_object_info(id, object_type)?)
-//     }
-// }
-
-
-impl Deletable for AsymOps {}
-
-impl Generatable for AsymOps {
     fn generate(&self, session: &Session, spec: &ObjectSpec) -> Result<u16, MgmError> {
         let key = session
             .generate_asymmetric_key_with_keyid(
                 spec.id, &spec.label, &spec.capabilities, &spec.domains, spec.algorithm)?;
         Ok(key.get_key_id())
     }
-}
 
-impl Importable for AsymOps {
     fn import(&self, session: &Session, spec: &ImportObjectSpec) -> Result<u16, MgmError> {
         let key_data = &spec.data[0];
         let id =
-        if Self::is_rsa_key_algorithm(&spec.object.algorithm) {
-            session.import_rsa_key(
-                spec.object.id,
-                &spec.object.label,
-                &spec.object.domains,
-                &spec.object.capabilities,
-                spec.object.algorithm,
-                &key_data[0..key_data.len() / 2],
-                &key_data[key_data.len() / 2..])?
-        } else if Self::is_ec_key_algorithm(&spec.object.algorithm) {
-            session.import_ec_key(
-                spec.object.id,
-                &spec.object.label,
-                &spec.object.domains,
-                &spec.object.capabilities,
-                spec.object.algorithm,
-                key_data)?
-        } else if spec.object.algorithm == ObjectAlgorithm::Ed25519 {
-            session.import_ed_key(
-                spec.object.id,
-                &spec.object.label,
-                &spec.object.domains,
-                &spec.object.capabilities,
-                key_data)?
-        } else if spec.object.algorithm == ObjectAlgorithm::OpaqueX509Certificate {
-            session.import_cert(
-                spec.object.id,
-                &spec.object.label,
-                &spec.object.domains,
-                &spec.object.capabilities,
-                key_data)?
-        } else {
-            return Err(MgmError::InvalidInput(
-                format!("Unsupported asymmetric key algorithm {:?}", spec.object.algorithm)));
-        };
+            if Self::is_rsa_key_algorithm(&spec.object.algorithm) {
+                session.import_rsa_key(
+                    spec.object.id,
+                    &spec.object.label,
+                    &spec.object.domains,
+                    &spec.object.capabilities,
+                    spec.object.algorithm,
+                    &key_data[0..key_data.len() / 2],
+                    &key_data[key_data.len() / 2..])?
+            } else if Self::is_ec_key_algorithm(&spec.object.algorithm) {
+                session.import_ec_key(
+                    spec.object.id,
+                    &spec.object.label,
+                    &spec.object.domains,
+                    &spec.object.capabilities,
+                    spec.object.algorithm,
+                    key_data)?
+            } else if spec.object.algorithm == ObjectAlgorithm::Ed25519 {
+                session.import_ed_key(
+                    spec.object.id,
+                    &spec.object.label,
+                    &spec.object.domains,
+                    &spec.object.capabilities,
+                    key_data)?
+            } else if spec.object.algorithm == ObjectAlgorithm::OpaqueX509Certificate {
+                session.import_cert(
+                    spec.object.id,
+                    &spec.object.label,
+                    &spec.object.domains,
+                    &spec.object.capabilities,
+                    key_data)?
+            } else {
+                return Err(MgmError::InvalidInput(
+                    format!("Unsupported asymmetric key algorithm {:?}", spec.object.algorithm)));
+            };
         Ok(id)
     }
 }
-
-
-
-
-//----------------------------------------------------------
-//       Main symmetric functions requiring a session
-//----------------------------------------------------------
 
 impl AsymOps {
 
@@ -277,23 +251,19 @@ impl AsymOps {
         MgmCommand::EXIT_COMMAND,
     ];
 
-    pub fn get_authorized_commands(
-        authkey: &ObjectDescriptor,
-    ) -> Vec<MgmCommand> {
-        get_authorized_commands(authkey, &Self::ASYM_COMMANDS)
-    }
 
-    pub fn get_asymmetric_objects(session: &Session, types: &[AsymmetricType]) -> Result<Vec<ObjectDescriptor>, MgmError> {
+//----------------------------------------------------------
+//       Main symmetric functions requiring a session
+// ----------------------------------------------------------
+    pub fn get_asymmetric_objects(session: &Session, types: &[ObjectType]) -> Result<Vec<ObjectDescriptor>, MgmError> {
         let mut objects = Vec::new();
-        if types.contains(&AsymmetricType::Key) {
-            objects.extend(session.list_objects_with_filter(0, ObjectType::AsymmetricKey, "", ObjectAlgorithm::ANY, &Vec::new())?);
-        }
-        if types.contains(&AsymmetricType::X509Certificate) {
+        if types.contains(&ObjectType::Opaque) {
             objects.extend(session.list_objects_with_filter(0, ObjectType::Opaque, "", ObjectAlgorithm::OpaqueX509Certificate, &Vec::new())?);
         }
-        let mut objects = get_descriptors_from_handlers(session, &objects)?;
-        objects.sort_by(|a, b| a.label.cmp(&b.label));
-        Ok(objects)
+        if types.contains(&ObjectType::AsymmetricKey) {
+            objects.extend(session.list_objects_with_filter(0, ObjectType::AsymmetricKey, "", ObjectAlgorithm::ANY, &Vec::new())?);
+        }
+        YubihsmOperationsCommon.get_object_descriptors( session, &objects)
     }
 
     pub fn get_signing_keys(session: &Session, authkey: &ObjectDescriptor) -> Result<Vec<ObjectDescriptor>, MgmError> {
@@ -677,38 +647,36 @@ impl AsymOps {
 
 pub struct JavaOps;
 
-impl Obtainable for JavaOps {
+impl YubihsmOperations for JavaOps {
+    fn get_commands(&self) -> Vec<MgmCommand> {
+        Self::JAVA_COMMANDS.to_vec()
+    }
+
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
-        let mut keys = session.list_objects_with_filter(
+        let certs = session.list_objects_with_filter(
             0,
             ObjectType::Opaque,
             "",
             ObjectAlgorithm::OpaqueX509Certificate,
             &Vec::new())?;
-        keys.retain(|k| session.get_object_info(k.object_id, ObjectType::AsymmetricKey).is_ok());
-        keys.iter_mut().for_each(|x| x.object_type = ObjectType::AsymmetricKey);
-        let mut keys = get_descriptors_from_handlers(session, &keys)?;
-        keys.sort_by(|a, b| a.label.cmp(&b.label));
-        Ok(keys)    }
 
-    fn get_object_algorithms() -> Vec<MgmAlgorithm> {
-        AsymOps::get_object_algorithms()
+        let mut keys = Vec::new();
+        for c in &certs {
+            if let Ok(desc) = session.get_object_info(c.object_id, ObjectType::AsymmetricKey) {
+                keys.push(desc);
+            }
+        }
+        Ok(keys)
     }
 
-    fn get_object_capabilities(authkey: &ObjectDescriptor, object_algorithm: &ObjectAlgorithm) -> Vec<ObjectCapability> {
-        AsymOps::get_object_capabilities(authkey, object_algorithm)
+    fn get_generation_algorithms(&self) -> Vec<MgmAlgorithm> {
+        AsymOps.get_generation_algorithms()
     }
-}
 
-impl Deletable for JavaOps {
-    fn delete(&self, session: &Session, object_id: u16, _: ObjectType) -> Result<(), MgmError> {
-        session.delete_object(object_id, ObjectType::AsymmetricKey)?;
-        session.delete_object(object_id, ObjectType::Opaque)?;
-        Ok(())
+    fn get_object_capabilities(&self, _object_type: Option<ObjectType>, object_algorithm: Option<ObjectAlgorithm>) -> Result<Vec<ObjectCapability>, MgmError> {
+        AsymOps.get_object_capabilities(_object_type, object_algorithm)
     }
-}
 
-impl Generatable for JavaOps {
     fn generate(&self, session: &Session, spec: &ObjectSpec) -> Result<u16, MgmError> {
         Self::check_free_id(session, spec.id)?;
 
@@ -755,11 +723,8 @@ impl Generatable for JavaOps {
                 session.delete_object(key_id, ObjectType::AsymmetricKey)?;
                 Err(MgmError::from(e))
             }
-        }
-    }
-}
+        }    }
 
-impl Importable for JavaOps {
     fn import(&self, session: &Session, spec: &ImportObjectSpec) -> Result<u16, MgmError> {
         Self::check_free_id(session, spec.object.id)?;
 
@@ -797,10 +762,14 @@ impl Importable for JavaOps {
                 session.delete_object(key_id, ObjectType::AsymmetricKey)?;
                 Err(MgmError::from(e))
             }
-        }
+        }    }
+
+    fn delete(&self, session: &Session, object_id: u16, _object_type: ObjectType) -> Result<(), MgmError> {
+        session.delete_object(object_id, ObjectType::AsymmetricKey)?;
+        session.delete_object(object_id, ObjectType::Opaque)?;
+        Ok(())
     }
 }
-
 
 impl JavaOps {
 
@@ -843,12 +812,6 @@ impl JavaOps {
         MgmCommand::RETURN_COMMAND,
         MgmCommand::EXIT_COMMAND,
     ];
-
-    pub fn get_authorized_commands(
-        authkey: &ObjectDescriptor,
-    ) -> Vec<MgmCommand> {
-        get_authorized_commands(authkey, &Self::JAVA_COMMANDS)
-    }
 
     fn check_free_id(session: &Session, id: u16) -> Result<(), MgmError> {
         if id != 0 && (session.get_object_info(id, ObjectType::AsymmetricKey).is_ok() || session.get_object_info(id, ObjectType::Opaque).is_ok()) {

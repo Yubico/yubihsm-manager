@@ -17,13 +17,13 @@
 use yubihsmrs::object::{ObjectCapability, ObjectDescriptor, ObjectOrigin, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
+use crate::traits::backend_traits::YubihsmOperations;
 use crate::ui::utils::{display_menu_headers, get_hex_or_bytes_from_file, get_pem_from_file, get_string_or_bytes_from_file, write_bytes_to_file, delete_objects, display_object_properties};
 use crate::cmd_ui::cmd_ui::Cmdline;
 use crate::backend::error::MgmError;
 use crate::backend::types::{SelectionItem, MgmCommandType, ImportObjectSpec, ObjectSpec};
 use crate::backend::wrap::WrapOps;
-use crate::backend::asym::{AttestationType, AsymmetricType, AsymOps};
-use crate::backend::object_ops::{Importable, Generatable, Obtainable};
+use crate::backend::asym::{AttestationType, AsymOps};
 
 static ASYM_HEADER: &str = "Asymmetric keys";
 
@@ -34,7 +34,7 @@ pub fn exec_asym_command(session: &Session, authkey: &ObjectDescriptor) -> Resul
         display_menu_headers(&[crate::MAIN_HEADER, ASYM_HEADER],
             "Asymmetric key operations allow you to manage and use asymmetric keys and X509 certificates stored on the YubiHSM")?;
 
-        let cmd = YubihsmUi::select_command(&Cmdline, &AsymOps::get_authorized_commands(authkey))?;
+        let cmd = YubihsmUi::select_command(&Cmdline, &AsymOps.get_authorized_commands(authkey))?;
         display_menu_headers(&[crate::MAIN_HEADER, ASYM_HEADER, cmd.label], cmd.description)?;
 
         let res = match cmd.command {
@@ -61,18 +61,7 @@ pub fn exec_asym_command(session: &Session, authkey: &ObjectDescriptor) -> Resul
 }
 
 fn list(session: &Session) -> Result<(), MgmError> {
-    let types = SelectionItem::get_items(&[
-        AsymmetricType::Key,
-        AsymmetricType::X509Certificate,
-    ]);
-    let types: Vec<AsymmetricType> = YubihsmUi::select_multiple_items(
-        &Cmdline,
-        &types,
-        &[AsymmetricType::Key, AsymmetricType::X509Certificate],
-        false,
-        Some("Select type to list"))?;
-
-    YubihsmUi::display_objects_basic(&Cmdline, &AsymOps::get_asymmetric_objects(session, &types)?)
+    YubihsmUi::display_objects_basic(&Cmdline, &AsymOps.get_all_objects(session)?)
 }
 
 fn print_key_properties(session: &Session) -> Result<(), MgmError> {
@@ -89,7 +78,7 @@ pub fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), Mgm
     new_key.object_type = ObjectType::AsymmetricKey;
     new_key.algorithm = YubihsmUi::select_algorithm(
         &Cmdline,
-        &AsymOps::get_object_algorithms(),
+        &AsymOps.get_generation_algorithms(),
         None,
         Some("Select key algorithm"))?;
     new_key.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
@@ -97,7 +86,7 @@ pub fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), Mgm
     new_key.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
     new_key.capabilities = YubihsmUi::select_object_capabilities(
         &Cmdline,
-        &AsymOps::get_object_capabilities(authkey, &new_key.algorithm),
+        &AsymOps.get_applicable_capabilities(authkey, None, Some(new_key.algorithm))?,
         &[],
         None)?;
 
@@ -136,7 +125,7 @@ pub fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmEr
     new_key.object.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
     new_key.object.capabilities = YubihsmUi::select_object_capabilities(
         &Cmdline,
-        &AsymOps::get_object_capabilities(authkey, &_algo),
+        &AsymOps.get_applicable_capabilities(authkey, None, Some(new_key.object.algorithm))?,
         &[],
         Some("Select object capabilities"))?;
 
@@ -158,7 +147,7 @@ pub fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmEr
 
 pub fn get_public_key(session: &Session, object_type: ObjectType) -> Result<(), MgmError> {
     let keys = if object_type == ObjectType::AsymmetricKey {
-        AsymOps::get_asymmetric_objects(session, &[AsymmetricType::Key])?
+        AsymOps::get_asymmetric_objects(session, &[ObjectType::AsymmetricKey])?
     } else if object_type == ObjectType::WrapKey {
         WrapOps::get_rsa_wrapkeys(session)?
     } else {
@@ -183,7 +172,7 @@ pub fn get_public_key(session: &Session, object_type: ObjectType) -> Result<(), 
 }
 
 fn get_cert(session: &Session) -> Result<(), MgmError> {
-    let certs = AsymOps::get_asymmetric_objects(session, &[AsymmetricType::X509Certificate])?;
+    let certs = AsymOps::get_asymmetric_objects(session, &[ObjectType::Opaque])?;
     let cert = YubihsmUi::select_one_object(&Cmdline,
                                             &certs, Some("Select certificate(s):"))?;
 
@@ -275,7 +264,7 @@ fn sign_attestation(session: &Session, authkey:&ObjectDescriptor) -> Result<(), 
         return Err(MgmError::Error("User does not have signing attestation certificates capabilities".to_string()));
     }
 
-    let mut keys = AsymOps::get_asymmetric_objects(session, &[AsymmetricType::Key])?;
+    let mut keys = AsymOps::get_asymmetric_objects(session, &[ObjectType::AsymmetricKey])?;
     if keys.is_empty() {
         return Err(MgmError::Error("There are no asymmetric keys to attest".to_string()));
     }
