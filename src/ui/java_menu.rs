@@ -21,7 +21,6 @@ use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::utils::{generate_object, import_object, list_objects};
 use crate::ui::utils::{display_menu_headers, display_object_properties, get_pem_from_file, delete_objects};
-use crate::cmd_ui::cmd_ui::Cmdline;
 use crate::traits::backend_traits::YubihsmOperations;
 use crate::backend::error::MgmError;
 use crate::backend::types::{MgmCommandType};
@@ -30,36 +29,42 @@ use crate::backend::asym::{AsymOps, JavaOps};
 
 static JAVA_HEADER: &str = "SunPKCS11 keys";
 
-pub struct JavaMenu;
+pub struct JavaMenu<T: YubihsmUi> {
+    ui: T,
+}
 
-impl JavaMenu {
+impl<T: YubihsmUi> JavaMenu<T> {
+
+    pub fn new(interface: T) -> Self {
+        JavaMenu { ui: interface  }
+    }
+
     pub fn exec_command(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         loop {
-            display_menu_headers(&[crate::MAIN_HEADER, JAVA_HEADER],
+            display_menu_headers(&self.ui, &[crate::MAIN_HEADER, JAVA_HEADER],
                                  "SunPKCS11 compatible keys entails that an asymmetric key and its equivalent X509Certificate are store in the device with the same ObjectID")?;
 
-            let cmd = YubihsmUi::select_command(&Cmdline, &JavaOps.get_authorized_commands(authkey))?;
-            display_menu_headers(&[crate::MAIN_HEADER, JAVA_HEADER, cmd.label], cmd.description)?;
+            let cmd = self.ui.select_command(&JavaOps.get_authorized_commands(authkey))?;
+            display_menu_headers(&self.ui, &[crate::MAIN_HEADER, JAVA_HEADER, cmd.label], cmd.description)?;
 
             let res = match cmd.command {
-                MgmCommandType::List => list_objects(&JavaOps, session),
-                MgmCommandType::GetKeyProperties => display_object_properties(&JavaOps, session),
-                MgmCommandType::Generate => generate_object(&JavaOps, session, authkey, ObjectType::AsymmetricKey),
-                MgmCommandType::Import => Self::import(session, authkey),
-                MgmCommandType::Delete => delete_objects(&JavaOps, session, &JavaOps.get_all_objects(session)?),
+                MgmCommandType::List => list_objects(&self.ui, &JavaOps, session),
+                MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &JavaOps, session),
+                MgmCommandType::Generate => generate_object(&self.ui, &JavaOps, session, authkey, ObjectType::AsymmetricKey),
+                MgmCommandType::Import => self.import(session, authkey),
+                MgmCommandType::Delete => delete_objects(&self.ui, &JavaOps, session, &JavaOps.get_all_objects(session)?),
                 MgmCommandType::Exit => std::process::exit(0),
                 _ => unreachable!()
             };
 
             if let Err(e) = res {
-                YubihsmUi::display_error_message(&Cmdline, e.to_string().as_str())?
+                self.ui.display_error_message(e.to_string().as_str())?
             }
         }
     }
 
-    fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        let filepath = YubihsmUi::get_pem_filepath(
-            &Cmdline,
+    fn import(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+        let filepath = self.ui.get_pem_filepath(
             "Enter absolute path to PEM file containing private key and/or X509Certificate (Only the first object of its type will be imported):",
             true,
             None)?;
@@ -73,30 +78,28 @@ impl JavaMenu {
                 key_data.push(_value);
                 break;
             }
-            YubihsmUi::display_error_message(&Cmdline, "No private key found in PEM file. Please try again or press ESC to go back to menu")?;
-            pems = get_pem_from_file(&YubihsmUi::get_pem_filepath(
-                &Cmdline,
+            self.ui.display_error_message("No private key found in PEM file. Please try again or press ESC to go back to menu")?;
+            pems = get_pem_from_file(&self.ui.get_pem_filepath(
                 "Enter absolute path to PEM file containing a private key:",
                 true,
                 None)?)?;
         }
-        YubihsmUi::display_info_message(&Cmdline, "Private key loaded from PEM file")?;
+        self.ui.display_info_message("Private key loaded from PEM file")?;
 
         loop {
             if let Ok((_, _value)) = Self::get_first_object_from_pem(pems.clone(), ObjectType::Opaque) {
                 key_data.push(_value);
                 break;
             }
-            YubihsmUi::display_error_message(&Cmdline, "No X509Certificate found in PEM file. Please try again or press ESC to go back to menu")?;
-            pems = get_pem_from_file(&YubihsmUi::get_pem_filepath(
-                &Cmdline,
+            self.ui.display_error_message("No X509Certificate found in PEM file. Please try again or press ESC to go back to menu")?;
+            pems = get_pem_from_file(&self.ui.get_pem_filepath(
                 "Enter absolute path to PEM file containing an X509Certificate:",
                 true,
                 None)?)?;
         }
-        YubihsmUi::display_info_message(&Cmdline, "X509Certificate loaded from PEM file")?;
+        self.ui.display_info_message("X509Certificate loaded from PEM file")?;
 
-        import_object(&JavaOps, session, authkey, ObjectType::AsymmetricKey, object_algorithm, key_data)
+        import_object(&self.ui, &JavaOps, session, authkey, ObjectType::AsymmetricKey, object_algorithm, key_data)
     }
 
     fn get_first_object_from_pem(pems: Vec<Pem>, object_type: ObjectType) -> Result<(ObjectAlgorithm, Vec<u8>), MgmError> {

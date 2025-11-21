@@ -28,7 +28,7 @@ use crate::backend::validators::{object_id_validator, object_label_validator, pe
 use crate::backend::types::{MgmCommand, SelectionItem, NewObjectSpec};
 use crate::backend::algorithms::MgmAlgorithm;
 
-
+#[derive(Clone)]
 pub struct Cmdline;
 
 static MULTI_SELECT_PROMPT_HELP: &str = "Press the space button to select and unselect item. Press 'Enter' when done.";

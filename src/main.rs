@@ -177,18 +177,18 @@ fn main() -> Result<(), MgmError>{
     match matches.subcommand() {
         Some(subcommand) => {
             match subcommand.0 {
-                "asym" => AsymmetricMenu.exec_command(&session, &authkey),
-                "sym" => SymmetricMenu.exec_command(&session, &authkey),
-                "auth" => AuthenticationMenu.exec_command(&session, &authkey),
-                "wrap" => WrapMenu.exec_command(&session, &authkey),
-                "ksp" => Ksp.guided_setup(&session, &authkey),
-                "sunpkcs11" => JavaMenu.exec_command(&session, &authkey),
-                "reset" => DeviceMenu.reset(&session),
+                "asym" => AsymmetricMenu::new(Cmdline).exec_command(&session, &authkey),
+                "sym" => SymmetricMenu::new(Cmdline).exec_command(&session, &authkey),
+                "auth" => AuthenticationMenu::new(Cmdline).exec_command(&session, &authkey),
+                "wrap" => WrapMenu::new(Cmdline).exec_command(&session, &authkey),
+                "ksp" => Ksp::new(Cmdline).guided_setup(&session, &authkey),
+                "sunpkcs11" => JavaMenu::new(Cmdline).exec_command(&session, &authkey),
+                "reset" => DeviceMenu::new(Cmdline).reset(&session),
                 _ => unreachable!(),
             }
         },
         None => {
-            MainMenu.exec_command(&session, &authkey)
+            MainMenu::new(Cmdline).exec_command(&session, &authkey)
         }
     }
 }

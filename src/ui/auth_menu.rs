@@ -18,7 +18,6 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, Obj
 use yubihsmrs::Session;
 use crate::traits::backend_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
-use crate::cmd_ui::cmd_ui::Cmdline;
 use crate::ui::utils::{list_objects, delete_objects, display_object_properties, get_pem_from_file, display_menu_headers};
 use crate::backend::error::MgmError;
 use crate::backend::asym::AsymOps;
@@ -28,46 +27,51 @@ use crate::backend::auth::{AuthOps, AuthenticationType, UserType};
 
 static AUTH_HEADER: &str = "Authentication keys";
 
-pub struct AuthenticationMenu;
+pub struct AuthenticationMenu<T: YubihsmUi> {
+    ui: T,
+}
 
-impl AuthenticationMenu {
+impl<T: YubihsmUi> AuthenticationMenu<T> {
+
+    pub fn new(interface: T) -> Self {
+        AuthenticationMenu { ui: interface  }
+    }
 
     pub fn exec_command(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         loop {
-            display_menu_headers(&[crate::MAIN_HEADER, AUTH_HEADER],
+            display_menu_headers(&self.ui, &[crate::MAIN_HEADER, AUTH_HEADER],
                                  "Authentication key operations allow you to setup users by managing authentication keys stored on the YubiHSM")?;
 
-            let cmd = YubihsmUi::select_command(
-                &Cmdline, &AuthOps.get_authorized_commands(authkey))?;
-            display_menu_headers(&[crate::MAIN_HEADER, AUTH_HEADER, cmd.label], cmd.description)?;
+            let cmd = self.ui.select_command(
+                &AuthOps.get_authorized_commands(authkey))?;
+            display_menu_headers(&self.ui, &[crate::MAIN_HEADER, AUTH_HEADER, cmd.label], cmd.description)?;
 
             let res = match cmd.command {
-                MgmCommandType::List => list_objects(&AuthOps, session),
-                MgmCommandType::GetKeyProperties => display_object_properties(&AuthOps, session),
-                MgmCommandType::Delete => delete_objects(&AuthOps, session, &AuthOps.get_all_objects(session)?),
-                MgmCommandType::SetupUser => Self::create_authkey(session, authkey, UserType::AsymUser),
-                MgmCommandType::SetupAdmin => Self::create_authkey(session, authkey, UserType::AsymAdmin),
-                MgmCommandType::SetupAuditor => Self::create_authkey(session, authkey, UserType::Auditor),
-                MgmCommandType::SetupBackupAdmin => Self::create_authkey(session, authkey, UserType::BackupAdmin),
+                MgmCommandType::List => list_objects(&self.ui, &AuthOps, session),
+                MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &AuthOps, session),
+                MgmCommandType::Delete => delete_objects(&self.ui, &AuthOps, session, &AuthOps.get_all_objects(session)?),
+                MgmCommandType::SetupUser => self.create_authkey(session, authkey, UserType::AsymUser),
+                MgmCommandType::SetupAdmin => self.create_authkey(session, authkey, UserType::AsymAdmin),
+                MgmCommandType::SetupAuditor => self.create_authkey(session, authkey, UserType::Auditor),
+                MgmCommandType::SetupBackupAdmin => self.create_authkey(session, authkey, UserType::BackupAdmin),
                 MgmCommandType::Exit => std::process::exit(0),
                 _ => unreachable!()
             };
 
             if let Err(err) = res {
-                YubihsmUi::display_error_message(&Cmdline, err.to_string().as_str())?;
+                self.ui.display_error_message(err.to_string().as_str())?;
             }
         }
     }
 
-    fn create_authkey(
-        session: &Session,
-        current_authkey: &ObjectDescriptor,
-        user_type: UserType
+    fn create_authkey(&self,
+                      session: &Session,
+                      current_authkey: &ObjectDescriptor,
+                      user_type: UserType
     ) -> Result<(), MgmError> {
-        let mut new_key = Self::setup_user(current_authkey, user_type)?;
+        let mut new_key = self.setup_user(current_authkey, user_type)?;
 
-        let auth_type = YubihsmUi::select_one_item(
-            &Cmdline,
+        let auth_type = self.ui.select_one_item(
             &[
                 SelectionItem::new(AuthenticationType::PasswordDerived, "Password derived".to_string(), "Session keys are derived from a password".to_string()),
                 SelectionItem::new(AuthenticationType::Ecp256, "EC P256".to_string(), "Session authenticated using EC key with curve secp256r1".to_string()),
@@ -82,14 +86,14 @@ impl AuthenticationMenu {
                 new_key.algorithm = ObjectAlgorithm::Aes128YubicoAuthentication;
                 new_key_note = new_key_note.replace("Algorithm: Unknown", "Authentication Type: Password Derived");
 
-                let pwd = YubihsmUi::get_password(&Cmdline, "Enter user password:", true)?;
+                let pwd = self.ui.get_password("Enter user password:", true)?;
                 new_key.data.push(pwd.as_bytes().to_vec());
             },
             AuthenticationType::Ecp256 => {
                 new_key.algorithm = ObjectAlgorithm::Ecp256YubicoAuthentication;
                 new_key_note = new_key_note.replace("Algorithm: Unknown", "Authentication Type: Asymmetric");
 
-                let pubkey = YubihsmUi::get_public_ecp256_filepath(&Cmdline, "Enter path to ECP256 public key PEM file: ")?;
+                let pubkey = self.ui.get_public_ecp256_filepath("Enter path to ECP256 public key PEM file: ")?;
                 let pubkey = get_pem_from_file(&pubkey)?[0].clone();
 
                 let (_type, _algo, _value) = AsymOps::parse_asym_pem(pubkey)?;
@@ -101,54 +105,48 @@ impl AuthenticationMenu {
             }
         };
 
-        if !YubihsmUi::get_note_confirmation(&Cmdline, "Creating new authentication key with:", &new_key_note)? {
-            YubihsmUi::display_info_message(&Cmdline, "Authentication key not created")?;
+        if !self.ui.get_note_confirmation("Creating new authentication key with:", &new_key_note)? {
+            self.ui.display_info_message("Authentication key not created")?;
             return Ok(());
         }
 
         new_key.id = AuthOps.import(session, &new_key)?;
-        YubihsmUi::display_success_message(&Cmdline, format!("Created new authentication key with ID 0x{:04x}", new_key.id).as_str())?;
+        self.ui.display_success_message(format!("Created new authentication key with ID 0x{:04x}", new_key.id).as_str())?;
         Ok(())
     }
 
-    fn setup_user(current_authkey: &ObjectDescriptor, user_type: UserType) -> Result<NewObjectSpec, MgmError> {
+    fn setup_user(&self, current_authkey: &ObjectDescriptor, user_type: UserType) -> Result<NewObjectSpec, MgmError> {
         let mut new_key = NewObjectSpec::empty();
         new_key.object_type = ObjectType::AuthenticationKey;
-        new_key.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
-        new_key.label = YubihsmUi::get_object_label(&Cmdline, "")?;
-        new_key.domains = YubihsmUi::select_object_domains(&Cmdline, &current_authkey.domains)?;
+        new_key.id = self.ui.get_new_object_id(0)?;
+        new_key.label = self.ui.get_object_label("")?;
+        new_key.domains = self.ui.select_object_domains(&current_authkey.domains)?;
         match user_type {
-            UserType::AsymUser => new_key.capabilities = YubihsmUi::select_object_capabilities(
-                &Cmdline,
+            UserType::AsymUser => new_key.capabilities = self.ui.select_object_capabilities(
                 &AuthOps::KEY_USER_CAPABILITIES,
                 &AuthOps::KEY_USER_CAPABILITIES,
                 None)?,
             UserType::AsymAdmin => {
-                new_key.capabilities = YubihsmUi::select_object_capabilities(
-                    &Cmdline,
+                new_key.capabilities = self.ui.select_object_capabilities(
                     &AuthOps::KEY_ADMIN_CAPABILITIES,
                     &[],
                     None)?;
-                new_key.delegated_capabilities = YubihsmUi::select_object_capabilities(
-                    &Cmdline,
+                new_key.delegated_capabilities = self.ui.select_object_capabilities(
                     &AuthOps::KEY_USER_CAPABILITIES,
                     &[],
                     Some("Select delegated capabilities"))?;
             },
-            UserType::Auditor => new_key.capabilities = YubihsmUi::select_object_capabilities(
-                &Cmdline,
+            UserType::Auditor => new_key.capabilities = self.ui.select_object_capabilities(
                 &AuthOps::AUDITOR_CAPABILITIES,
                 &[ObjectCapability::GetLogEntries],
                 None)?,
             UserType::BackupAdmin => {
                 let current_authkey_delegated = get_delegated_capabilities(current_authkey);
-                new_key.capabilities = YubihsmUi::select_object_capabilities(
-                    &Cmdline,
+                new_key.capabilities = self.ui.select_object_capabilities(
                     &current_authkey_delegated,
                     &current_authkey_delegated,
                     None)?;
-                new_key.delegated_capabilities = YubihsmUi::select_object_capabilities(
-                    &Cmdline,
+                new_key.delegated_capabilities = self.ui.select_object_capabilities(
                     &current_authkey_delegated,
                     &current_authkey_delegated,
                     Some("Select delegated capabilities"))?;
