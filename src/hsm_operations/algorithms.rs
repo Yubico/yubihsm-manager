@@ -78,7 +78,17 @@ impl MgmAlgorithm {
             ObjectAlgorithm::Aes128YubicoAuthentication => "AES128 Yubico Authentication",
             ObjectAlgorithm::Ecp256YubicoAuthentication => "ECP256 Yubico Authentication",
             ObjectAlgorithm::OpaqueX509Certificate => "Opaque X509 Certificate",
-            _ => "Unknown Algorithm"
+            ObjectAlgorithm::HmacSha1 => "HMAC with SHA1",
+            ObjectAlgorithm::HmacSha256 => "HMAC with SHA256",
+            ObjectAlgorithm::HmacSha384 => "HMAC with SHA384",
+            ObjectAlgorithm::HmacSha512 => "HMAC with SHA512",
+            ObjectAlgorithm::OpaqueData => "Opaque Data",
+            ObjectAlgorithm::TemplateSsh => "Template SSH",
+            ObjectAlgorithm::Aes128YubicoOtp => "AES128 Yubico OTP",
+            ObjectAlgorithm::Aes192YubicoOtp => "AES192 Yubico OTP",
+            ObjectAlgorithm::Aes256YubicoOtp => "AES256 Yubico OTP",
+            ObjectAlgorithm::AesKwp => "AES KWP",
+            ObjectAlgorithm::ANY => "Any Algorithm",
         }
     }
 
@@ -129,7 +139,17 @@ impl MgmAlgorithm {
             ObjectAlgorithm::Aes128YubicoAuthentication => "yubihsm-shell name: aes128-yubico-authentication",
             ObjectAlgorithm::Ecp256YubicoAuthentication => "yubihsm-shell name: ecp256-yubico-authentication",
             ObjectAlgorithm::OpaqueX509Certificate => "yubihsm-shell name: opaque-x509-certificate",
-            _ => "Unknown Algorithm"
+            ObjectAlgorithm::HmacSha1 => "yubihsm-shell name: hmac-sha1",
+            ObjectAlgorithm::HmacSha256 => "yubihsm-shell name: hmac-sha256",
+            ObjectAlgorithm::HmacSha384 => "yubihsm-shell name: hmac-sha384",
+            ObjectAlgorithm::HmacSha512 => "yubihsm-shell name: hmac-sha512",
+            ObjectAlgorithm::OpaqueData => "yubihsm-shell name: opaque-data",
+            ObjectAlgorithm::TemplateSsh => "yubihsm-shell name: template-ssh",
+            ObjectAlgorithm::Aes128YubicoOtp => "yubihsm-shell name: aes128-yubico-otp",
+            ObjectAlgorithm::Aes192YubicoOtp => "yubihsm-shell name: aes192-yubico-otp",
+            ObjectAlgorithm::Aes256YubicoOtp => "yubihsm-shell name: aes256-yubico-otp",
+            ObjectAlgorithm::AesKwp => "yubihsm-shell name: aes-kwp",
+            ObjectAlgorithm::ANY => "yubihsm-shell name: any",
         }
     }
 
