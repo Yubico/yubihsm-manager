@@ -20,18 +20,16 @@ use openssl::base64;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::backend_traits::YubihsmOperations;
-use crate::backend::error::MgmError;
-use crate::backend::algorithms::MgmAlgorithm;
-use crate::backend::types::{MgmCommand, MgmCommandType, NewObjectSpec};
-use crate::backend::asym::AsymOps;
-use crate::backend::common::{contains_all, get_object_descriptors};
-use crate::backend::sym::SymOps;
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::algorithms::MgmAlgorithm;
+use crate::hsm_operations::types::{MgmCommand, MgmCommandType, NewObjectSpec};
+use crate::hsm_operations::asym::AsymmetricOperations;
+use crate::hsm_operations::common::{contains_all, get_object_descriptors};
+use crate::hsm_operations::sym::SymmetricOperations;
 
-
-pub struct WrapOps;
 
 // 2 object ID bytes + 2 domains bytes + 8 capabilities bytes + 8 delegated capabilities = 20 bytes
-const WRAP_SPLIT_PREFIX_LEN: usize = 20;
+static WRAP_SPLIT_PREFIX_LEN: usize = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WrapKeyType {
@@ -96,9 +94,11 @@ const PUBLIC_WRAP_KEY_CAPABILITIES: [ObjectCapability; 2] = [
     ObjectCapability::ExportableUnderWrap,
 ];
 
-impl YubihsmOperations for WrapOps {
+pub struct WrapOperations;
+
+impl YubihsmOperations for WrapOperations {
     fn get_commands(&self) -> Vec<MgmCommand> {
-        WrapOps::WRAP_COMMANDS.to_vec()
+        WrapOperations::WRAP_COMMANDS.to_vec()
     }
 
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
@@ -175,7 +175,7 @@ impl YubihsmOperations for WrapOps {
         Ok(id)    }
 }
 
-impl WrapOps {
+impl WrapOperations {
 
     const WRAP_COMMANDS: [MgmCommand;10] = [
         MgmCommand {
@@ -289,9 +289,9 @@ impl WrapOps {
                 0, ObjectType::WrapKey, "", ObjectAlgorithm::ANY, &Vec::new())?;
             let mut keys = get_object_descriptors(session, keys.as_slice())?;
             if key_type == WrapKeyType::Aes {
-                keys.retain(|k| !AsymOps::is_rsa_key_algorithm(&k.algorithm));
+                keys.retain(|k| !AsymmetricOperations::is_rsa_key_algorithm(&k.algorithm));
             } else if key_type == WrapKeyType::Rsa {
-                keys.retain(|k| AsymOps::is_rsa_key_algorithm(&k.algorithm));
+                keys.retain(|k| AsymmetricOperations::is_rsa_key_algorithm(&k.algorithm));
             }
             Ok(keys)
         }
@@ -299,7 +299,7 @@ impl WrapOps {
 
     pub fn get_rsa_wrapkeys(session:&Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
         let mut keys = Self.get_all_objects(session)?;
-        keys.retain(|k| AsymOps::is_rsa_key_algorithm(&k.algorithm));
+        keys.retain(|k| AsymmetricOperations::is_rsa_key_algorithm(&k.algorithm));
         Ok(keys)
     }
 
@@ -345,8 +345,8 @@ impl WrapOps {
 
     pub fn get_unwrapped_key_algorithms() -> Vec<MgmAlgorithm> {
         let mut algos = Vec::new();
-        algos.extend_from_slice(AsymOps.get_generation_algorithms().as_slice());
-        algos.extend_from_slice(SymOps.get_generation_algorithms().as_slice());
+        algos.extend_from_slice(AsymmetricOperations.get_generation_algorithms().as_slice());
+        algos.extend_from_slice(SymmetricOperations.get_generation_algorithms().as_slice());
         algos
     }
 
@@ -385,7 +385,7 @@ impl WrapOps {
 
         let mut wrapkey_spec = NewObjectSpec::empty();
         wrapkey_spec.object_type = ObjectType::WrapKey;
-        wrapkey_spec.algorithm = WrapOps::get_algorithm_from_keylen(key_len)?;
+        wrapkey_spec.algorithm = WrapOperations::get_algorithm_from_keylen(key_len)?;
         wrapkey_spec.id = ((u16::from(data[0])) << 8) | u16::from(data[1]);
         wrapkey_spec.domains = ObjectDomain::from_bytes(&data[2..4])?;
         wrapkey_spec.capabilities = ObjectCapability::from_bytes(&data[4..12])?;
@@ -424,7 +424,7 @@ impl WrapOps {
                     };
 
                     let oaep_label = Self::get_oaep_label(&oaep_algo)?;
-                    let mgf1_algo = AsymOps::get_mgf1_algorithm(&oaep_algo)?;
+                    let mgf1_algo = AsymmetricOperations::get_mgf1_algorithm(&oaep_algo)?;
 
                     match wrap_op_spec.wrap_type {
                         WrapType::Object => session.export_rsa_wrapped_object(
@@ -472,7 +472,7 @@ impl WrapOps {
                     None => ObjectAlgorithm::RsaOaepSha256,
                 };
                 let oaep_label = Self::get_oaep_label(&oaep_algo)?;
-                let mgf1_algo = AsymOps::get_mgf1_algorithm(&oaep_algo)?;
+                let mgf1_algo = AsymmetricOperations::get_mgf1_algorithm(&oaep_algo)?;
                 match wrap_op_spec.wrap_type {
                     WrapType::Object => session.import_rsa_wrapped_object(
                         wrap_op_spec.wrapkey_id,
@@ -512,6 +512,6 @@ impl WrapOps {
 
     fn get_oaep_label(algorithm: &ObjectAlgorithm) -> Result<Vec<u8>, MgmError> {
         let oaep_label:&[u8;64] = &[0;64];
-        AsymOps::get_hashed_bytes(algorithm, oaep_label)
+        AsymmetricOperations::get_hashed_bytes(algorithm, oaep_label)
     }
 }

@@ -19,9 +19,9 @@ extern crate yubihsmrs;
 use std::str::FromStr;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
-use crate::backend::error::MgmError;
-use crate::backend::validators::object_id_validator;
-use crate::backend::types::MgmCommand;
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::validators::object_id_validator;
+use crate::hsm_operations::types::MgmCommand;
 
 pub fn get_id_from_string(id_str: &str) -> Result<u16, MgmError> {
     object_id_validator(id_str)?;

@@ -18,12 +18,13 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, Obj
 use yubihsmrs::Session;
 use crate::traits::backend_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
-use crate::ui::utils::{list_objects, delete_objects, display_object_properties, get_pem_from_file, display_menu_headers};
-use crate::backend::error::MgmError;
-use crate::backend::asym::AsymOps;
-use crate::backend::types::{NewObjectSpec, MgmCommandType, SelectionItem};
-use crate::backend::common::get_delegated_capabilities;
-use crate::backend::auth::{AuthOps, AuthenticationType, UserType};
+use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_object_properties, list_objects};
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::asym::AsymmetricOperations;
+use crate::hsm_operations::types::{MgmCommandType, NewObjectSpec, SelectionItem};
+use crate::hsm_operations::common::get_delegated_capabilities;
+use crate::hsm_operations::auth::{AuthenticationType, AuthenticationOperations, UserType};
+use crate::ui::helper_io::get_pem_from_file;
 
 static AUTH_HEADER: &str = "Authentication keys";
 
@@ -43,13 +44,13 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
                                  "Authentication key operations allow you to setup users by managing authentication keys stored on the YubiHSM")?;
 
             let cmd = self.ui.select_command(
-                &AuthOps.get_authorized_commands(authkey))?;
+                &AuthenticationOperations.get_authorized_commands(authkey))?;
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, AUTH_HEADER, cmd.label], cmd.description)?;
 
             let res = match cmd.command {
-                MgmCommandType::List => list_objects(&self.ui, &AuthOps, session),
-                MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &AuthOps, session),
-                MgmCommandType::Delete => delete_objects(&self.ui, &AuthOps, session, &AuthOps.get_all_objects(session)?),
+                MgmCommandType::List => list_objects(&self.ui, &AuthenticationOperations, session),
+                MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &AuthenticationOperations, session),
+                MgmCommandType::Delete => delete_objects(&self.ui, &AuthenticationOperations, session, &AuthenticationOperations.get_all_objects(session)?),
                 MgmCommandType::SetupUser => self.create_authkey(session, authkey, UserType::AsymUser),
                 MgmCommandType::SetupAdmin => self.create_authkey(session, authkey, UserType::AsymAdmin),
                 MgmCommandType::SetupAuditor => self.create_authkey(session, authkey, UserType::Auditor),
@@ -96,7 +97,7 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
                 let pubkey = self.ui.get_public_ecp256_filepath("Enter path to ECP256 public key PEM file: ")?;
                 let pubkey = get_pem_from_file(&pubkey)?[0].clone();
 
-                let (_type, _algo, _value) = AsymOps::parse_asym_pem(pubkey)?;
+                let (_type, _algo, _value) = AsymmetricOperations::parse_asym_pem(pubkey)?;
                 if _type != ObjectType::PublicKey && _algo != ObjectAlgorithm::EcP256 {
                     return Err(MgmError::InvalidInput(
                         "Invalid public key. Found object is either not a public key or not of curve secp256r1.".to_string()));
@@ -110,7 +111,7 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
             return Ok(());
         }
 
-        new_key.id = AuthOps.import(session, &new_key)?;
+        new_key.id = AuthenticationOperations.import(session, &new_key)?;
         self.ui.display_success_message(format!("Created new authentication key with ID 0x{:04x}", new_key.id).as_str())?;
         Ok(())
     }
@@ -123,21 +124,21 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
         new_key.domains = self.ui.select_object_domains(&current_authkey.domains)?;
         match user_type {
             UserType::AsymUser => new_key.capabilities = self.ui.select_object_capabilities(
-                &AuthOps::KEY_USER_CAPABILITIES,
-                &AuthOps::KEY_USER_CAPABILITIES,
+                &AuthenticationOperations::KEY_USER_CAPABILITIES,
+                &AuthenticationOperations::KEY_USER_CAPABILITIES,
                 None)?,
             UserType::AsymAdmin => {
                 new_key.capabilities = self.ui.select_object_capabilities(
-                    &AuthOps::KEY_ADMIN_CAPABILITIES,
+                    &AuthenticationOperations::KEY_ADMIN_CAPABILITIES,
                     &[],
                     None)?;
                 new_key.delegated_capabilities = self.ui.select_object_capabilities(
-                    &AuthOps::KEY_USER_CAPABILITIES,
+                    &AuthenticationOperations::KEY_USER_CAPABILITIES,
                     &[],
                     Some("Select delegated capabilities"))?;
             },
             UserType::Auditor => new_key.capabilities = self.ui.select_object_capabilities(
-                &AuthOps::AUDITOR_CAPABILITIES,
+                &AuthenticationOperations::AUDITOR_CAPABILITIES,
                 &[ObjectCapability::GetLogEntries],
                 None)?,
             UserType::BackupAdmin => {

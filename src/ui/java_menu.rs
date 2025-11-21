@@ -19,12 +19,13 @@ use pem::Pem;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
-use crate::ui::utils::{generate_object, import_object, list_objects};
-use crate::ui::utils::{display_menu_headers, display_object_properties, get_pem_from_file, delete_objects};
+use crate::ui::helper_operations::{generate_object, import_object, list_objects};
+use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_object_properties};
 use crate::traits::backend_traits::YubihsmOperations;
-use crate::backend::error::MgmError;
-use crate::backend::types::{MgmCommandType};
-use crate::backend::asym::{AsymOps, JavaOps};
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::types::MgmCommandType;
+use crate::hsm_operations::asym::{AsymmetricOperations, JavaOps};
+use crate::ui::helper_io::get_pem_from_file;
 
 
 static JAVA_HEADER: &str = "SunPKCS11 keys";
@@ -104,7 +105,7 @@ impl<T: YubihsmUi> JavaMenu<T> {
 
     fn get_first_object_from_pem(pems: Vec<Pem>, object_type: ObjectType) -> Result<(ObjectAlgorithm, Vec<u8>), MgmError> {
         for pem in pems {
-            let (_type, _algo, _value) = AsymOps::parse_asym_pem(pem)?;
+            let (_type, _algo, _value) = AsymmetricOperations::parse_asym_pem(pem)?;
             if _type == object_type {
                 return Ok((_algo, _value));
             }

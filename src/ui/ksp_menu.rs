@@ -19,10 +19,11 @@ use yubihsmrs::object::{ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::wrap_menu::WrapMenu;
-use crate::ui::utils::{display_menu_headers, write_bytes_to_file};
-use crate::backend::error::MgmError;
-use crate::backend::ksp::KspOps;
-use crate::backend::wrap::{WrapKeyType, WrapOps, WrapType, WrapOpSpec};
+use crate::ui::helper_operations::display_menu_headers;
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::ksp::KspOperations;
+use crate::hsm_operations::wrap::{WrapKeyType, WrapOperations, WrapOpSpec, WrapType};
+use crate::ui::helper_io::write_bytes_to_file;
 
 static KSP_HEADER: &str = "KSP Setup";
 
@@ -47,7 +48,7 @@ impl<T: YubihsmUi + Clone> Ksp<T> {
 
         self.ui.display_info_message("Beginning the setup process.")?;
 
-        KspOps::check_privileges(authkey)?;
+        KspOperations::check_privileges(authkey)?;
         self.ui.display_info_message("User has sufficient privileges to perform KSP setup.")?;
 
         let rsa_decrypt = self.ui.get_confirmation("Add RSA decryption capabilities?")?;
@@ -57,7 +58,7 @@ impl<T: YubihsmUi + Clone> Ksp<T> {
         let domains = self.ui.select_object_domains(&authkey.domains)?;
         let shares = self.ui.get_split_aes_n_shares("Enter the number of shares to create:")?;
         let threshold = self.ui.get_split_aes_m_threshold("Enter the number of shares necessary to re-create the key:", shares)?;
-        let (wrapkey_id, wrapkey_shares) = KspOps::import_ksp_wrapkey(
+        let (wrapkey_id, wrapkey_shares) = KspOperations::import_ksp_wrapkey(
             session, id, &domains, rsa_decrypt, shares, threshold)?;
         self.ui.display_success_message(format!("Successfully imported wrap key with ID  0x{:04x}", wrapkey_id).as_str())?;
         self.ui.get_string_input("Press any key to start recording wrap key shares", true)?;
@@ -66,7 +67,7 @@ impl<T: YubihsmUi + Clone> Ksp<T> {
         self.ui.display_info_message("All key shares have been recorded and cannot be displayed again\n")?;
 
         self.ui.display_info_message("Importing application authentication key...")?;
-        let appkey_desc = KspOps::import_app_authkey(
+        let appkey_desc = KspOperations::import_app_authkey(
             session,
             self.ui.get_new_object_id(0)?,
             &domains,
@@ -77,7 +78,7 @@ impl<T: YubihsmUi + Clone> Ksp<T> {
 
         let auditkey = if self.ui.get_confirmation("Create an audit key? ")? {
             self.ui.display_info_message("Importing audit key...")?;
-            let key_desc = KspOps::import_audit_authkey(
+            let key_desc = KspOperations::import_audit_authkey(
                 session,
                 self.ui.get_new_object_id(0)?,
                 &domains,
@@ -123,7 +124,7 @@ impl<T: YubihsmUi + Clone> Ksp<T> {
             oaep_algorithm: None,
         };
 
-        let wrapped_keys = WrapOps::export_wrapped(session, &wrap_op_spec, &export_objects)?;
+        let wrapped_keys = WrapOperations::export_wrapped(session, &wrap_op_spec, &export_objects)?;
         for key in wrapped_keys {
             let filename = format!("0x{:04x}-{}.yhw", key.object_id, key.object_type);
             write_bytes_to_file(&self.ui, base64::encode_block(&key.wrapped_data).as_bytes(), filename.as_str(), Some(&dir))?;

@@ -18,8 +18,8 @@ use std::sync::LazyLock;
 use regex::Regex;
 use pem::Pem;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectType};
-use crate::backend::error::MgmError;
-use crate::backend::asym::AsymOps;
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::asym::AsymmetricOperations;
 
 static SHARE_RE_256: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{70}$").unwrap());
 static SHARE_RE_192: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{59}$").unwrap());
@@ -108,7 +108,7 @@ pub fn pem_file_validator(input: &str) -> Result<(), MgmError> {
 
 pub fn pem_certificate_file_validator(input: &str) -> Result<(), MgmError> {
     let pem = get_validated_pem_content(input)?;
-    let (_type, _algo, _bytes) = AsymOps::parse_asym_pem(pem)?;
+    let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
     if _algo != ObjectAlgorithm::OpaqueX509Certificate {
         return Err(MgmError::InvalidInput("PEM content is not an X509Certificate".to_string()));
     }
@@ -117,8 +117,8 @@ pub fn pem_certificate_file_validator(input: &str) -> Result<(), MgmError> {
 
 pub fn pem_public_eckey_file_validator(input: &str) -> Result<(), MgmError> {
     let pem = get_validated_pem_content(input)?;
-    let (_type, _algo, _bytes) = AsymOps::parse_asym_pem(pem)?;
-    if _type != ObjectType::PublicKey || !AsymOps::is_ec_key_algorithm(&_algo) {
+    let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
+    if _type != ObjectType::PublicKey || !AsymmetricOperations::is_ec_key_algorithm(&_algo) {
         return Err(MgmError::InvalidInput("PEM is not a public EC key".to_string()));
     }
     Ok(())
@@ -126,7 +126,7 @@ pub fn pem_public_eckey_file_validator(input: &str) -> Result<(), MgmError> {
 
 pub fn pem_public_ecp256_file_validator(input: &str) -> Result<(), MgmError> {
     let pem = get_validated_pem_content(input)?;
-    let (_type, _algo, _bytes) = AsymOps::parse_asym_pem(pem)?;
+    let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
     if _type != ObjectType::PublicKey || _algo != ObjectAlgorithm::EcP256 {
         return Err(MgmError::InvalidInput("PEM is not a public ECP256 key".to_string()));
     }
@@ -135,7 +135,7 @@ pub fn pem_public_ecp256_file_validator(input: &str) -> Result<(), MgmError> {
 
 pub fn pem_private_ecp256_file_validator(input: &str) -> Result<(), MgmError> {
     let pem = get_validated_pem_content(input)?;
-    let (_type, _algo, _bytes) = AsymOps::parse_asym_pem(pem)?;
+    let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
     if _type != ObjectType::AsymmetricKey || _algo != ObjectAlgorithm::EcP256 {
         return Err(MgmError::InvalidInput("PEM is not a private ECP256 key".to_string()));
     }
@@ -144,8 +144,8 @@ pub fn pem_private_ecp256_file_validator(input: &str) -> Result<(), MgmError> {
 
 pub fn pem_private_rsa_file_validator(input: &str) -> Result<(), MgmError> {
     let pem = get_validated_pem_content(input)?;
-    let (_type, _algo, _bytes) = AsymOps::parse_asym_pem(pem)?;
-    if _type != ObjectType::AsymmetricKey || AsymOps::is_rsa_key_algorithm(&_algo) {
+    let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
+    if _type != ObjectType::AsymmetricKey || AsymmetricOperations::is_rsa_key_algorithm(&_algo) {
         return Err(MgmError::InvalidInput("PEM is not a private RSA key".to_string()));
     }
     Ok(())
@@ -153,8 +153,8 @@ pub fn pem_private_rsa_file_validator(input: &str) -> Result<(), MgmError> {
 
 pub fn pem_public_rsa_file_validator(input: &str) -> Result<(), MgmError> {
     let pem = get_validated_pem_content(input)?;
-    let (_type, _algo, _bytes) = AsymOps::parse_asym_pem(pem)?;
-    if _type != ObjectType::PublicKey || AsymOps::is_rsa_key_algorithm(&_algo) {
+    let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
+    if _type != ObjectType::PublicKey || AsymmetricOperations::is_rsa_key_algorithm(&_algo) {
         return Err(MgmError::InvalidInput("PEM is not a public RSA key".to_string()));
     }
     Ok(())

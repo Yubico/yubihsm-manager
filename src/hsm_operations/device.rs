@@ -16,13 +16,13 @@
 
 use yubihsmrs::object::{ObjectCapability, ObjectDescriptor};
 use yubihsmrs::Session;
-use crate::backend::error::MgmError;
-use crate::backend::common::get_authorized_commands;
-use crate::backend::types::{MgmCommand, MgmCommandType};
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::common::get_authorized_commands;
+use crate::hsm_operations::types::{MgmCommand, MgmCommandType};
 
-pub struct DeviceOps;
+pub struct DeviceOperations;
 
-impl DeviceOps {
+impl DeviceOperations {
 
     const DEVICE_COMMANDS: [MgmCommand;5] = [
         MgmCommand {

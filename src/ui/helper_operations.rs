@@ -14,18 +14,13 @@
  * limitations under the License.
  */
 
-use std::fs::File;
-use std::fs;
-use std::path::Path;
-use std::io::Write;
-use pem::Pem;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::backend::types::NewObjectSpec;
+use crate::hsm_operations::types::NewObjectSpec;
 use crate::traits::backend_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
-use crate::backend::error::MgmError;
-use crate::backend::types::MgmCommand;
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::types::MgmCommand;
 
 static ESC_HELP_TEXT: &str = "You can always press 'Esc' to cancel current operation and return to previous menu";
 
@@ -36,66 +31,6 @@ pub fn display_menu_headers(ui: &impl YubihsmUi, menu_headers:&[&str], descripti
      let headers = menu_headers.join(" > ");
     ui.display_note(
         headers.as_str(), format!("{} \n{}", description, ESC_HELP_TEXT).as_str())?;
-    Ok(())
-}
-
-pub fn get_string_or_bytes_from_file(ui: &impl YubihsmUi, string: String) -> Result<Vec<u8>, MgmError> {
-    if string.is_empty() {
-        return Ok(vec![])
-    }
-
-    match get_bytes_from_file(ui, &string) {
-        Ok(bytes) => Ok(bytes),
-        Err(_) => Ok(string.as_bytes().to_vec())
-    }
-}
-
-pub fn get_hex_or_bytes_from_file(ui: &impl YubihsmUi, string: String) -> Result<Vec<u8>, MgmError> {
-    if string.is_empty() {
-        return Ok(vec![])
-    }
-
-    match get_bytes_from_file(ui, &string) {
-        Ok(bytes) => Ok(bytes),
-        Err(_) => Ok(hex::decode(string)?)
-    }
-}
-
-pub fn get_bytes_from_file(ui: &impl YubihsmUi, filepath: &String) -> Result<Vec<u8>, MgmError> {
-    if Path::new(filepath).exists() {
-        ui.display_info_message(
-            format!("Read bytes from file: {}", filepath).as_str())?;
-        return Ok(fs::read(filepath)?)
-    }
-    Err(MgmError::InvalidInput("File does not exist".to_string()))
-}
-
-pub fn get_pem_from_file(file_path: &String) -> Result<Vec<Pem>, MgmError> {
-    let content = fs::read_to_string(file_path)?;
-    Ok(pem::parse_many(content)?)
-}
-
-pub fn write_bytes_to_file(ui: &impl YubihsmUi, content: &[u8], filename: &str, directory: Option<&str>) -> Result<(), MgmError> {
-    let dir = if let Some(d) = directory { d.to_owned() } else { ".".to_owned() };
-    let filepath = format!("{}/{}", dir, filename);
-
-    let mut file = match File::options().create_new(true).write(true).open(&filepath) {
-        Ok(f) => f,
-        Err(error) => {
-            if error.kind() == std::io::ErrorKind::AlreadyExists {
-                if ui.get_confirmation(format!("File {} already exist. Overwrite it?", &filepath).as_str())? {
-                    fs::remove_file(&filepath)?;
-                    File::options().create_new(true).write(true).open(&filepath)?
-                } else {
-                    return Ok(())
-                }
-            } else {
-                return Err(MgmError::StdIoError(error))
-            }
-        }
-    };
-    file.write_all(content)?;
-    ui.display_success_message(format!("Wrote file {}", &filepath).as_str())?;
     Ok(())
 }
 

@@ -16,14 +16,15 @@
 
 use yubihsmrs::object::{ObjectCapability, ObjectDescriptor, ObjectOrigin, ObjectType};
 use yubihsmrs::Session;
-use crate::ui::utils::{generate_object, import_object, list_objects, delete_objects, display_object_properties};
-use crate::ui::utils::{display_menu_headers, get_hex_or_bytes_from_file, get_pem_from_file, get_string_or_bytes_from_file, write_bytes_to_file};
+use crate::ui::helper_operations::{delete_objects, display_object_properties, generate_object, import_object, list_objects};
+use crate::ui::helper_operations::display_menu_headers;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::traits::backend_traits::YubihsmOperations;
-use crate::backend::error::MgmError;
-use crate::backend::types::{SelectionItem, MgmCommandType};
-use crate::backend::wrap::WrapOps;
-use crate::backend::asym::{AttestationType, AsymOps};
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::types::{MgmCommandType, SelectionItem};
+use crate::hsm_operations::wrap::WrapOperations;
+use crate::hsm_operations::asym::{AsymmetricOperations, AttestationType};
+use crate::ui::helper_io::{get_hex_or_bytes_from_file, get_pem_from_file, get_string_or_bytes_from_file, write_bytes_to_file};
 
 static ASYM_HEADER: &str = "Asymmetric keys";
 
@@ -43,15 +44,15 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, ASYM_HEADER],
                                  "Asymmetric key operations allow you to manage and use asymmetric keys and X509 certificates stored on the YubiHSM")?;
 
-            let cmd = self.ui.select_command(&AsymOps.get_authorized_commands(authkey))?;
+            let cmd = self.ui.select_command(&AsymmetricOperations.get_authorized_commands(authkey))?;
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, ASYM_HEADER, cmd.label], cmd.description)?;
 
             let res = match cmd.command {
-                MgmCommandType::List => list_objects(&self.ui, &AsymOps, session),
-                MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &AsymOps, session),
-                MgmCommandType::Generate => generate_object(&self.ui, &AsymOps, session, authkey, ObjectType::AsymmetricKey),
+                MgmCommandType::List => list_objects(&self.ui, &AsymmetricOperations, session),
+                MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &AsymmetricOperations, session),
+                MgmCommandType::Generate => generate_object(&self.ui, &AsymmetricOperations, session, authkey, ObjectType::AsymmetricKey),
                 MgmCommandType::Import => self.import(session, authkey),
-                MgmCommandType::Delete => delete_objects(&self.ui, &AsymOps, session, &AsymOps.get_all_objects(session)?),
+                MgmCommandType::Delete => delete_objects(&self.ui, &AsymmetricOperations, session, &AsymmetricOperations.get_all_objects(session)?),
                 MgmCommandType::GetPublicKey => self.get_public_key(session, ObjectType::AsymmetricKey),
                 MgmCommandType::GetCertificate => self.get_cert(session),
                 MgmCommandType::Sign => self.sign(session, authkey),
@@ -74,20 +75,20 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
             true,
             None)?;
         let pem = get_pem_from_file(&filepath)?[0].clone();
-        let (_type, _algo, _bytes) = AsymOps::parse_asym_pem(pem)?;
+        let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
 
         if _type != ObjectType::AsymmetricKey && _type != ObjectType::Opaque {
             return Err(MgmError::InvalidInput("PEM file contains neither a private key nor an X509 certificate".to_string()));
         }
 
-        import_object(&self.ui, &AsymOps, session, authkey, _type, _algo, [_bytes].to_vec())
+        import_object(&self.ui, &AsymmetricOperations, session, authkey, _type, _algo, [_bytes].to_vec())
     }
 
     pub fn get_public_key(&self, session: &Session, object_type: ObjectType) -> Result<(), MgmError> {
         let keys = if object_type == ObjectType::AsymmetricKey {
-            AsymOps::get_asymmetric_objects(session, &[ObjectType::AsymmetricKey])?
+            AsymmetricOperations::get_asymmetric_objects(session, &[ObjectType::AsymmetricKey])?
         } else if object_type == ObjectType::WrapKey {
-            WrapOps::get_rsa_wrapkeys(session)?
+            WrapOperations::get_rsa_wrapkeys(session)?
         } else {
             return Err(MgmError::InvalidInput(
                 format!("Retrieving public key is not applicable for object type {}", object_type)));
@@ -95,7 +96,7 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
 
         let key = self.ui.select_one_object(&keys, Some("Select key"))?;
 
-        let pubkey = AsymOps::get_pubkey(session, key.id, key.object_type)?;
+        let pubkey = AsymmetricOperations::get_pubkey(session, key.id, key.object_type)?;
         self.ui.display_success_message(pubkey.to_string().as_str())?;
 
         if self.ui.get_confirmation("Write to file?")? {
@@ -108,10 +109,10 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
     }
 
     fn get_cert(&self, session: &Session) -> Result<(), MgmError> {
-        let certs = AsymOps::get_asymmetric_objects(session, &[ObjectType::Opaque])?;
+        let certs = AsymmetricOperations::get_asymmetric_objects(session, &[ObjectType::Opaque])?;
         let cert = self.ui.select_one_object(&certs, Some("Select certificate(s):"))?;
 
-        let cert_pem = AsymOps::get_certificate(session, cert.id)?;
+        let cert_pem = AsymmetricOperations::get_certificate(session, cert.id)?;
         self.ui.display_success_message(cert_pem.to_string().as_str())?;
 
         if self.ui.get_confirmation("Write to file?")? {
@@ -129,12 +130,12 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
         let input = get_string_or_bytes_from_file(&self.ui, input)?;
 
         let key = self.ui.select_one_object(
-            &AsymOps::get_signing_keys(session, authkey)?,
+            &AsymmetricOperations::get_signing_keys(session, authkey)?,
             Some("Select signing key"))?;
 
         let sign_algo = self.ui.select_algorithm(
-            &AsymOps::get_signing_algorithms(authkey, &key), None, Some("Select RSA signing algorithm"))?;
-        let sig = AsymOps::sign(session, key.id, &sign_algo, &input)?;
+            &AsymmetricOperations::get_signing_algorithms(authkey, &key), None, Some("Select RSA signing algorithm"))?;
+        let sig = AsymmetricOperations::sign(session, key.id, &sign_algo, &input)?;
         self.ui.display_success_message(format!("Signed data using {} and key 0x{:04x}:\n{}", sign_algo, key.id, hex::encode(&sig)).as_str())?;
 
         if self.ui.get_confirmation("Write to binary file?")? {
@@ -151,14 +152,14 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
         let enc = get_hex_or_bytes_from_file(&self.ui, enc)?;
 
         let key = self.ui.select_one_object(
-            &AsymOps::get_decryption_keys(session, authkey)?,
+            &AsymmetricOperations::get_decryption_keys(session, authkey)?,
             Some("Select decryption key"))?;
         let algorithm = self.ui.select_algorithm(
-            &AsymOps::get_decryption_algorithms(authkey, &key),
+            &AsymmetricOperations::get_decryption_algorithms(authkey, &key),
             None,
             Some("Select RSA decryption algorithm"))?;
 
-        let data = AsymOps::decrypt(session, key.id, &algorithm, &enc)?;
+        let data = AsymmetricOperations::decrypt(session, key.id, &algorithm, &enc)?;
         self.ui.display_success_message(format!("Decrypted data using {} and key 0x{:04x}", algorithm, key.id).as_str())?;
 
         if let Ok(data_str) = std::str::from_utf8(data.as_slice()) {
@@ -175,14 +176,14 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
 
     fn derive_ecdh(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let hsm_key = self.ui.select_one_object(
-            &AsymOps::get_derivation_keys(session, authkey)?,
+            &AsymmetricOperations::get_derivation_keys(session, authkey)?,
             Some("Select ECDH key"))?;
 
         let peer_key = self.ui.get_public_eckey_filepath(
             "Enter path to PEM file containing the peer public key:")?;
         let peer_key = get_pem_from_file(&peer_key)?[0].clone();
 
-        let shared_secret = AsymOps::derive_ecdh(session, &hsm_key, peer_key)?;
+        let shared_secret = AsymmetricOperations::derive_ecdh(session, &hsm_key, peer_key)?;
         self.ui.display_success_message(hex::encode(shared_secret).as_str())?;
 
         Ok(())
@@ -193,7 +194,7 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
             return Err(MgmError::Error("User does not have signing attestation certificates capabilities".to_string()));
         }
 
-        let mut keys = AsymOps::get_asymmetric_objects(session, &[ObjectType::AsymmetricKey])?;
+        let mut keys = AsymmetricOperations::get_asymmetric_objects(session, &[ObjectType::AsymmetricKey])?;
         if keys.is_empty() {
             return Err(MgmError::Error("There are no asymmetric keys to attest".to_string()));
         }
@@ -249,7 +250,7 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
             }
         };
 
-        let cert = AsymOps::get_attestation_cert(session, attested_key, attesting_key, template_cert)?;
+        let cert = AsymmetricOperations::get_attestation_cert(session, attested_key, attesting_key, template_cert)?;
         self.ui.display_success_message(cert.to_string().as_str())?;
 
         if self.ui.get_confirmation("Write to file?")? {

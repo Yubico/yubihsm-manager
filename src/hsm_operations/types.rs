@@ -17,8 +17,8 @@
 use std::fmt;
 use std::fmt::Display;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
-use crate::backend::algorithms;
-use crate::backend::common::contains_all;
+use crate::hsm_operations::algorithms;
+use crate::hsm_operations::common::contains_all;
 
 #[derive(Clone, Debug)]
 pub struct NewObjectSpec {

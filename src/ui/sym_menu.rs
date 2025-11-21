@@ -17,13 +17,14 @@
 use yubihsmrs::object::{ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
-use crate::ui::utils::{generate_object, import_object, list_objects};
-use crate::ui::utils::{display_menu_headers, write_bytes_to_file, delete_objects, display_object_properties, get_hex_or_bytes_from_file};
+use crate::ui::helper_operations::{generate_object, import_object, list_objects};
+use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_object_properties};
 use crate::ui::device_menu::DeviceMenu;
 use crate::traits::backend_traits::YubihsmOperations;
-use crate::backend::error::MgmError;
-use crate::backend::types::{MgmCommandType, SelectionItem};
-use crate::backend::sym::{SymOps, AesMode, EncryptionMode, AesOperationSpec};
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::types::{MgmCommandType, SelectionItem};
+use crate::hsm_operations::sym::{AesMode, AesOperationSpec, EncryptionMode, SymmetricOperations};
+use crate::ui::helper_io::{get_hex_or_bytes_from_file, write_bytes_to_file};
 
 static SYM_HEADER: &str = "Symmetric keys";
 
@@ -42,15 +43,15 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, SYM_HEADER],
                                  "Symmetric key operations allow you to manage and use symmetric keys stored on the YubiHSM")?;
 
-            let cmd = self.ui.select_command(&SymOps.get_authorized_commands(authkey))?;
+            let cmd = self.ui.select_command(&SymmetricOperations.get_authorized_commands(authkey))?;
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, SYM_HEADER, cmd.label], cmd.description)?;
 
             let res = match cmd.command {
-                MgmCommandType::List => list_objects(&self.ui, &SymOps, session),
-                MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &SymOps, session),
-                MgmCommandType::Generate => generate_object(&self.ui, &SymOps, session, authkey, ObjectType::SymmetricKey),
+                MgmCommandType::List => list_objects(&self.ui, &SymmetricOperations, session),
+                MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &SymmetricOperations, session),
+                MgmCommandType::Generate => generate_object(&self.ui, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey),
                 MgmCommandType::Import => self.import(session, authkey),
-                MgmCommandType::Delete => delete_objects(&self.ui, &SymOps, session, &SymOps.get_all_objects(session)?),
+                MgmCommandType::Delete => delete_objects(&self.ui, &SymmetricOperations, session, &SymmetricOperations.get_all_objects(session)?),
                 MgmCommandType::Encrypt => self.operate(session, authkey, EncryptionMode::Encrypt),
                 MgmCommandType::Decrypt => self.operate(session, authkey, EncryptionMode::Decrypt),
                 MgmCommandType::GetRandom => DeviceMenu::new(self.ui.clone()).get_random(session),
@@ -67,9 +68,9 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
     pub fn import(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let mut key_data = vec![];
         key_data.push(self.ui.get_aes_key_hex("Enter AES key in HEX format:")?);
-        let key_algo = SymOps::get_symkey_algorithm_from_keylen(key_data[0].len())?;
+        let key_algo = SymmetricOperations::get_symkey_algorithm_from_keylen(key_data[0].len())?;
 
-        import_object(&self.ui, &SymOps, session, authkey, ObjectType::SymmetricKey, key_algo, key_data)
+        import_object(&self.ui, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey, key_algo, key_data)
     }
 
     fn operate(&self, session: &Session, authkey: &ObjectDescriptor, enc_mode: EncryptionMode) -> Result<(), MgmError> {
@@ -85,7 +86,7 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
             None,
             Some("Select AES encryption mode:"))?;
 
-        let key = self.ui.select_one_object(&SymOps::get_operation_keys(session, authkey, enc_mode, aes_mode)?, Some("Select AES key for operation:"))?;
+        let key = self.ui.select_one_object(&SymmetricOperations::get_operation_keys(session, authkey, enc_mode, aes_mode)?, Some("Select AES key for operation:"))?;
 
 
         let in_data = self.ui.get_string_input(
@@ -108,7 +109,7 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
             iv,
             data: in_data,
         };
-        let out_data = SymOps::operate(session, op_spec)?;
+        let out_data = SymmetricOperations::operate(session, op_spec)?;
 
         self.ui.display_success_message(hex::encode(&out_data).as_str())?;
 

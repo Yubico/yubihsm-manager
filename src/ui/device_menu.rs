@@ -20,13 +20,14 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor};
 use yubihsmrs::Session;
 use crate::traits::backend_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
-use crate::ui::utils::{display_menu_headers, write_bytes_to_file};
-use crate::backend::error::MgmError;
-use crate::backend::algorithms::MgmAlgorithm;
-use crate::backend::device::DeviceOps;
-use crate::backend::sym::SymOps;
-use crate::backend::types::MgmCommandType;
-use crate::backend::wrap::{WrapKeyType, WrapOps, WrapOpSpec, WrapType};
+use crate::ui::helper_operations::display_menu_headers;
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::algorithms::MgmAlgorithm;
+use crate::hsm_operations::device::DeviceOperations;
+use crate::hsm_operations::sym::SymmetricOperations;
+use crate::hsm_operations::types::MgmCommandType;
+use crate::hsm_operations::wrap::{WrapKeyType, WrapOperations, WrapOpSpec, WrapType};
+use crate::ui::helper_io::write_bytes_to_file;
 
 static DEVICE_HEADER: &str = "YubiHSM Device Operations";
 
@@ -45,7 +46,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, DEVICE_HEADER],
                                  "Device operations allow you to do device wide operations such as backup, restore, reset, and getting random bytes.")?;
 
-            let cmd = self.ui.select_command(&DeviceOps::get_authorized_commands(authkey))?;
+            let cmd = self.ui.select_command(&DeviceOperations::get_authorized_commands(authkey))?;
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, cmd.label], cmd.description)?;
 
             let res = match cmd.command {
@@ -71,18 +72,18 @@ impl<T: YubihsmUi> DeviceMenu<T> {
             Some("Can be maximum of 2028 bytes for newer YubiHSMs or 2021 for older ones. Default is 256"),
             1,
             2028)?;
-        let bytes = DeviceOps::get_random(session, n)?;
+        let bytes = DeviceOperations::get_random(session, n)?;
         self.ui.display_success_message(hex::encode(bytes).to_string().as_str())?;
         Ok(())
     }
 
 
     fn backup(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        let wrapkeys = WrapOps::get_wrapping_keys(session, authkey)?;
+        let wrapkeys = WrapOperations::get_wrapping_keys(session, authkey)?;
         let wrapkey = self.ui.select_one_object(
             &wrapkeys,
             Some("Select the wrapping key to use for exporting objects:"))?;
-        let wrapkey_type = WrapOps::get_wrapkey_type(wrapkey.object_type, wrapkey.algorithm)?;
+        let wrapkey_type = WrapOperations::get_wrapkey_type(wrapkey.object_type, wrapkey.algorithm)?;
 
         let mut wrap_op = WrapOpSpec {
             wrapkey_id: wrapkey.id,
@@ -93,14 +94,14 @@ impl<T: YubihsmUi> DeviceMenu<T> {
             oaep_algorithm: None,
         };
 
-        let export_objects = WrapOps::get_exportable_objects(session, &wrapkey, WrapType::Object)?;
+        let export_objects = WrapOperations::get_exportable_objects(session, &wrapkey, WrapType::Object)?;
         if export_objects.iter().any(|x| x.algorithm == ObjectAlgorithm::Ed25519) {
             wrap_op.include_ed_seed = self.ui.get_confirmation("Include Ed25519 seed in the wrapped export? (required for importing Ed25519 keys)")?
         };
 
         if wrapkey_type == WrapKeyType::RsaPublic {
             wrap_op.aes_algorithm = Some(self.ui.select_algorithm(
-                &SymOps.get_generation_algorithms(),
+                &SymmetricOperations.get_generation_algorithms(),
                 Some(ObjectAlgorithm::Aes256),
                 Some("Select AES algorithm to use for wrapping"))?);
             wrap_op.oaep_algorithm = Some(self.ui.select_algorithm(
@@ -115,7 +116,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
             Some("."),
             Some("Default is current directory"))?;
 
-        let wrapped_objects = WrapOps::export_wrapped(session, &wrap_op, &export_objects)?;
+        let wrapped_objects = WrapOperations::export_wrapped(session, &wrap_op, &export_objects)?;
 
         for object in &wrapped_objects {
             if object.error.is_some() {
@@ -130,11 +131,11 @@ impl<T: YubihsmUi> DeviceMenu<T> {
     }
 
     fn restore(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        let wrapkeys = WrapOps::get_unwrapping_keys(session, authkey)?;
+        let wrapkeys = WrapOperations::get_unwrapping_keys(session, authkey)?;
         let wrapkey = self.ui.select_one_object(
             &wrapkeys,
             Some("Select the unwrapping key to use for importing objects:"))?;
-        let wrapkey_type = WrapOps::get_wrapkey_type(wrapkey.object_type, wrapkey.algorithm)?;
+        let wrapkey_type = WrapOperations::get_wrapkey_type(wrapkey.object_type, wrapkey.algorithm)?;
 
         let dir = self.ui.get_path_input(
             "Enter path to backup directory:",
@@ -179,7 +180,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
             let mut wrap = String::new();
             file.read_to_string(&mut wrap)?;
 
-            let res = WrapOps::import_wrapped(session, &wrap_op, wrap, None);
+            let res = WrapOperations::import_wrapped(session, &wrap_op, wrap, None);
             match res {
                 Ok(handle) => {
                     self.ui.display_success_message(format!("Successfully imported object {}, with ID 0x{:04x}", handle.object_type, handle.object_id).as_str())?;
@@ -194,7 +195,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
 
     pub fn reset(&self, session: &Session) -> Result<(), MgmError> {
         if self.ui.get_warning_confirmation("All data will be deleted from the device and cannot be recovered.")? {
-            DeviceOps::reset_device(session)?;
+            DeviceOperations::reset_device(session)?;
             self.ui.display_success_message("Device has been reset to factory defaults.")?;
         }
         Ok(())

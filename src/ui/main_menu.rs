@@ -24,15 +24,15 @@ use crate::ui::java_menu::JavaMenu;
 use crate::ui::device_menu::DeviceMenu;
 use crate::ui::auth_menu::AuthenticationMenu;
 use crate::ui::asym_menu::AsymmetricMenu;
-use crate::ui::utils::{list_objects, delete_objects, display_menu_headers, generate_object};
-use crate::cmd_ui::cmd_ui::Cmdline;
+use crate::ui::helper_operations::{list_objects, delete_objects, display_menu_headers, generate_object};
+use crate::cli::cmdline::Cmdline;
 use crate::traits::backend_traits::YubihsmOperations;
-use crate::backend::error::MgmError;
-use crate::backend::sym::SymOps;
-use crate::backend::wrap::WrapOps;
-use crate::backend::types::{SelectionItem, MgmCommandType};
-use crate::backend::main_ops::{MgmObjectType, FilterType, MainOps};
-use crate::backend::asym::AsymOps;
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::sym::SymmetricOperations;
+use crate::hsm_operations::wrap::WrapOperations;
+use crate::hsm_operations::types::{SelectionItem, MgmCommandType};
+use crate::hsm_operations::main_ops::{MgmObjectType, FilterType, MainOperations};
+use crate::hsm_operations::asym::AsymmetricOperations;
 
 static MAIN_HEADER: &str = "YubiHSM Manager";
 
@@ -51,16 +51,16 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
             display_menu_headers(&self.ui, &[MAIN_HEADER],
                                  "Operations applicable for all objects on the YubiHSM")?;
 
-            let cmd = self.ui.select_command(&MainOps.get_authorized_commands(authkey))?;
+            let cmd = self.ui.select_command(&MainOperations.get_authorized_commands(authkey))?;
 
             if cmd.command != MgmCommandType::GotoDevice {
                 display_menu_headers(&self.ui, &[crate::MAIN_HEADER, cmd.label], cmd.description)?;
             }
 
             let res = match cmd.command {
-                MgmCommandType::List => list_objects(&self.ui, &MainOps, session),
+                MgmCommandType::List => list_objects(&self.ui, &MainOperations, session),
                 MgmCommandType::Search => self.search(session),
-                MgmCommandType::Delete => delete_objects(&self.ui, &MainOps, session, &MainOps::get_objects_for_delete(session, authkey)?),
+                MgmCommandType::Delete => delete_objects(&self.ui, &MainOperations, session, &MainOperations::get_objects_for_delete(session, authkey)?),
                 MgmCommandType::Generate => self.generate(session, authkey),
                 MgmCommandType::Import => self.import(session, authkey),
                 MgmCommandType::GotoKey => self.goto_key(session, authkey),
@@ -88,20 +88,20 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
         let objects = match types {
             FilterType::Id(_) => {
                 let id = self.ui.get_object_id()?;
-                MainOps::get_filtered_objects(session, FilterType::Id(id))?
+                MainOperations::get_filtered_objects(session, FilterType::Id(id))?
             },
             FilterType::Type(_) => {
                 let types = self.ui.select_multiple_items(
-                    &SelectionItem::get_items(&MainOps::get_search_by_types()),
+                    &SelectionItem::get_items(&MainOperations::get_search_by_types()),
                     &[],
                     false,
                     Some("\nSelect object types:")
                 )?;
-                MainOps::get_filtered_objects(session, FilterType::Type(types))?
+                MainOperations::get_filtered_objects(session, FilterType::Type(types))?
             },
             FilterType::Label(_) => {
                 let label = self.ui.get_object_label("")?;
-                MainOps::get_filtered_objects(session, FilterType::Label(label))?
+                MainOperations::get_filtered_objects(session, FilterType::Label(label))?
             },
         };
         self.ui.display_objects_full(&objects)
@@ -109,21 +109,21 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
 
     fn generate(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let _type: MgmObjectType = self.ui.select_one_item(
-            &SelectionItem::get_items(&MainOps::get_generatable_types(authkey)),
+            &SelectionItem::get_items(&MainOperations::get_generatable_types(authkey)),
             None,
             Some("\nSelect object type:")
         )?;
         match _type {
-            MgmObjectType::Asymmetric => generate_object(&self.ui, &AsymOps, session, authkey, ObjectType::AsymmetricKey),
-            MgmObjectType::Symmetric => generate_object(&self.ui, &SymOps, session, authkey, ObjectType::SymmetricKey),
-            MgmObjectType::Wrap => generate_object(&self.ui, &WrapOps, session, authkey, ObjectType::WrapKey),
+            MgmObjectType::Asymmetric => generate_object(&self.ui, &AsymmetricOperations, session, authkey, ObjectType::AsymmetricKey),
+            MgmObjectType::Symmetric => generate_object(&self.ui, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey),
+            MgmObjectType::Wrap => generate_object(&self.ui, &WrapOperations, session, authkey, ObjectType::WrapKey),
             _ => Ok(())
         }
     }
 
     fn import(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let _type: MgmObjectType = self.ui.select_one_item(
-            &SelectionItem::get_items(&MainOps::get_importable_types(authkey)),
+            &SelectionItem::get_items(&MainOperations::get_importable_types(authkey)),
             None,
             Some("\nSelect object type:")
         )?;
@@ -137,7 +137,7 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
 
     fn goto_key(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let _type: MgmObjectType = self.ui.select_one_item(
-            &SelectionItem::get_items(&MainOps::get_key_operation_types()),
+            &SelectionItem::get_items(&MainOperations::get_key_operation_types()),
             None,
             Some("\nSelect object type:")
         )?;

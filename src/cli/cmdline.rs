@@ -19,14 +19,11 @@ use comfy_table::{ContentArrangement, Table};
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain};
 use crate::traits::ui_traits::YubihsmUi;
 use crate::traits::ui_traits::SpinnerHandler;
-use crate::backend::error::MgmError;
-use crate::backend::common;
-use crate::backend::validators::{pem_private_rsa_file_validator, pem_public_rsa_file_validator};
-use crate::backend::validators::{integer_validator, path_exists_validator, aes_share_validator};
-use crate::backend::validators::{pem_public_eckey_file_validator, pem_public_ecp256_file_validator};
-use crate::backend::validators::{object_id_validator, object_label_validator, pem_file_validator, pem_certificate_file_validator};
-use crate::backend::types::{MgmCommand, SelectionItem, NewObjectSpec};
-use crate::backend::algorithms::MgmAlgorithm;
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::common;
+use crate::hsm_operations::validators;
+use crate::hsm_operations::types::{MgmCommand, SelectionItem, NewObjectSpec};
+use crate::hsm_operations::algorithms::MgmAlgorithm;
 
 #[derive(Clone)]
 pub struct Cmdline;
@@ -39,7 +36,7 @@ impl YubihsmUi for Cmdline {
         let id: String = cliclack::input("Enter object ID:")
             .default_input(default.to_string().as_str())
             .placeholder(format!("Default is {} for device generated ID", default).as_str())
-            .validate(|input: &String| object_id_validator(input))
+            .validate(|input: &String| validators::object_id_validator(input))
             .interact()?;
         common::get_id_from_string(id.as_str())
     }
@@ -47,7 +44,7 @@ impl YubihsmUi for Cmdline {
     fn get_object_id(&self) -> Result<u16, MgmError> {
         let id: String = cliclack::input("Enter object ID:")
             .placeholder("Object ID in range [0, 65535]")
-            .validate(|input: &String| object_id_validator(input))
+            .validate(|input: &String| validators::object_id_validator(input))
             .interact()?;
 
         common::get_id_from_string(id.as_str())
@@ -79,7 +76,7 @@ impl YubihsmUi for Cmdline {
         let label: String = cliclack::input("Enter object label:")
             .default_input(default)
             .placeholder("Default is empty. Max 40 characters")
-            .validate(|input: &String| object_label_validator(input))
+            .validate(|input: &String| validators::object_label_validator(input))
             .interact()?;
         Ok(label)
     }
@@ -263,7 +260,7 @@ impl YubihsmUi for Cmdline {
     fn get_integer_input(&self, prompt: &str, required: bool, default: Option<usize>, placeholder: Option<&str>, min: usize, max: usize) -> Result<usize, MgmError> {
         let mut number = cliclack::input(prompt)
             .required(required)
-            .validate(move |input: &String| integer_validator(input.as_str(), min, max));
+            .validate(move |input: &String| validators::integer_validator(input.as_str(), min, max));
         if let Some(d) = default {
             number = number.default_input(d.to_string().as_str());
         }
@@ -277,7 +274,7 @@ impl YubihsmUi for Cmdline {
     fn get_path_input(&self, prompt: &str, required: bool, default: Option<&str>, placeholder: Option<&str>) -> Result<String, MgmError> {
         let mut path = cliclack::input(prompt)
             .required(required)
-            .validate(|input: &String| path_exists_validator(input.as_str()));
+            .validate(|input: &String| validators::path_exists_validator(input.as_str()));
         if let Some(d) = default {
             path = path.default_input(d);
         }
@@ -294,7 +291,7 @@ impl YubihsmUi for Cmdline {
             prompt,
             required,
             place_holder,
-            Some(pem_file_validator))
+            Some(validators::pem_file_validator))
     }
 
     fn get_certificate_filepath(&self, prompt: &str, required: bool, place_holder: Option<&str>) -> Result<String, MgmError> {
@@ -302,7 +299,7 @@ impl YubihsmUi for Cmdline {
             prompt,
             required,
             place_holder,
-            Some(pem_certificate_file_validator))
+            Some(validators::pem_certificate_file_validator))
     }
 
     fn get_public_eckey_filepath(&self, prompt: &str) -> Result<String, MgmError> {
@@ -310,7 +307,7 @@ impl YubihsmUi for Cmdline {
             prompt,
             true,
             None,
-            Some(pem_public_eckey_file_validator))
+            Some(validators::pem_public_eckey_file_validator))
     }
 
     fn get_public_ecp256_filepath(&self, prompt: &str) -> Result<String, MgmError> {
@@ -318,7 +315,7 @@ impl YubihsmUi for Cmdline {
             prompt,
             true,
             None,
-            Some(pem_public_ecp256_file_validator))
+            Some(validators::pem_public_ecp256_file_validator))
     }
 
     fn get_private_rsa_filepath(&self, prompt: &str) -> Result<String, MgmError> {
@@ -326,7 +323,7 @@ impl YubihsmUi for Cmdline {
             prompt,
             true,
             None,
-            Some(pem_private_rsa_file_validator))
+            Some(validators::pem_private_rsa_file_validator))
     }
 
     fn get_public_rsa_filepath(&self, prompt: &str) -> Result<String, MgmError> {
@@ -334,7 +331,7 @@ impl YubihsmUi for Cmdline {
             prompt,
             true,
             None,
-            Some(pem_public_rsa_file_validator))
+            Some(validators::pem_public_rsa_file_validator))
     }
 
 
@@ -343,7 +340,7 @@ impl YubihsmUi for Cmdline {
             prompt,
             true,
             None,
-            Some(crate::backend::validators::aes_key_validator))
+            Some(validators::aes_key_validator))
     }
 
     fn get_aes_iv_hex(&self, prompt: &str, required: bool, default: Option<&str>) -> Result<Vec<u8>, MgmError> {
@@ -351,7 +348,7 @@ impl YubihsmUi for Cmdline {
             prompt,
             required,
             default,
-            Some(crate::backend::validators::iv_validator))
+            Some(validators::iv_validator))
     }
 
     fn get_aes_operation_input_hex(&self, prompt: &str) -> Result<Vec<u8>, MgmError> {
@@ -359,7 +356,7 @@ impl YubihsmUi for Cmdline {
             prompt,
             true,
             None,
-            Some(crate::backend::validators::aes_operation_input_validator))
+            Some(validators::aes_operation_input_validator))
     }
 
 
@@ -390,7 +387,7 @@ impl YubihsmUi for Cmdline {
     fn get_split_aes_share(&self, prompt: &str, share_length: Option<u8>) -> Result<String, MgmError> {
         let mut share = cliclack::input(prompt)
             .required(false)
-            .validate(move |input: &String| aes_share_validator(input.as_str(), share_length));
+            .validate(move |input: &String| validators::aes_share_validator(input.as_str(), share_length));
         Ok(share.interact()?)
     }
 

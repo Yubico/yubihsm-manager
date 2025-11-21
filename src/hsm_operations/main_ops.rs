@@ -19,11 +19,11 @@ use std::fmt::Display;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::backend_traits::YubihsmOperations;
-use crate::backend::algorithms::MgmAlgorithm;
-use crate::backend::types::NewObjectSpec;
-use crate::backend::error::MgmError;
-use crate::backend::types::{MgmCommand, MgmCommandType};
-use crate::backend::common::get_object_descriptors;
+use crate::hsm_operations::algorithms::MgmAlgorithm;
+use crate::hsm_operations::types::NewObjectSpec;
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::types::{MgmCommand, MgmCommandType};
+use crate::hsm_operations::common::get_object_descriptors;
 
 #[derive(Debug, Clone, PartialEq,  Eq)]
 pub enum FilterType {
@@ -82,9 +82,9 @@ impl From<MgmObjectType> for ObjectType {
     }
 }
 
-pub struct MainOps;
+pub struct MainOperations;
 
-impl YubihsmOperations for MainOps {
+impl YubihsmOperations for MainOperations {
     fn get_commands(&self) -> Vec<MgmCommand> {
         Self::MAIN_COMMANDS.to_vec()
     }
@@ -111,7 +111,7 @@ impl YubihsmOperations for MainOps {
     }
 }
 
-impl MainOps {
+impl MainOperations {
     const MAIN_COMMANDS: [MgmCommand;8] = [
         MgmCommand {
             command: MgmCommandType::List,

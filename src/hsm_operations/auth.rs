@@ -17,11 +17,11 @@
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::backend_traits::YubihsmOperations;
-use crate::backend::types::NewObjectSpec;
-use crate::backend::error::MgmError;
-use crate::backend::algorithms::MgmAlgorithm;
-use crate::backend::types::{MgmCommand, MgmCommandType};
-use crate::backend::common::get_object_descriptors;
+use crate::hsm_operations::types::NewObjectSpec;
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::algorithms::MgmAlgorithm;
+use crate::hsm_operations::types::{MgmCommand, MgmCommandType};
+use crate::hsm_operations::common::get_object_descriptors;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UserType {
@@ -39,12 +39,12 @@ pub enum AuthenticationType {
     Ecp256,
 }
 
-pub struct AuthOps;
+pub struct AuthenticationOperations;
 
-impl YubihsmOperations for AuthOps {
+impl YubihsmOperations for AuthenticationOperations {
 
     fn get_commands(&self) -> Vec<MgmCommand> {
-        AuthOps::AUTH_COMMANDS.to_vec()
+        AuthenticationOperations::AUTH_COMMANDS.to_vec()
     }
 
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
@@ -106,7 +106,7 @@ impl YubihsmOperations for AuthOps {
     }
 }
 
-impl AuthOps {
+impl AuthenticationOperations {
     pub const KEY_USER_CAPABILITIES: [ObjectCapability; 13] = [
         ObjectCapability::SignPkcs,
         ObjectCapability::SignPss,

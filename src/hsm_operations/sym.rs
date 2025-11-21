@@ -17,13 +17,11 @@
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::backend_traits::YubihsmOperations;
-use crate::backend::error::MgmError;
-use crate::backend::common::{get_op_keys, get_object_descriptors};
-use crate::backend::algorithms::MgmAlgorithm;
-use crate::backend::types::{MgmCommand, NewObjectSpec, MgmCommandType};
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::common::{get_op_keys, get_object_descriptors};
+use crate::hsm_operations::algorithms::MgmAlgorithm;
+use crate::hsm_operations::types::{MgmCommand, NewObjectSpec, MgmCommandType};
 
-
-pub struct SymOps;
 
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
 pub enum AesMode {
@@ -47,10 +45,12 @@ pub struct AesOperationSpec {
     pub data: Vec<u8>,
 }
 
-impl YubihsmOperations for SymOps {
+pub struct SymmetricOperations;
+
+impl YubihsmOperations for SymmetricOperations {
 
     fn get_commands(&self) -> Vec<MgmCommand> {
-        SymOps::SYM_COMMANDS.to_vec()
+        SymmetricOperations::SYM_COMMANDS.to_vec()
     }
 
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
@@ -96,7 +96,7 @@ impl YubihsmOperations for SymOps {
     }
 }
 
-impl SymOps {
+impl SymmetricOperations {
 
     const AES_KEY_CAPABILITIES: [ObjectCapability; 5] = [
         ObjectCapability::EncryptCbc,

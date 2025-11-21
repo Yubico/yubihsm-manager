@@ -14,32 +14,16 @@
  * limitations under the License.
  */
 
-extern crate base64;
-extern crate clap;
-extern crate cliclack;
-extern crate console;
-extern crate hex;
-extern crate openssl;
-extern crate pem;
-extern crate regex;
-extern crate rusty_secrets;
-extern crate scan_dir;
-extern crate serde;
-extern crate yubihsmrs;
-extern crate comfy_table;
-extern crate core;
-
-
 use clap::Arg;
 use yubihsmrs::YubiHsm;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectType};
+use hsm_operations::asym::AsymmetricOperations;
+use hsm_operations::common::get_id_from_string;
+use hsm_operations::error::MgmError;
+use hsm_operations::validators::pem_private_ecp256_file_validator;
 use traits::ui_traits::YubihsmUi;
-use ui::utils::get_pem_from_file;
-use cmd_ui::cmd_ui::Cmdline;
-use backend::error::MgmError;
-use backend::asym::AsymOps;
-use backend::common::get_id_from_string;
-use backend::validators::pem_private_ecp256_file_validator;
+use ui::helper_io::get_pem_from_file;
+use cli::cmdline::Cmdline;
 use ui::asym_menu::AsymmetricMenu;
 use ui::auth_menu::AuthenticationMenu;
 use ui::device_menu::DeviceMenu;
@@ -49,10 +33,10 @@ use ui::main_menu::MainMenu;
 use ui::sym_menu::SymmetricMenu;
 use ui::wrap_menu::WrapMenu;
 
-pub mod backend;
+pub mod hsm_operations;
 pub mod ui;
 pub mod traits;
-pub mod cmd_ui;
+pub mod cli;
 
 
 macro_rules! unwrap_or_exit1 {
@@ -130,7 +114,7 @@ fn main() -> Result<(), MgmError>{
 
     if let Some("get-device-publickey") = matches.subcommand_name() {
         let pubkey = h.get_device_pubkey()?;
-        let pubkey = AsymOps::get_pubkey_pem(ObjectAlgorithm::EcP256, &pubkey)?;
+        let pubkey = AsymmetricOperations::get_pubkey_pem(ObjectAlgorithm::EcP256, &pubkey)?;
         println!("{}\n",pubkey);
         return Ok(());
     };
@@ -156,7 +140,7 @@ fn main() -> Result<(), MgmError>{
             std::process::exit(1);
         }
 
-        let (_, _, privkey) = AsymOps::parse_asym_pem(get_pem_from_file(&filename)?[0].clone())?;
+        let (_, _, privkey) = AsymmetricOperations::parse_asym_pem(get_pem_from_file(&filename)?[0].clone())?;
         let device_pubkey = h.get_device_pubkey()?;
         if device_pubkey.len() != YH_EC_P256_PUBKEY_LEN {
             YubihsmUi::display_error_message(&Cmdline, "Wrong length of device public key")?;

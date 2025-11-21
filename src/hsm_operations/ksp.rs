@@ -17,15 +17,15 @@
 use yubihsmrs::Session;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
 use crate::traits::backend_traits::YubihsmOperations;
-use crate::backend::error::MgmError;
-use crate::backend::common::contains_all;
-use crate::backend::wrap::{WrapKeyShares, WrapOps};
-use crate::backend::auth::AuthOps;
-use crate::backend::types::NewObjectSpec;
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::common::contains_all;
+use crate::hsm_operations::wrap::{WrapKeyShares, WrapOperations};
+use crate::hsm_operations::auth::AuthenticationOperations;
+use crate::hsm_operations::types::NewObjectSpec;
 
-pub struct KspOps;
+pub struct KspOperations;
 
-impl KspOps {
+impl KspOperations {
     const KSP_WRAPKEY_LEN: usize = 32;
 
     const REQUIRED_CAPABILITIES: [ObjectCapability; 4] = [
@@ -105,9 +105,9 @@ impl KspOps {
             vec![wrapkey],
         );
 
-        new_key.id = WrapOps.import(session, &new_key)?;
+        new_key.id = WrapOperations.import(session, &new_key)?;
 
-        let wrapkey_shares = WrapOps::split_wrap_key(&new_key, threshold, shares)?;
+        let wrapkey_shares = WrapOperations::split_wrap_key(&new_key, threshold, shares)?;
 
         Ok((new_key.id, wrapkey_shares))
     }
@@ -130,7 +130,7 @@ impl KspOps {
             vec![password.into_bytes()],
         );
 
-        new_key.id = AuthOps.import(session, &new_key)?;
+        new_key.id = AuthenticationOperations.import(session, &new_key)?;
 
         Ok(new_key.into())
     }
@@ -148,7 +148,7 @@ impl KspOps {
             vec![password.into_bytes()],
         );
 
-        new_key.id = AuthOps.import(session, &new_key)?;
+        new_key.id = AuthenticationOperations.import(session, &new_key)?;
 
         Ok(new_key.into())
     }

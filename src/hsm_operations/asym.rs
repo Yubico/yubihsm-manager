@@ -29,10 +29,10 @@ use openssl::pkey::PKey;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::backend_traits::{YubihsmOperations};
-use crate::backend::error::MgmError;
-use crate::backend::algorithms::MgmAlgorithm;
-use crate::backend::common::{get_op_keys, get_object_descriptors};
-use crate::backend::types::{MgmCommand, NewObjectSpec, MgmCommandType};
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::algorithms::MgmAlgorithm;
+use crate::hsm_operations::common::{get_op_keys, get_object_descriptors};
+use crate::hsm_operations::types::{MgmCommand, NewObjectSpec, MgmCommandType};
 
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
 pub enum AttestationType {
@@ -52,9 +52,9 @@ impl Display for AttestationType {
     }
 }
 
-pub struct AsymOps;
+pub struct AsymmetricOperations;
 
-impl YubihsmOperations for AsymOps {
+impl YubihsmOperations for AsymmetricOperations {
     fn get_commands(&self) -> Vec<MgmCommand> {
         Self::ASYM_COMMANDS.to_vec()
     }
@@ -140,7 +140,7 @@ impl YubihsmOperations for AsymOps {
     }
 }
 
-impl AsymOps {
+impl AsymmetricOperations {
 
     const RSA_KEY_CAPABILITIES: [ObjectCapability; 6] = [
         ObjectCapability::SignPkcs,
@@ -669,22 +669,22 @@ impl YubihsmOperations for JavaOps {
     }
 
     fn get_generation_algorithms(&self) -> Vec<MgmAlgorithm> {
-        AsymOps.get_generation_algorithms()
+        AsymmetricOperations.get_generation_algorithms()
     }
 
     fn get_object_capabilities(&self, _object_type: Option<ObjectType>, object_algorithm: Option<ObjectAlgorithm>) -> Result<Vec<ObjectCapability>, MgmError> {
-        AsymOps.get_object_capabilities(_object_type, object_algorithm)
+        AsymmetricOperations.get_object_capabilities(_object_type, object_algorithm)
     }
 
     fn generate(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError> {
         Self::check_free_id(session, spec.id)?;
 
         let key_id = if spec.id != 0 {
-            AsymOps.generate(session, spec)?
+            AsymmetricOperations.generate(session, spec)?
         } else {
             let mut id;
             loop {
-                id = AsymOps.generate(session, spec)?;
+                id = AsymmetricOperations.generate(session, spec)?;
                 if session.get_object_info(id, ObjectType::Opaque).is_err() {
                     break;
                 }
@@ -728,11 +728,11 @@ impl YubihsmOperations for JavaOps {
         Self::check_free_id(session, spec.id)?;
 
         let key_id = if spec.id != 0 {
-            AsymOps.import(session, spec)?
+            AsymmetricOperations.import(session, spec)?
         } else {
             let mut id;
             loop {
-                id = AsymOps.import(session, spec)?;
+                id = AsymmetricOperations.import(session, spec)?;
                 if session.get_object_info(id, ObjectType::Opaque).is_err() {
                     break;
                 }

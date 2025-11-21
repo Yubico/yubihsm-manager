@@ -21,20 +21,21 @@ use openssl::base64;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
-use crate::cmd_ui::cmd_ui::Cmdline;
-use crate::ui::utils::{generate_object, list_objects, display_menu_headers, delete_objects};
-use crate::ui::utils::{write_bytes_to_file, display_object_properties, get_pem_from_file};
+use crate::cli::cmdline::Cmdline;
+use crate::ui::helper_operations::{delete_objects, display_menu_headers, generate_object, list_objects};
+use crate::ui::helper_operations::display_object_properties;
 use crate::ui::device_menu::DeviceMenu;
 use crate::ui::asym_menu::AsymmetricMenu;
 use crate::traits::backend_traits::YubihsmOperations;
-use crate::backend::error::MgmError;
-use crate::backend::types::{SelectionItem, MgmCommandType, NewObjectSpec};
-use crate::backend::validators::{aes_key_validator, pem_private_rsa_file_validator, pem_public_rsa_file_validator};
-use crate::backend::algorithms::MgmAlgorithm;
-use crate::backend::asym::AsymOps;
-use crate::backend::sym::SymOps;
-use crate::backend::wrap::{WrapOps, WrapOpSpec, WrapType, WrapKeyType};
-use crate::backend::common::get_delegated_capabilities;
+use crate::hsm_operations::error::MgmError;
+use crate::hsm_operations::types::{MgmCommandType, NewObjectSpec, SelectionItem};
+use crate::hsm_operations::validators::{aes_key_validator, pem_private_rsa_file_validator, pem_public_rsa_file_validator};
+use crate::hsm_operations::algorithms::MgmAlgorithm;
+use crate::hsm_operations::asym::AsymmetricOperations;
+use crate::hsm_operations::sym::SymmetricOperations;
+use crate::hsm_operations::wrap::{WrapKeyType, WrapOperations, WrapOpSpec, WrapType};
+use crate::hsm_operations::common::get_delegated_capabilities;
+use crate::ui::helper_io::{get_pem_from_file, write_bytes_to_file};
 
 static WRAP_HEADER: &str = "Wrap keys";
 
@@ -53,15 +54,15 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, WRAP_HEADER],
                                  "Wrap key operations allow you to manage and use wrap keys keys stored on the YubiHSM")?;
 
-            let cmd = self.ui.select_command(&WrapOps.get_authorized_commands(authkey))?;
+            let cmd = self.ui.select_command(&WrapOperations.get_authorized_commands(authkey))?;
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, WRAP_HEADER, cmd.label], cmd.description)?;
 
             let result = match cmd.command {
-                MgmCommandType::List => list_objects(&self.ui, &WrapOps, session),
-                MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &WrapOps, session),
-                MgmCommandType::Generate => generate_object(&self.ui, &WrapOps, session, authkey, ObjectType::WrapKey),
+                MgmCommandType::List => list_objects(&self.ui, &WrapOperations, session),
+                MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &WrapOperations, session),
+                MgmCommandType::Generate => generate_object(&self.ui, &WrapOperations, session, authkey, ObjectType::WrapKey),
                 MgmCommandType::Import => self.import(session, authkey),
-                MgmCommandType::Delete => delete_objects(&self.ui, &WrapOps, session, &WrapOps.get_all_objects(session)?),
+                MgmCommandType::Delete => delete_objects(&self.ui, &WrapOperations, session, &WrapOperations.get_all_objects(session)?),
                 MgmCommandType::GetPublicKey => AsymmetricMenu::new(Cmdline).get_public_key(session, ObjectType::WrapKey),
                 MgmCommandType::ExportWrapped => self.export_wrapped(session, authkey),
                 MgmCommandType::ImportWrapped => self.import_wrapped(session, authkey),
@@ -103,11 +104,11 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             self.ui.display_info_message("Detected HEX string. Parsing as AES wrap key...")?;
             new_key.object_type = ObjectType::WrapKey;
             new_key.data.push(hex::decode(input)?);
-            new_key.algorithm = WrapOps::get_algorithm_from_keylen(new_key.data[0].len())?;
+            new_key.algorithm = WrapOperations::get_algorithm_from_keylen(new_key.data[0].len())?;
         } else if pem_private_rsa_file_validator(&input).is_ok() || pem_public_rsa_file_validator(&input).is_ok() {
             self.ui.display_info_message("Detected PEM file with private RSA key. Parsing as RSA key...")?;
             let pem = get_pem_from_file(&input)?[0].clone();
-            let (_type, _algo, _bytes) = AsymOps::parse_asym_pem(pem)?;
+            let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
             new_key.data.push(_bytes);
             new_key.algorithm = _algo;
             match _type {
@@ -118,13 +119,13 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         } else {
             unreachable!();
         }
-        let key_type = WrapOps::get_wrapkey_type(new_key.object_type, new_key.algorithm)?;
+        let key_type = WrapOperations::get_wrapkey_type(new_key.object_type, new_key.algorithm)?;
 
         new_key.id = self.ui.get_new_object_id(0)?;
         new_key.label = self.ui.get_object_label("")?;
         new_key.domains = self.ui.select_object_domains(&authkey.domains)?;
         new_key.capabilities = self.ui.select_object_capabilities(
-            &WrapOps.get_applicable_capabilities(authkey, Some(new_key.object_type), Some(new_key.algorithm))?,
+            &WrapOperations.get_applicable_capabilities(authkey, Some(new_key.object_type), Some(new_key.algorithm))?,
             &[],
             Some("Select object capabilities"))?;
         new_key.delegated_capabilities = self.ui.select_object_capabilities(
@@ -140,7 +141,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         }
 
         let spinner = self.ui.start_spinner(Some("Generating key..."));
-        new_key.id = WrapOps.import(session, &new_key)?;
+        new_key.id = WrapOperations.import(session, &new_key)?;
         self.ui.stop_spinner(spinner, None);
         self.ui.display_success_message(format!("Imported {} object with ID 0x{:04x} into the YubiHSM", new_key.object_type, new_key.id).as_str())?;
 
@@ -153,7 +154,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         if self.ui.get_confirmation("Split wrap key?")? {
             let n_shares = self.ui.get_split_aes_n_shares("Enter the number of shares to create:")?;
             let n_threshold = self.ui.get_split_aes_m_threshold("Enter the number of shares necessary to re-create the key:", n_shares)?;
-            let split_key = WrapOps::split_wrap_key(&new_key, n_threshold, n_shares)?;
+            let split_key = WrapOperations::split_wrap_key(&new_key, n_threshold, n_shares)?;
             self.display_wrapkey_shares(split_key.shares_data)?;
         }
 
@@ -162,7 +163,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
 
     fn import_from_shares(&self, session: &Session) -> Result<(), MgmError> {
         let shares = self.recover_wrapkey_shares()?;
-        let mut new_key = WrapOps::get_wrapkey_from_shares(shares)?;
+        let mut new_key = WrapOperations::get_wrapkey_from_shares(shares)?;
         new_key.label = self.ui.get_object_label("")?;
 
         if !self.ui.get_note_confirmation("Import wrap key with:", new_key.to_string().as_str())? {
@@ -171,7 +172,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         }
 
         let spinner = self.ui.start_spinner(Some("Importing key..."));
-        new_key.id = WrapOps.import(session, &new_key)?;
+        new_key.id = WrapOperations.import(session, &new_key)?;
         self.ui.stop_spinner(spinner, None);
 
         self.ui.display_success_message(format!("Imported wrap key with ID 0x{:04x} on the device", new_key.id).as_str())?;
@@ -179,11 +180,11 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
     }
 
     fn export_wrapped(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        let wrapkeys = WrapOps::get_wrapping_keys(session, authkey)?;
+        let wrapkeys = WrapOperations::get_wrapping_keys(session, authkey)?;
         let wrapkey = self.ui.select_one_object(
             &wrapkeys,
             Some("Select the wrapping key to use for exporting objects:"))?;
-        let wrapkey_type = WrapOps::get_wrapkey_type(wrapkey.object_type, wrapkey.algorithm)?;
+        let wrapkey_type = WrapOperations::get_wrapkey_type(wrapkey.object_type, wrapkey.algorithm)?;
 
         let wrap_type = match wrapkey_type {
             WrapKeyType::Aes => WrapType::Object,
@@ -204,7 +205,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             oaep_algorithm: None,
         };
 
-        let exportable_objects = WrapOps::get_exportable_objects(session, &wrapkey, wrap_type)?;
+        let exportable_objects = WrapOperations::get_exportable_objects(session, &wrapkey, wrap_type)?;
         let export_objects = self.ui.select_multiple_objects(
             &exportable_objects,
             false,
@@ -215,7 +216,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
 
         if wrapkey_type == WrapKeyType::RsaPublic {
             wrap_op.aes_algorithm = Some(self.ui.select_algorithm(
-                &SymOps.get_generation_algorithms(),
+                &SymmetricOperations.get_generation_algorithms(),
                 Some(ObjectAlgorithm::Aes256),
                 Some("Select AES algorithm to use for wrapping"))?);
             wrap_op.oaep_algorithm = Some(self.ui.select_algorithm(
@@ -230,7 +231,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             Some("."),
             Some("Default is current directory"))?;
 
-        let wrapped_objects = WrapOps::export_wrapped(session, &wrap_op, &export_objects)?;
+        let wrapped_objects = WrapOperations::export_wrapped(session, &wrap_op, &export_objects)?;
 
         for object in &wrapped_objects {
             if object.error.is_some() {
@@ -260,11 +261,11 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         }
         // let data = base64::decode_block(&wrapped)?;
 
-        let wrapkeys = WrapOps::get_unwrapping_keys(session, authkey)?;
+        let wrapkeys = WrapOperations::get_unwrapping_keys(session, authkey)?;
         let wrapkey = self.ui.select_one_object(
             &wrapkeys,
             Some("Select the unwrapping key to use for importing objects:"))?;
-        let wrapkey_type = WrapOps::get_wrapkey_type(wrapkey.object_type, wrapkey.algorithm)?;
+        let wrapkey_type = WrapOperations::get_wrapkey_type(wrapkey.object_type, wrapkey.algorithm)?;
 
         let mut wrap_op = WrapOpSpec {
             wrapkey_id: wrapkey.id,
@@ -281,7 +282,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                 Some("Select OAEP algorithm to use for wrapping"))?);
         }
 
-        let res = WrapOps::import_wrapped(session, &wrap_op, wrapped.clone(), None);
+        let res = WrapOperations::import_wrapped(session, &wrap_op, wrapped.clone(), None);
         let handle = match res {
             Ok(h) => h,
             Err(e) => {
@@ -289,13 +290,13 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                     self.ui.display_info_message("Failed to unwrap as object, trying as key data...")?;
 
                     let algo = self.ui.select_algorithm(
-                        &WrapOps::get_unwrapped_key_algorithms(),
+                        &WrapOperations::get_unwrapped_key_algorithms(),
                         None,
                         Some("Select wrapped key algorithm"))?;
-                    let caps = if SymOps::is_aes_algorithm(&algo) {
-                        SymOps.get_applicable_capabilities(&wrapkey, None, None)?
+                    let caps = if SymmetricOperations::is_aes_algorithm(&algo) {
+                        SymmetricOperations.get_applicable_capabilities(&wrapkey, None, None)?
                     } else {
-                        AsymOps.get_applicable_capabilities(&wrapkey, None, Some(algo))?
+                        AsymmetricOperations.get_applicable_capabilities(&wrapkey, None, Some(algo))?
                     };
 
                     let mut new_key = NewObjectSpec::empty();
@@ -308,7 +309,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                         &[],
                         Some("Select object capabilities"))?;
 
-                    WrapOps::import_wrapped(session, &wrap_op, wrapped, Some(new_key))?
+                    WrapOperations::import_wrapped(session, &wrap_op, wrapped, Some(new_key))?
                 } else {
                     return Err(e)
                 }
