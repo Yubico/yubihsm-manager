@@ -22,7 +22,7 @@ use crate::cmd_ui::cmd_ui::Cmdline;
 use crate::ui::utils::{delete_objects, display_object_properties, get_pem_from_file, display_menu_headers};
 use crate::backend::error::MgmError;
 use crate::backend::asym::AsymOps;
-use crate::backend::types::{ImportObjectSpec, ObjectSpec, MgmCommandType, SelectionItem};
+use crate::backend::types::{NewObjectSpec, MgmCommandType, SelectionItem};
 use crate::backend::common::get_delegated_capabilities;
 use crate::backend::auth::{AuthOps, AuthenticationType, UserType};
 
@@ -75,8 +75,7 @@ fn create_authkey(
     user_type: UserType
 ) -> Result<(), MgmError> {
 
-    let mut new_key = ImportObjectSpec::empty();
-    new_key.object = setup_user(current_authkey, user_type)?;
+    let mut new_key = setup_user(current_authkey, user_type)?;
 
     let auth_type = YubihsmUi::select_one_item(
         &Cmdline,
@@ -87,18 +86,18 @@ fn create_authkey(
         None,
         Some("Select authentication type"))?;
 
-    let mut new_key_note = new_key.object.to_string();
+    let mut new_key_note = new_key.to_string();
 
     match auth_type {
         AuthenticationType::PasswordDerived => {
-            new_key.object.algorithm = ObjectAlgorithm::Aes128YubicoAuthentication;
+            new_key.algorithm = ObjectAlgorithm::Aes128YubicoAuthentication;
             new_key_note = new_key_note.replace("Algorithm: Unknown", "Authentication Type: Password Derived");
 
             let pwd = YubihsmUi::get_password(&Cmdline, "Enter user password:", true)?;
             new_key.data.push(pwd.as_bytes().to_vec());
         },
         AuthenticationType::Ecp256 => {
-            new_key.object.algorithm = ObjectAlgorithm::Ecp256YubicoAuthentication;
+            new_key.algorithm = ObjectAlgorithm::Ecp256YubicoAuthentication;
             new_key_note = new_key_note.replace("Algorithm: Unknown", "Authentication Type: Asymmetric");
 
             let pubkey = YubihsmUi::get_public_ecp256_filepath(&Cmdline, "Enter path to ECP256 public key PEM file: ")?;
@@ -118,13 +117,13 @@ fn create_authkey(
         return Ok(());
     }
 
-    new_key.object.id = AuthOps.import(session, &new_key)?;
-    YubihsmUi::display_success_message(&Cmdline, format!("Created new authentication key with ID 0x{:04x}", new_key.object.id).as_str())?;
+    new_key.id = AuthOps.import(session, &new_key)?;
+    YubihsmUi::display_success_message(&Cmdline, format!("Created new authentication key with ID 0x{:04x}", new_key.id).as_str())?;
     Ok(())
 }
 
-fn setup_user(current_authkey: &ObjectDescriptor, user_type: UserType) -> Result<ObjectSpec, MgmError> {
-    let mut new_key = ObjectSpec::empty();
+fn setup_user(current_authkey: &ObjectDescriptor, user_type: UserType) -> Result<NewObjectSpec, MgmError> {
+    let mut new_key = NewObjectSpec::empty();
     new_key.object_type = ObjectType::AuthenticationKey;
     new_key.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
     new_key.label = YubihsmUi::get_object_label(&Cmdline, "")?;

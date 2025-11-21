@@ -21,7 +21,7 @@ use crate::backend::error::MgmError;
 use crate::backend::common::contains_all;
 use crate::backend::wrap::{WrapKeyShares, WrapOps};
 use crate::backend::auth::AuthOps;
-use crate::backend::types::{ImportObjectSpec, ObjectSpec};
+use crate::backend::types::NewObjectSpec;
 
 // pub struct KspSetup {
 //     pub wrapkey_id: u16,
@@ -101,64 +101,63 @@ impl KspOps {
     pub fn import_ksp_wrapkey(session: &Session, id: u16, domains: &[ObjectDomain], rsa_decrypt: bool, shares: u8, threshold: u8) -> Result<(u16, WrapKeyShares), MgmError> {
         let wrapkey = session.get_random(Self::KSP_WRAPKEY_LEN)?;
 
-        let mut new_key = ImportObjectSpec::new(
-            ObjectSpec::new(
-                id,
-                ObjectType::WrapKey,
-                "KSP Wrap Key".to_string(),
-                ObjectAlgorithm::Aes256CcmWrap,
-                domains.to_vec(),
-                Self::WRAPKEY_CAPABILITIES.to_vec(),
-                Self::expand_capabilities(&Self::WRAPKEY_DELEGATED, rsa_decrypt),
-            ),
+        let mut new_key = NewObjectSpec::new(
+            id,
+            ObjectType::WrapKey,
+            "KSP Wrap Key".to_string(),
+            ObjectAlgorithm::Aes256CcmWrap,
+            domains.to_vec(),
+            Self::WRAPKEY_CAPABILITIES.to_vec(),
+            Self::expand_capabilities(&Self::WRAPKEY_DELEGATED, rsa_decrypt),
             vec![wrapkey],
         );
 
-        new_key.object.id = WrapOps.import(session, &new_key)?;
+        new_key.id = WrapOps.import(session, &new_key)?;
 
         let wrapkey_shares = WrapOps::split_wrap_key(&new_key, threshold, shares)?;
 
-        Ok((new_key.object.id, wrapkey_shares))
+        Ok((new_key.id, wrapkey_shares))
     }
 
-    pub fn import_app_authkey(session: &Session, id: u16, domains: &[ObjectDomain], rsa_decrypt: bool, password: String) -> Result<ObjectDescriptor, MgmError> {
+    pub fn import_app_authkey(
+        session: &Session,
+        id: u16,
+        domains: &[ObjectDomain],
+        rsa_decrypt: bool,
+        password: String) -> Result<ObjectDescriptor, MgmError> {
 
-        let mut new_key = ImportObjectSpec::new(
-            ObjectSpec::new(
-                id,
-                ObjectType::AuthenticationKey,
-                "Application auth key".to_string(),
-                ObjectAlgorithm::Aes128YubicoAuthentication,
-                domains.to_vec(),
-                Self::expand_capabilities(&Self::APP_AUTHKEY_CAPABILITIES, rsa_decrypt),
-                Self::expand_capabilities(&Self::APP_AUTHKEY_DELEGATED, rsa_decrypt),
-            ),
+        let mut new_key = NewObjectSpec::new(
+            id,
+            ObjectType::AuthenticationKey,
+            "Application auth key".to_string(),
+            ObjectAlgorithm::Aes128YubicoAuthentication,
+            domains.to_vec(),
+            Self::expand_capabilities(&Self::APP_AUTHKEY_CAPABILITIES, rsa_decrypt),
+            Self::expand_capabilities(&Self::APP_AUTHKEY_DELEGATED, rsa_decrypt),
             vec![password.into_bytes()],
         );
 
-        new_key.object.id = AuthOps.import(session, &new_key)?;
+        new_key.id = AuthOps.import(session, &new_key)?;
 
-        Ok(new_key.object.into())
+        Ok(new_key.into())
     }
 
     pub fn import_audit_authkey(session: &Session, id: u16, domains: &[ObjectDomain], password: String) -> Result<ObjectDescriptor, MgmError> {
 
-        let mut new_key = ImportObjectSpec::new(
-            ObjectSpec::new(
-                id,
-                ObjectType::AuthenticationKey,
-                "Audit auth key".to_string(),
-                ObjectAlgorithm::Aes128YubicoAuthentication,
-                domains.to_vec(),
-                Self::AUDIT_AUTHKEY_CAPABILITIES.to_vec(),
-                vec![],
-            ),
+        let mut new_key = NewObjectSpec::new(
+            id,
+            ObjectType::AuthenticationKey,
+            "Audit auth key".to_string(),
+            ObjectAlgorithm::Aes128YubicoAuthentication,
+            domains.to_vec(),
+            Self::AUDIT_AUTHKEY_CAPABILITIES.to_vec(),
+            vec![],
             vec![password.into_bytes()],
         );
 
-        new_key.object.id = AuthOps.import(session, &new_key)?;
+        new_key.id = AuthOps.import(session, &new_key)?;
 
-        Ok(new_key.object.into())
+        Ok(new_key.into())
     }
 
 //     pub fn setup_ksp(session: &Session,

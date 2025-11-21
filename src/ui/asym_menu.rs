@@ -21,7 +21,7 @@ use crate::traits::backend_traits::YubihsmOperations;
 use crate::ui::utils::{display_menu_headers, get_hex_or_bytes_from_file, get_pem_from_file, get_string_or_bytes_from_file, write_bytes_to_file, delete_objects, display_object_properties};
 use crate::cmd_ui::cmd_ui::Cmdline;
 use crate::backend::error::MgmError;
-use crate::backend::types::{SelectionItem, MgmCommandType, ImportObjectSpec, ObjectSpec};
+use crate::backend::types::{SelectionItem, MgmCommandType, NewObjectSpec};
 use crate::backend::wrap::WrapOps;
 use crate::backend::asym::{AttestationType, AsymOps};
 
@@ -74,7 +74,7 @@ fn delete(session: &Session) -> Result<(), MgmError> {
 
 pub fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
 
-    let mut new_key = ObjectSpec::empty();
+    let mut new_key = NewObjectSpec::empty();
     new_key.object_type = ObjectType::AsymmetricKey;
     new_key.algorithm = YubihsmUi::select_algorithm(
         &Cmdline,
@@ -116,32 +116,32 @@ pub fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmEr
         return Err(MgmError::InvalidInput("PEM file contains neither a private key nor an X509 certificate".to_string()));
     }
 
-    let mut new_key = ImportObjectSpec::empty();
-    new_key.object.object_type = _type;
-    new_key.object.algorithm = _algo;
+    let mut new_key = NewObjectSpec::empty();
+    new_key.object_type = _type;
+    new_key.algorithm = _algo;
     new_key.data.push(_bytes);
-    new_key.object.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
-    new_key.object.label = YubihsmUi::get_object_label(&Cmdline, "")?;
-    new_key.object.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
-    new_key.object.capabilities = YubihsmUi::select_object_capabilities(
+    new_key.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
+    new_key.label = YubihsmUi::get_object_label(&Cmdline, "")?;
+    new_key.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
+    new_key.capabilities = YubihsmUi::select_object_capabilities(
         &Cmdline,
-        &AsymOps.get_applicable_capabilities(authkey, None, Some(new_key.object.algorithm))?,
+        &AsymOps.get_applicable_capabilities(authkey, None, Some(new_key.algorithm))?,
         &[],
         Some("Select object capabilities"))?;
 
     if !YubihsmUi::get_note_confirmation(
         &Cmdline,
         "Importing asymmetric object with:",
-        &new_key.object.to_string())? {
+        &new_key.to_string())? {
         YubihsmUi::display_info_message(&Cmdline, "Object is not imported")?;
         return Ok(());
     }
 
     let spinner = YubihsmUi::start_spinner(&Cmdline, Some("Generating key..."));
-    new_key.object.id = AsymOps.import(session, &new_key)?;
+    new_key.id = AsymOps.import(session, &new_key)?;
     YubihsmUi::stop_spinner(&Cmdline, spinner, None);
     YubihsmUi::display_success_message(&Cmdline,
-                                       format!("Imported {} object with ID 0x{:04x} into the YubiHSM", new_key.object.object_type, new_key.object.id).as_str())?;
+                                       format!("Imported {} object with ID 0x{:04x} into the YubiHSM", new_key.object_type, new_key.id).as_str())?;
     Ok(())
 }
 

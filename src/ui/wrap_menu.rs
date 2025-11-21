@@ -26,7 +26,7 @@ use crate::ui::{asym_menu, device_menu};
 use crate::ui::utils::{display_menu_headers, write_bytes_to_file, delete_objects, display_object_properties, get_pem_from_file};
 use crate::cmd_ui::cmd_ui::Cmdline;
 use crate::backend::error::MgmError;
-use crate::backend::types::{SelectionItem, MgmCommandType, ImportObjectSpec, ObjectSpec};
+use crate::backend::types::{SelectionItem, MgmCommandType, NewObjectSpec};
 use crate::backend::validators::{aes_key_validator, pem_private_rsa_file_validator, pem_public_rsa_file_validator};
 use crate::backend::algorithms::MgmAlgorithm;
 use crate::backend::asym::AsymOps;
@@ -79,7 +79,7 @@ fn delete(session: &Session) -> Result<(), MgmError> {
 }
 
 pub fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let mut new_key = ObjectSpec::empty();
+    let mut new_key = NewObjectSpec::empty();
     new_key.object_type = ObjectType::WrapKey;
     new_key.algorithm = YubihsmUi::select_algorithm(
         &Cmdline,
@@ -123,7 +123,7 @@ pub fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmEr
 }
 
 fn import_full_key(session:&Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let mut new_key = ImportObjectSpec::empty();
+    let mut new_key = NewObjectSpec::empty();
 
 
     let mut input = YubihsmUi::get_string_input(
@@ -139,34 +139,34 @@ fn import_full_key(session:&Session, authkey: &ObjectDescriptor) -> Result<(), M
 
     if aes_key_validator(&input).is_ok() {
         YubihsmUi::display_info_message(&Cmdline,"Detected HEX string. Parsing as AES wrap key...")?;
-        new_key.object.object_type = ObjectType::WrapKey;
+        new_key.object_type = ObjectType::WrapKey;
         new_key.data.push(hex::decode(input)?);
-        new_key.object.algorithm = WrapOps::get_algorithm_from_keylen(new_key.data[0].len())?;
+        new_key.algorithm = WrapOps::get_algorithm_from_keylen(new_key.data[0].len())?;
     } else if pem_private_rsa_file_validator(&input).is_ok() || pem_public_rsa_file_validator(&input).is_ok() {
         YubihsmUi::display_info_message(&Cmdline, "Detected PEM file with private RSA key. Parsing as RSA key...")?;
         let pem = get_pem_from_file(&input)?[0].clone();
         let (_type, _algo, _bytes) = AsymOps::parse_asym_pem(pem)?;
         new_key.data.push(_bytes);
-        new_key.object.algorithm = _algo;
+        new_key.algorithm = _algo;
         match _type {
-            ObjectType::AsymmetricKey => new_key.object.object_type = ObjectType::WrapKey,
-            ObjectType::PublicKey => new_key.object.object_type = ObjectType::PublicWrapKey,
+            ObjectType::AsymmetricKey => new_key.object_type = ObjectType::WrapKey,
+            ObjectType::PublicKey => new_key.object_type = ObjectType::PublicWrapKey,
             _ => unreachable!()
         }
     } else {
         unreachable!();
     }
-    let key_type = WrapOps::get_wrapkey_type(new_key.object.object_type, new_key.object.algorithm)?;
+    let key_type = WrapOps::get_wrapkey_type(new_key.object_type, new_key.algorithm)?;
 
-    new_key.object.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
-    new_key.object.label = YubihsmUi::get_object_label(&Cmdline, "")?;
-    new_key.object.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
-    new_key.object.capabilities = YubihsmUi::select_object_capabilities(
+    new_key.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
+    new_key.label = YubihsmUi::get_object_label(&Cmdline, "")?;
+    new_key.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
+    new_key.capabilities = YubihsmUi::select_object_capabilities(
         &Cmdline,
-        &WrapOps.get_applicable_capabilities(authkey, Some(new_key.object.object_type), Some(new_key.object.algorithm))?,
+        &WrapOps.get_applicable_capabilities(authkey, Some(new_key.object_type), Some(new_key.algorithm))?,
         &[],
         Some("Select object capabilities"))?;
-    new_key.object.delegated_capabilities = YubihsmUi::select_object_capabilities(
+    new_key.delegated_capabilities = YubihsmUi::select_object_capabilities(
         &Cmdline,
         &get_delegated_capabilities(authkey),
         &get_delegated_capabilities(authkey),
@@ -175,16 +175,16 @@ fn import_full_key(session:&Session, authkey: &ObjectDescriptor) -> Result<(), M
     if !YubihsmUi::get_note_confirmation(
         &Cmdline,
         "Import wrap key with:",
-        &new_key.object.to_string())? {
+        &new_key.to_string())? {
         YubihsmUi::display_info_message(&Cmdline, "Object is not imported")?;
         return Ok(());
     }
 
     let spinner = YubihsmUi::start_spinner(&Cmdline, Some("Generating key..."));
-    new_key.object.id = WrapOps.import(session, &new_key)?;
+    new_key.id = WrapOps.import(session, &new_key)?;
     YubihsmUi::stop_spinner(&Cmdline, spinner, None);
     YubihsmUi::display_success_message(&Cmdline,
-                                       format!("Imported {} object with ID 0x{:04x} into the YubiHSM", new_key.object.object_type, new_key.object.id).as_str())?;
+                                       format!("Imported {} object with ID 0x{:04x} into the YubiHSM", new_key.object_type, new_key.id).as_str())?;
 
 
     if key_type != WrapKeyType::Aes {
@@ -205,19 +205,19 @@ fn import_full_key(session:&Session, authkey: &ObjectDescriptor) -> Result<(), M
 fn import_from_shares(session:&Session) -> Result<(), MgmError> {
     let shares = recover_wrapkey_shares()?;
     let mut new_key = WrapOps::get_wrapkey_from_shares(shares)?;
-    new_key.object.label = YubihsmUi::get_object_label(&Cmdline, "")?;
+    new_key.label = YubihsmUi::get_object_label(&Cmdline, "")?;
 
-    if !YubihsmUi::get_note_confirmation(&Cmdline, "Import wrap key with:", new_key.object.to_string().as_str())? {
+    if !YubihsmUi::get_note_confirmation(&Cmdline, "Import wrap key with:", new_key.to_string().as_str())? {
         YubihsmUi::display_info_message(&Cmdline, "Key is not imported")?;
         return Ok(());
     }
 
     let spinner = YubihsmUi::start_spinner(&Cmdline, Some("Importing key..."));
-    new_key.object.id = WrapOps.import(session, &new_key)?;
+    new_key.id = WrapOps.import(session, &new_key)?;
     YubihsmUi::stop_spinner(&Cmdline, spinner, None);
 
     YubihsmUi::display_success_message(&Cmdline,
-            format!("Imported wrap key with ID 0x{:04x} on the device", new_key.object.id).as_str())?;
+            format!("Imported wrap key with ID 0x{:04x} on the device", new_key.id).as_str())?;
     Ok(())
 }
 
@@ -352,7 +352,7 @@ fn import_wrapped(session: &Session, authkey: &ObjectDescriptor) -> Result<(), M
                     AsymOps.get_applicable_capabilities(&wrapkey, None, Some(algo))?
                 };
 
-                let mut new_key = ObjectSpec::empty();
+                let mut new_key = NewObjectSpec::empty();
                 new_key.algorithm = algo;
                 new_key.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
                 new_key.label = YubihsmUi::get_object_label(&Cmdline, "")?;

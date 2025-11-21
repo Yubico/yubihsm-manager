@@ -22,7 +22,7 @@ use yubihsmrs::Session;
 use crate::traits::backend_traits::{YubihsmOperations, YubihsmOperationsCommon};
 use crate::backend::error::MgmError;
 use crate::backend::algorithms::MgmAlgorithm;
-use crate::backend::types::{MgmCommand, MgmCommandType, ImportObjectSpec, ObjectSpec};
+use crate::backend::types::{MgmCommand, MgmCommandType, NewObjectSpec};
 use crate::backend::asym::AsymOps;
 use crate::backend::common::contains_all;
 use crate::backend::sym::SymOps;
@@ -137,7 +137,7 @@ impl YubihsmOperations for WrapOps {
         }
     }
 
-    fn generate(&self, session: &Session, spec: &ObjectSpec) -> Result<u16, MgmError> {
+    fn generate(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError> {
         let id = session
             .generate_wrap_key(
                 spec.id,
@@ -148,23 +148,23 @@ impl YubihsmOperations for WrapOps {
                 &spec.delegated_capabilities)?;
         Ok(id)    }
 
-    fn import(&self, session: &Session, spec: &ImportObjectSpec) -> Result<u16, MgmError> {
-        let id = match spec.object.object_type {
+    fn import(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError> {
+        let id = match spec.object_type {
             ObjectType::WrapKey => session.import_wrap_key(
-                spec.object.id,
-                &spec.object.label,
-                &spec.object.domains,
-                &spec.object.capabilities,
-                spec.object.algorithm,
-                &spec.object.delegated_capabilities,
+                spec.id,
+                &spec.label,
+                &spec.domains,
+                &spec.capabilities,
+                spec.algorithm,
+                &spec.delegated_capabilities,
                 &spec.data[0])?,
             ObjectType::PublicWrapKey => session.import_public_wrap_key(
-                spec.object.id,
-                &spec.object.label,
-                &spec.object.domains,
-                &spec.object.capabilities,
-                spec.object.algorithm,
-                &spec.object.delegated_capabilities,
+                spec.id,
+                &spec.label,
+                &spec.domains,
+                &spec.capabilities,
+                spec.algorithm,
+                &spec.delegated_capabilities,
                 &spec.data[0])?,
             _ => {
                 return Err(MgmError::InvalidInput(
@@ -351,7 +351,7 @@ impl WrapOps {
         algos
     }
 
-    pub fn split_wrap_key(wrap_key:&ImportObjectSpec, threshold:u8, shares:u8) -> Result<WrapKeyShares, MgmError> {
+    pub fn split_wrap_key(wrap_key:&NewObjectSpec, threshold:u8, shares:u8) -> Result<WrapKeyShares, MgmError> {
         let mut split_key = WrapKeyShares {
             shares,
             threshold,
@@ -359,11 +359,11 @@ impl WrapOps {
         };
 
         let mut data = Vec::<u8>::new();
-        data.push(((wrap_key.object.id >> 8) & 0xff) as u8);
-        data.push((wrap_key.object.id & 0xff) as u8);
-        data.append(&mut ObjectDomain::bytes_from_slice(wrap_key.object.domains.as_slice()));
-        data.append(&mut ObjectCapability::bytes_from_slice(wrap_key.object.capabilities.as_slice()));
-        data.append(&mut ObjectCapability::bytes_from_slice(wrap_key.object.delegated_capabilities.as_slice()));
+        data.push(((wrap_key.id >> 8) & 0xff) as u8);
+        data.push((wrap_key.id & 0xff) as u8);
+        data.append(&mut ObjectDomain::bytes_from_slice(wrap_key.domains.as_slice()));
+        data.append(&mut ObjectCapability::bytes_from_slice(wrap_key.capabilities.as_slice()));
+        data.append(&mut ObjectCapability::bytes_from_slice(wrap_key.delegated_capabilities.as_slice()));
         data.extend_from_slice(wrap_key.data[0].as_slice());
 
         split_key.shares_data = rusty_secrets::generate_shares(threshold, shares, &data)?;
@@ -371,7 +371,7 @@ impl WrapOps {
         Ok(split_key)
     }
 
-    pub fn get_wrapkey_from_shares(shares:Vec<String>) -> Result<ImportObjectSpec, MgmError> {
+    pub fn get_wrapkey_from_shares(shares:Vec<String>) -> Result<NewObjectSpec, MgmError> {
         let data = rusty_secrets::recover_secret(shares)?;
 
         let key_len = data.len() - WRAP_SPLIT_PREFIX_LEN;
@@ -384,13 +384,13 @@ impl WrapOps {
             )));
         }
 
-        let mut wrapkey_spec = ImportObjectSpec::empty();
-        wrapkey_spec.object.object_type = ObjectType::WrapKey;
-        wrapkey_spec.object.algorithm = WrapOps::get_algorithm_from_keylen(key_len)?;
-        wrapkey_spec.object.id = ((u16::from(data[0])) << 8) | u16::from(data[1]);
-        wrapkey_spec.object.domains = ObjectDomain::from_bytes(&data[2..4])?;
-        wrapkey_spec.object.capabilities = ObjectCapability::from_bytes(&data[4..12])?;
-        wrapkey_spec.object.delegated_capabilities = ObjectCapability::from_bytes(&data[12..20])?;
+        let mut wrapkey_spec = NewObjectSpec::empty();
+        wrapkey_spec.object_type = ObjectType::WrapKey;
+        wrapkey_spec.algorithm = WrapOps::get_algorithm_from_keylen(key_len)?;
+        wrapkey_spec.id = ((u16::from(data[0])) << 8) | u16::from(data[1]);
+        wrapkey_spec.domains = ObjectDomain::from_bytes(&data[2..4])?;
+        wrapkey_spec.capabilities = ObjectCapability::from_bytes(&data[4..12])?;
+        wrapkey_spec.delegated_capabilities = ObjectCapability::from_bytes(&data[12..20])?;
 
         wrapkey_spec.data.push(data[20..].to_vec());
 
@@ -462,7 +462,7 @@ impl WrapOps {
         Ok(wrapped)
     }
 
-    pub fn import_wrapped(session: &Session, wrap_op_spec: &WrapOpSpec, wrapped: String, new_key_spec: Option<ObjectSpec>) -> Result<ObjectHandle, MgmError> {
+    pub fn import_wrapped(session: &Session, wrap_op_spec: &WrapOpSpec, wrapped: String, new_key_spec: Option<NewObjectSpec>) -> Result<ObjectHandle, MgmError> {
         let data = base64::decode_block(&wrapped)?;
 
         let handle = match wrap_op_spec.wrapkey_type {

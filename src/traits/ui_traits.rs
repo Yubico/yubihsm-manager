@@ -16,7 +16,7 @@
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain};
 use crate::backend::error::MgmError;
-use crate::backend::types::{MgmCommand, SelectionItem, ObjectSpec};
+use crate::backend::types::{MgmCommand, SelectionItem, NewObjectSpec};
 use crate::backend::algorithms::MgmAlgorithm;
 
 pub trait YubihsmUi {
@@ -78,7 +78,7 @@ pub trait YubihsmUi {
 
     fn display_objects_basic(&self, objects: &[ObjectDescriptor]) -> Result<(), MgmError>;
     fn display_objects_full(&self, objects: &[ObjectDescriptor]) -> Result<(), MgmError>;
-    fn display_objects_spec(&self, objects: &[ObjectSpec]) -> Result<(), MgmError>;
+    fn display_objects_spec(&self, objects: &[NewObjectSpec]) -> Result<(), MgmError>;
 
     fn display_success_message(&self, message: &str) -> Result<(), MgmError>;
     fn display_info_message(&self, message: &str) -> Result<(), MgmError>;

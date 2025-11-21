@@ -21,7 +21,7 @@ use crate::backend::algorithms;
 use crate::backend::common::contains_all;
 
 #[derive(Clone, Debug)]
-pub struct ObjectSpec {
+pub struct NewObjectSpec {
     pub id: u16,
     pub object_type: ObjectType,
     pub label: String,
@@ -29,9 +29,10 @@ pub struct ObjectSpec {
     pub domains: Vec<ObjectDomain>,
     pub capabilities: Vec<ObjectCapability>,
     pub delegated_capabilities: Vec<ObjectCapability>,
+    pub data: Vec<Vec<u8>>,
 }
 
-impl Display for ObjectSpec {
+impl Display for NewObjectSpec {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut spec_str = String::new().to_owned();
         spec_str.push_str(format!("ID: 0x{:04x?}\n", self.id).as_str());
@@ -48,7 +49,7 @@ impl Display for ObjectSpec {
 }
 
 
-impl ObjectSpec {
+impl NewObjectSpec {
     pub fn new(
         id: u16,
         object_type: ObjectType,
@@ -57,6 +58,7 @@ impl ObjectSpec {
         domains: Vec<ObjectDomain>,
         capabilities: Vec<ObjectCapability>,
         delegated_capabilities: Vec<ObjectCapability>,
+        data: Vec<Vec<u8>>,
     ) -> Self {
         Self {
             id,
@@ -66,6 +68,7 @@ impl ObjectSpec {
             domains,
             capabilities,
             delegated_capabilities,
+            data,
         }
     }
 
@@ -78,6 +81,7 @@ impl ObjectSpec {
             domains: vec![],
             capabilities: vec![],
             delegated_capabilities: vec![],
+            data: vec![],
         }
     }
 
@@ -119,9 +123,9 @@ impl ObjectSpec {
     }
 }
 
-impl From<ObjectDescriptor> for ObjectSpec {
+impl From<ObjectDescriptor> for NewObjectSpec {
     fn from(spec: ObjectDescriptor) -> Self {
-        ObjectSpec {
+        NewObjectSpec {
             id: spec.id,
             object_type: spec.object_type,
             label: spec.label,
@@ -133,12 +137,13 @@ impl From<ObjectDescriptor> for ObjectSpec {
             } else {
                 vec![]
             },
+            data: vec![],
         }
     }
 }
 
-impl From<ObjectSpec> for ObjectDescriptor {
-    fn from(spec: ObjectSpec) -> Self {
+impl From<NewObjectSpec> for ObjectDescriptor {
+    fn from(spec: NewObjectSpec) -> Self {
         let mut desc = ObjectDescriptor::new();
         desc.id = spec.id;
         desc.object_type = spec.object_type;
@@ -158,24 +163,24 @@ impl From<ObjectSpec> for ObjectDescriptor {
 
 
 
-#[derive(Clone, Debug)]
-pub struct ImportObjectSpec {
-    pub object: ObjectSpec,
-    pub data: Vec<Vec<u8>>,
-}
-
-impl ImportObjectSpec {
-    pub fn new(object: ObjectSpec, object_data: Vec<Vec<u8>>) -> Self {
-        Self { object, data: object_data }
-    }
-
-    pub fn empty() -> Self {
-        Self {
-            object: ObjectSpec::empty(),
-            data: vec![],
-        }
-    }
-}
+// #[derive(Clone, Debug)]
+// pub struct ImportObjectSpec {
+//     pub object: NewObjectSpec,
+//     pub data: Vec<Vec<u8>>,
+// }
+//
+// impl ImportObjectSpec {
+//     pub fn new(object: NewObjectSpec, object_data: Vec<Vec<u8>>) -> Self {
+//         Self { object, data: object_data }
+//     }
+//
+//     pub fn empty() -> Self {
+//         Self {
+//             object: NewObjectSpec::empty(),
+//             data: vec![],
+//         }
+//     }
+// }
 
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
 pub enum MgmCommandType {

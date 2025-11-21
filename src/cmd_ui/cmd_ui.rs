@@ -25,7 +25,7 @@ use crate::backend::validators::{pem_private_rsa_file_validator, pem_public_rsa_
 use crate::backend::validators::{integer_validator, path_exists_validator, aes_share_validator};
 use crate::backend::validators::{pem_public_eckey_file_validator, pem_public_ecp256_file_validator};
 use crate::backend::validators::{object_id_validator, object_label_validator, pem_file_validator, pem_certificate_file_validator};
-use crate::backend::types::{MgmCommand, SelectionItem, ObjectSpec};
+use crate::backend::types::{MgmCommand, SelectionItem, NewObjectSpec};
 use crate::backend::algorithms::MgmAlgorithm;
 
 
@@ -410,7 +410,7 @@ impl YubihsmUi for Cmdline {
 
 
     fn display_objects_basic(&self, objects: &[ObjectDescriptor]) -> Result<(), MgmError> {
-        let specs:Vec<ObjectSpec> = objects.iter().map(|d| ObjectSpec::from(d.clone())).collect::<Vec<_>>();
+        let specs:Vec<NewObjectSpec> = objects.iter().map(|d| NewObjectSpec::from(d.clone())).collect::<Vec<_>>();
         self.display_objects_spec(&specs)
     }
 
@@ -428,7 +428,7 @@ impl YubihsmUi for Cmdline {
         table.set_header(vec!["ID", "Type", "Label", "Algorithm", "Sequence", "Origin", "Domains", "Capabilities", "Delegated Capabilities"]);
 
         for object in _objects {
-            let spec = ObjectSpec::from(object.clone());
+            let spec = NewObjectSpec::from(object.clone());
 
             table.add_row(vec![
                 spec.get_id_str(),
@@ -446,7 +446,7 @@ impl YubihsmUi for Cmdline {
         Ok(())
     }
 
-    fn display_objects_spec(&self, objects: &[ObjectSpec]) -> Result<(), MgmError> {
+    fn display_objects_spec(&self, objects: &[NewObjectSpec]) -> Result<(), MgmError> {
         if objects.is_empty() {
             cliclack::log::info("No objects to display.")?;
             return Ok(());

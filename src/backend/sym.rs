@@ -20,7 +20,7 @@ use crate::traits::backend_traits::{YubihsmOperations, YubihsmOperationsCommon};
 use crate::backend::error::MgmError;
 use crate::backend::common::{get_op_keys};
 use crate::backend::algorithms::MgmAlgorithm;
-use crate::backend::types::{MgmCommand, ImportObjectSpec, ObjectSpec, MgmCommandType};
+use crate::backend::types::{MgmCommand, NewObjectSpec, MgmCommandType};
 
 
 pub struct SymOps;
@@ -74,7 +74,7 @@ impl YubihsmOperations for SymOps {
         Ok(Self::AES_KEY_CAPABILITIES.to_vec())
     }
 
-    fn generate(&self, session: &Session, spec: &ObjectSpec) -> Result<u16, MgmError> {
+    fn generate(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError> {
         Ok(session
             .generate_aes_key(
                 spec.id,
@@ -84,14 +84,14 @@ impl YubihsmOperations for SymOps {
                 spec.algorithm)?)
     }
 
-    fn import(&self, session: &Session, spec: &ImportObjectSpec) -> Result<u16, MgmError> {
+    fn import(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError> {
         Ok(session
             .import_aes_key(
-                spec.object.id,
-                &spec.object.label,
-                &spec.object.domains,
-                &spec.object.capabilities,
-                spec.object.algorithm,
+                spec.id,
+                &spec.label,
+                &spec.domains,
+                &spec.capabilities,
+                spec.algorithm,
                 &spec.data[0])?)
     }
 }

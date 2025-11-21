@@ -22,7 +22,7 @@ use crate::ui::utils::{display_menu_headers, write_bytes_to_file, delete_objects
 use crate::ui::device_menu;
 use crate::cmd_ui::cmd_ui::Cmdline;
 use crate::backend::error::MgmError;
-use crate::backend::types::{MgmCommandType, ImportObjectSpec, ObjectSpec, SelectionItem};
+use crate::backend::types::{MgmCommandType, NewObjectSpec, SelectionItem};
 use crate::backend::sym::{SymOps, AesMode, EncryptionMode, AesOperationSpec};
 
 static SYM_HEADER: &str = "Symmetric keys";
@@ -70,7 +70,7 @@ fn delete(session: &Session) -> Result<(), MgmError> {
 }
 
 pub fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let mut new_key = ObjectSpec::empty();
+    let mut new_key = NewObjectSpec::empty();
     new_key.object_type = ObjectType::SymmetricKey;
     new_key.algorithm = YubihsmUi::select_algorithm(
         &Cmdline,
@@ -100,14 +100,14 @@ pub fn generate(session: &Session, authkey: &ObjectDescriptor) -> Result<(), Mgm
 }
 
 pub fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-    let mut new_key = ImportObjectSpec::empty();
-    new_key.object.object_type = ObjectType::SymmetricKey;
+    let mut new_key = NewObjectSpec::empty();
+    new_key.object_type = ObjectType::SymmetricKey;
     new_key.data.push(YubihsmUi::get_aes_key_hex(&Cmdline, "Enter AES key in HEX format:")?);
-    new_key.object.algorithm = SymOps::get_symkey_algorithm_from_keylen(new_key.data[0].len())?;
-    new_key.object.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
-    new_key.object.label = YubihsmUi::get_object_label(&Cmdline, "")?;
-    new_key.object.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
-    new_key.object.capabilities = YubihsmUi::select_object_capabilities(
+    new_key.algorithm = SymOps::get_symkey_algorithm_from_keylen(new_key.data[0].len())?;
+    new_key.id = YubihsmUi::get_new_object_id(&Cmdline, 0)?;
+    new_key.label = YubihsmUi::get_object_label(&Cmdline, "")?;
+    new_key.domains = YubihsmUi::select_object_domains(&Cmdline, &authkey.domains)?;
+    new_key.capabilities = YubihsmUi::select_object_capabilities(
         &Cmdline,
         &SymOps.get_applicable_capabilities(authkey, None, None)?,
         &[],
@@ -116,14 +116,14 @@ pub fn import(session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmEr
     if !YubihsmUi::get_note_confirmation(
         &Cmdline,
         "Importing symmetric object with:",
-        &new_key.object.to_string())? {
+        &new_key.to_string())? {
         YubihsmUi::display_info_message(&Cmdline, "Object is not imported")?;
         return Ok(());
     }
 
-    new_key.object.id = SymOps.import(session, &new_key)?;
+    new_key.id = SymOps.import(session, &new_key)?;
     YubihsmUi::display_success_message(&Cmdline,
-                                       format!("Imported symmetric key with ID 0x{:04x} into the YubiHSM", new_key.object.id).as_str())?;
+                                       format!("Imported symmetric key with ID 0x{:04x} into the YubiHSM", new_key.id).as_str())?;
     Ok(())}
 
 fn operate(session: &Session, authkey: &ObjectDescriptor, enc_mode: EncryptionMode) -> Result<(), MgmError> {

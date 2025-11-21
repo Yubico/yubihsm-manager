@@ -17,10 +17,10 @@
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::backend_traits::{YubihsmOperations, YubihsmOperationsCommon};
-use crate::backend::types::ObjectSpec;
+use crate::backend::types::NewObjectSpec;
 use crate::backend::error::MgmError;
 use crate::backend::algorithms::MgmAlgorithm;
-use crate::backend::types::{ImportObjectSpec, MgmCommand, MgmCommandType};
+use crate::backend::types::{MgmCommand, MgmCommandType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UserType {
@@ -71,33 +71,33 @@ impl YubihsmOperations for AuthOps {
         unimplemented!()
     }
 
-    fn generate(&self, _session: &Session, _spec: &ObjectSpec) -> Result<u16, MgmError> {
+    fn generate(&self, _session: &Session, _spec: &NewObjectSpec) -> Result<u16, MgmError> {
         unimplemented!()
     }
 
-    fn import(&self, session: &Session, spec: &ImportObjectSpec) -> Result<u16, MgmError> {
-        let id = match spec.object.algorithm {
+    fn import(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError> {
+        let id = match spec.algorithm {
             ObjectAlgorithm::Aes128YubicoAuthentication => {
                 session.import_authentication_key(
-                    spec.object.id,
-                    &spec.object.label,
-                    &spec.object.domains,
-                    &spec.object.capabilities,
-                    &spec.object.delegated_capabilities,
+                    spec.id,
+                    &spec.label,
+                    &spec.domains,
+                    &spec.capabilities,
+                    &spec.delegated_capabilities,
                     &spec.data[0])?
             },
             ObjectAlgorithm::Ecp256YubicoAuthentication => {
                 session.import_authentication_publickey(
-                    spec.object.id,
-                    &spec.object.label,
-                    &spec.object.domains,
-                    &spec.object.capabilities,
-                    &spec.object.delegated_capabilities,
+                    spec.id,
+                    &spec.label,
+                    &spec.domains,
+                    &spec.capabilities,
+                    &spec.delegated_capabilities,
                     &spec.data[0])?
             }
             _ => {
                 return Err(MgmError::InvalidInput(
-                    format!("Unsupported algorithm for authentication key: {}", spec.object.algorithm)
+                    format!("Unsupported algorithm for authentication key: {}", spec.algorithm)
                 ));
             }
         };

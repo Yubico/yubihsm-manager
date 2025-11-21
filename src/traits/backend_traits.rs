@@ -20,7 +20,7 @@ use crate::backend::common::{get_delegated_capabilities, get_authorized_commands
 use crate::backend::algorithms::MgmAlgorithm;
 use crate::backend::types::MgmCommand;
 use crate::backend::error::MgmError;
-use crate::backend::types::{ImportObjectSpec, ObjectSpec};
+use crate::backend::types::NewObjectSpec;
 
 pub trait YubihsmOperations {
 
@@ -48,8 +48,8 @@ pub trait YubihsmOperations {
         Ok(caps)
     }
 
-    fn generate(&self, session: &Session, spec: &ObjectSpec) -> Result<u16, MgmError>;
-    fn import(&self, session: &Session, spec: &ImportObjectSpec) -> Result<u16, MgmError>;
+    fn generate(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError>;
+    fn import(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError>;
     fn delete(&self, session: &Session, object_id: u16, object_type: ObjectType) -> Result<(), MgmError> {
         YubihsmOperationsCommon.delete(session, object_id, object_type)
     }

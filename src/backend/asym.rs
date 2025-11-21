@@ -32,7 +32,7 @@ use crate::traits::backend_traits::{YubihsmOperations, YubihsmOperationsCommon};
 use crate::backend::error::MgmError;
 use crate::backend::algorithms::MgmAlgorithm;
 use crate::backend::common::{get_op_keys};
-use crate::backend::types::{MgmCommand, ObjectSpec, MgmCommandType, ImportObjectSpec};
+use crate::backend::types::{MgmCommand, NewObjectSpec, MgmCommandType};
 
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
 pub enum AttestationType {
@@ -91,50 +91,50 @@ impl YubihsmOperations for AsymOps {
         Ok(caps)
     }
 
-    fn generate(&self, session: &Session, spec: &ObjectSpec) -> Result<u16, MgmError> {
+    fn generate(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError> {
         let key = session
             .generate_asymmetric_key_with_keyid(
                 spec.id, &spec.label, &spec.capabilities, &spec.domains, spec.algorithm)?;
         Ok(key.get_key_id())
     }
 
-    fn import(&self, session: &Session, spec: &ImportObjectSpec) -> Result<u16, MgmError> {
+    fn import(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError> {
         let key_data = &spec.data[0];
         let id =
-            if Self::is_rsa_key_algorithm(&spec.object.algorithm) {
+            if Self::is_rsa_key_algorithm(&spec.algorithm) {
                 session.import_rsa_key(
-                    spec.object.id,
-                    &spec.object.label,
-                    &spec.object.domains,
-                    &spec.object.capabilities,
-                    spec.object.algorithm,
+                    spec.id,
+                    &spec.label,
+                    &spec.domains,
+                    &spec.capabilities,
+                    spec.algorithm,
                     &key_data[0..key_data.len() / 2],
                     &key_data[key_data.len() / 2..])?
-            } else if Self::is_ec_key_algorithm(&spec.object.algorithm) {
+            } else if Self::is_ec_key_algorithm(&spec.algorithm) {
                 session.import_ec_key(
-                    spec.object.id,
-                    &spec.object.label,
-                    &spec.object.domains,
-                    &spec.object.capabilities,
-                    spec.object.algorithm,
+                    spec.id,
+                    &spec.label,
+                    &spec.domains,
+                    &spec.capabilities,
+                    spec.algorithm,
                     key_data)?
-            } else if spec.object.algorithm == ObjectAlgorithm::Ed25519 {
+            } else if spec.algorithm == ObjectAlgorithm::Ed25519 {
                 session.import_ed_key(
-                    spec.object.id,
-                    &spec.object.label,
-                    &spec.object.domains,
-                    &spec.object.capabilities,
+                    spec.id,
+                    &spec.label,
+                    &spec.domains,
+                    &spec.capabilities,
                     key_data)?
-            } else if spec.object.algorithm == ObjectAlgorithm::OpaqueX509Certificate {
+            } else if spec.algorithm == ObjectAlgorithm::OpaqueX509Certificate {
                 session.import_cert(
-                    spec.object.id,
-                    &spec.object.label,
-                    &spec.object.domains,
-                    &spec.object.capabilities,
+                    spec.id,
+                    &spec.label,
+                    &spec.domains,
+                    &spec.capabilities,
                     key_data)?
             } else {
                 return Err(MgmError::InvalidInput(
-                    format!("Unsupported asymmetric key algorithm {:?}", spec.object.algorithm)));
+                    format!("Unsupported asymmetric key algorithm {:?}", spec.algorithm)));
             };
         Ok(id)
     }
@@ -677,7 +677,7 @@ impl YubihsmOperations for JavaOps {
         AsymOps.get_object_capabilities(_object_type, object_algorithm)
     }
 
-    fn generate(&self, session: &Session, spec: &ObjectSpec) -> Result<u16, MgmError> {
+    fn generate(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError> {
         Self::check_free_id(session, spec.id)?;
 
         let key_id = if spec.id != 0 {
@@ -725,10 +725,10 @@ impl YubihsmOperations for JavaOps {
             }
         }    }
 
-    fn import(&self, session: &Session, spec: &ImportObjectSpec) -> Result<u16, MgmError> {
-        Self::check_free_id(session, spec.object.id)?;
+    fn import(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError> {
+        Self::check_free_id(session, spec.id)?;
 
-        let key_id = if spec.object.id != 0 {
+        let key_id = if spec.id != 0 {
             AsymOps.import(session, spec)?
         } else {
             let mut id;
@@ -743,7 +743,7 @@ impl YubihsmOperations for JavaOps {
         };
 
         let cert_capabilities =
-            if spec.object.capabilities.contains(&ObjectCapability::ExportableUnderWrap) {
+            if spec.capabilities.contains(&ObjectCapability::ExportableUnderWrap) {
                 vec![ObjectCapability::ExportableUnderWrap]
             } else {
                 vec![]
@@ -751,8 +751,8 @@ impl YubihsmOperations for JavaOps {
 
         let res = session.import_cert(
             key_id,
-            spec.object.label.as_str(),
-            spec.object.domains.as_slice(),
+            spec.label.as_str(),
+            spec.domains.as_slice(),
             cert_capabilities.as_slice(),
             spec.data[1].as_slice());
 
