@@ -19,12 +19,12 @@ use std::fmt::Display;
 use openssl::base64;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
-use crate::traits::backend_traits::{YubihsmOperations, YubihsmOperationsCommon};
+use crate::traits::backend_traits::YubihsmOperations;
 use crate::backend::error::MgmError;
 use crate::backend::algorithms::MgmAlgorithm;
 use crate::backend::types::{MgmCommand, MgmCommandType, NewObjectSpec};
 use crate::backend::asym::AsymOps;
-use crate::backend::common::contains_all;
+use crate::backend::common::{contains_all, get_object_descriptors};
 use crate::backend::sym::SymOps;
 
 
@@ -107,7 +107,7 @@ impl YubihsmOperations for WrapOps {
         keys.extend_from_slice(&session.list_objects_with_filter(
             0, ObjectType::PublicWrapKey, "", ObjectAlgorithm::ANY,
             &Vec::new())?);
-        YubihsmOperationsCommon.get_object_descriptors(session, &keys)
+        get_object_descriptors(session, &keys)
     }
 
     fn get_generation_algorithms(&self) -> Vec<MgmAlgorithm> {
@@ -177,7 +177,7 @@ impl YubihsmOperations for WrapOps {
 
 impl WrapOps {
 
-    const WRAP_COMMANDS: [MgmCommand;11] = [
+    const WRAP_COMMANDS: [MgmCommand;10] = [
         MgmCommand {
             command: MgmCommandType::List,
             label: "List",
@@ -241,7 +241,6 @@ impl WrapOps {
             required_capabilities: &[ObjectCapability::ExportWrapped],
             require_all_capabilities: false,
         },
-        MgmCommand::RETURN_COMMAND,
         MgmCommand::EXIT_COMMAND,
     ];
 
@@ -284,11 +283,11 @@ impl WrapOps {
             let keys = session.list_objects_with_filter(
                 0, ObjectType::PublicWrapKey, "", ObjectAlgorithm::ANY,
                 &Vec::new())?;
-            Ok(YubihsmOperationsCommon.get_object_descriptors(session, keys.as_slice())?)
+            Ok(get_object_descriptors(session, keys.as_slice())?)
         } else {
             let keys = session.list_objects_with_filter(
                 0, ObjectType::WrapKey, "", ObjectAlgorithm::ANY, &Vec::new())?;
-            let mut keys = YubihsmOperationsCommon.get_object_descriptors(session, keys.as_slice())?;
+            let mut keys = get_object_descriptors(session, keys.as_slice())?;
             if key_type == WrapKeyType::Aes {
                 keys.retain(|k| !AsymOps::is_rsa_key_algorithm(&k.algorithm));
             } else if key_type == WrapKeyType::Rsa {
@@ -336,7 +335,7 @@ impl WrapOps {
             "",
             ObjectAlgorithm::ANY,
             &[ObjectCapability::ExportableUnderWrap])?;
-        let mut objects = YubihsmOperationsCommon.get_object_descriptors(session, objects.as_slice())?;
+        let mut objects = get_object_descriptors(session, objects.as_slice())?;
         objects.retain(|obj| contains_all(delegated, &obj.capabilities));
         if wrap_type == WrapType::Key {
             objects.retain(|obj| obj.object_type == ObjectType::AsymmetricKey || obj.object_type == ObjectType::SymmetricKey);

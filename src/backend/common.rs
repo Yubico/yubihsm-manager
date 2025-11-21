@@ -17,9 +17,8 @@
 extern crate yubihsmrs;
 
 use std::str::FromStr;
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
-use crate::traits::backend_traits::YubihsmOperationsCommon;
 use crate::backend::error::MgmError;
 use crate::backend::validators::object_id_validator;
 use crate::backend::types::MgmCommand;
@@ -41,29 +40,6 @@ pub fn get_delegated_capabilities(object: &ObjectDescriptor) -> Vec<ObjectCapabi
     }
 }
 
-pub fn get_op_keys(
-    session: &Session,
-    authkey: &ObjectDescriptor,
-    op_key_capabilities: &[ObjectCapability],
-    op_key_type: ObjectType,
-    op_key_algorithms: Option<&[ObjectAlgorithm]>) -> Result<Vec<ObjectDescriptor>, MgmError> {
-    let mut caps = op_key_capabilities.to_vec();
-    caps.retain(|c| authkey.capabilities.contains(c));
-
-    let keys = session.list_objects_with_filter(
-        0,
-        op_key_type,
-        "",
-        ObjectAlgorithm::ANY,
-        &caps)?;
-    let mut keys = YubihsmOperationsCommon.get_object_descriptors(session, &keys)?;
-
-    if let Some(item) = op_key_algorithms {
-        keys.retain(|desc| item.contains(&desc.algorithm));
-    }
-    Ok(keys)
-}
-
 pub fn contains_all(set: &[ObjectCapability], subset: &[ObjectCapability]) -> bool {
     for c in subset {
         if !set.contains(c) {
@@ -82,4 +58,35 @@ pub fn get_authorized_commands(
         cmd.is_authkey_authorized(authkey)
     });
     authorized_commands
+}
+
+pub fn get_object_descriptors(session: &Session, handlers: &[ObjectHandle]) -> Result<Vec<ObjectDescriptor>, MgmError> {
+    let descriptors: Vec<ObjectDescriptor> = handlers
+        .iter()
+        .map(|k| session.get_object_info(k.object_id, k.object_type))
+        .collect::<Result<_, _>>()?;
+    Ok(descriptors)
+}
+
+pub fn get_op_keys(
+    session: &Session,
+    authkey: &ObjectDescriptor,
+    op_key_capabilities: &[ObjectCapability],
+    op_key_type: ObjectType,
+    op_key_algorithms: Option<&[ObjectAlgorithm]>) -> Result<Vec<ObjectDescriptor>, MgmError> {
+    let mut caps = op_key_capabilities.to_vec();
+    caps.retain(|c| authkey.capabilities.contains(c));
+
+    let keys = session.list_objects_with_filter(
+        0,
+        op_key_type,
+        "",
+        ObjectAlgorithm::ANY,
+        &caps)?;
+    let mut keys = get_object_descriptors(session, &keys)?;
+
+    if let Some(item) = op_key_algorithms {
+        keys.retain(|desc| item.contains(&desc.algorithm));
+    }
+    Ok(keys)
 }

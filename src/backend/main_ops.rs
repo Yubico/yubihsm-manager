@@ -18,30 +18,26 @@ use std::fmt;
 use std::fmt::Display;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::traits::backend_traits::{YubihsmOperations, YubihsmOperationsCommon};
+use crate::traits::backend_traits::YubihsmOperations;
+use crate::backend::algorithms::MgmAlgorithm;
+use crate::backend::types::NewObjectSpec;
 use crate::backend::error::MgmError;
-use crate::backend::asym::{AsymOps, JavaOps};
-use crate::backend::sym::SymOps;
-use crate::backend::wrap::WrapOps;
-use crate::backend::common::get_authorized_commands;
 use crate::backend::types::{MgmCommand, MgmCommandType};
+use crate::backend::common::get_object_descriptors;
 
-#[derive(Debug, Clone, PartialEq,  Eq, Default)]
+#[derive(Debug, Clone, PartialEq,  Eq)]
 pub enum FilterType {
-    #[default]
-    All,
     Id(u16),
-    Type(Vec<MgmObjectType>),
     Label(String),
+    Type(Vec<MgmObjectType>),
 }
 
 impl Display for FilterType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            FilterType::All => write!(f, "List all objects"),
-            FilterType::Id(_) => write!(f, "Filter by object ID"),
-            FilterType::Type(_) => write!(f, "Filter by object type"),
-            FilterType::Label(_) => write!(f, "Filter by object label"),
+            FilterType::Id(_) => write!(f, "By object ID"),
+            FilterType::Label(_) => write!(f, "By object label"),
+            FilterType::Type(_) => write!(f, "By object type"),
         }
     }
 }
@@ -60,9 +56,9 @@ pub enum MgmObjectType {
 impl Display for MgmObjectType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            MgmObjectType::Asymmetric => write!(f, "Asymmetric object"),
+            MgmObjectType::Asymmetric => write!(f, "Asymmetric key"),
             MgmObjectType::Symmetric => write!(f, "Symmetric key"),
-            MgmObjectType::Certificate => write!(f, "X509Certificate object"),
+            MgmObjectType::Certificate => write!(f, "X509Certificate"),
             MgmObjectType::Wrap => write!(f, "Wrap key"),
             MgmObjectType::Authentication => write!(f, "Authentication key"),
             MgmObjectType::Java => write!(f, "Special case: SunPKCS11 compatible key"),
@@ -72,9 +68,9 @@ impl Display for MgmObjectType {
     }
 }
 
-impl Into<ObjectType> for MgmObjectType {
-    fn into(self) -> ObjectType {
-        match self {
+impl From<MgmObjectType> for ObjectType {
+    fn from(mgm_type: MgmObjectType) -> Self {
+        match mgm_type {
             MgmObjectType::Asymmetric => ObjectType::AsymmetricKey,
             MgmObjectType::Symmetric => ObjectType::SymmetricKey,
             MgmObjectType::Certificate => ObjectType::Opaque,
@@ -86,12 +82,37 @@ impl Into<ObjectType> for MgmObjectType {
     }
 }
 
-
-
 pub struct MainOps;
 
+impl YubihsmOperations for MainOps {
+    fn get_commands(&self) -> Vec<MgmCommand> {
+        Self::MAIN_COMMANDS.to_vec()
+    }
+
+    fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
+        let objects = session.list_objects()?;
+        get_object_descriptors(session, &objects)
+    }
+
+    fn get_generation_algorithms(&self) -> Vec<MgmAlgorithm> {
+        unimplemented!()
+    }
+
+    fn get_object_capabilities(&self, _object_type: Option<ObjectType>, _object_algorithm: Option<ObjectAlgorithm>) -> Result<Vec<ObjectCapability>, MgmError> {
+        unimplemented!()
+    }
+
+    fn generate(&self, _session: &Session, _spec: &NewObjectSpec) -> Result<u16, MgmError> {
+        unimplemented!()
+    }
+
+    fn import(&self, _session: &Session, _spec: &NewObjectSpec) -> Result<u16, MgmError> {
+        unimplemented!()
+    }
+}
+
 impl MainOps {
-    const MAIN_COMMANDS: [MgmCommand;9] = [
+    const MAIN_COMMANDS: [MgmCommand;8] = [
         MgmCommand {
             command: MgmCommandType::List,
             label: "List",
@@ -100,11 +121,11 @@ impl MainOps {
             require_all_capabilities: false
         },
         MgmCommand {
-            command: MgmCommandType::GetKeyProperties,
-            label: "Get Object Properties",
-            description: "Get properties of an object stored on the YubiHSM",
+            command: MgmCommandType::Search,
+            label: "Search objects",
+            description: "Search for objects stored on the YubiHSM by ID, type or label",
             required_capabilities: &[],
-            require_all_capabilities: false,
+            require_all_capabilities: false
         },
         MgmCommand {
             command: MgmCommandType::Delete,
@@ -148,67 +169,45 @@ impl MainOps {
             require_all_capabilities: false,
         },
         MgmCommand {
-            command: MgmCommandType::GotoSpecialCase,
-            label: "Goto special case operations",
-            description: "",
-            required_capabilities: &[],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
             command: MgmCommandType::GotoDevice,
             label: "Goto device operations",
             description: "Get pseudo random number, backup, restore or reset device",
-            required_capabilities: &[],
+            required_capabilities: &[
+                ObjectCapability::GetPseudoRandom,
+                ObjectCapability::ExportWrapped,
+                ObjectCapability::ImportWrapped
+            ],
             require_all_capabilities: false,
         },
         MgmCommand::EXIT_COMMAND,
     ];
 
-    pub fn get_authorized_commands(
-        authkey: &ObjectDescriptor,
-    ) -> Vec<MgmCommand> {
-        get_authorized_commands(authkey, &Self::MAIN_COMMANDS)
-    }
-
-    pub fn get_all_objects(session: &Session, filter: FilterType) -> Result<Vec<ObjectDescriptor>, MgmError> {
-        let objects = session.list_objects()?;
-
-        let f = if filter == FilterType::All {
-            FilterType::Type([
-                MgmObjectType::Asymmetric,
-                MgmObjectType::Certificate,
-                MgmObjectType::Symmetric,
-                MgmObjectType::Certificate,
-                MgmObjectType::Wrap,
-                MgmObjectType::Authentication].to_vec())
-        } else {
-            filter
-        };
-
-        let mut objects = YubihsmOperationsCommon.get_object_descriptors(session, &objects)?;
-        match f {
+    pub fn get_filtered_objects(session: &Session, filter: FilterType) -> Result<Vec<ObjectDescriptor>, MgmError> {
+        let objects =
+        match filter {
             FilterType::Id(id) => {
-                objects.retain(|obj| id == obj.id);
+                let handles = session.list_objects_with_filter(id, ObjectType::Any, "", ObjectAlgorithm::ANY, &[])?;
+                get_object_descriptors(session, &handles)?
             },
             FilterType::Type(types) => {
-                // let object_types: Vec<ObjectType> = types.iter().map(|t| <MgmObjectType as Into<ObjectType>>::into(t.to_owned())).collect();
+                let mut objects = Self.get_all_objects(session)?;
                 objects.retain(|obj| types.iter().any(|t| <MgmObjectType as Into<ObjectType>>::into(t.to_owned()) == obj.object_type));
                 if types.contains(&MgmObjectType::Certificate) {
                     objects.retain(|obj| obj.object_type != ObjectType::Opaque || obj.algorithm == ObjectAlgorithm::OpaqueX509Certificate);
                 }
+                objects
             },
             FilterType::Label(label) => {
-                objects.retain(|obj| obj.label == label);
+                let handles = session.list_objects_with_filter(0, ObjectType::Any, label.as_str(), ObjectAlgorithm::ANY, &[])?;
+                get_object_descriptors(session, &handles)?
             },
-            _ => unreachable!()
         };
         Ok(objects)
     }
 
     pub fn get_objects_for_delete(session: &Session, authkey: &ObjectDescriptor) -> Result<Vec<ObjectDescriptor>, MgmError> {
-        let all_objects = Self::get_all_objects(session, FilterType::All)?;
-        let deletable_objects: Vec<ObjectDescriptor> = all_objects.into_iter()
-            .filter(|obj| {
+        let mut objects = Self.get_all_objects(session)?;
+        objects.retain(|obj| {
                 match obj.object_type {
                     ObjectType::AsymmetricKey => authkey.capabilities.contains(&ObjectCapability::DeleteAsymmetricKey),
                     ObjectType::Opaque => authkey.capabilities.contains(&ObjectCapability::DeleteOpaque),
@@ -217,34 +216,30 @@ impl MainOps {
                     ObjectType::AuthenticationKey => authkey.capabilities.contains(&ObjectCapability::DeleteAuthenticationKey),
                     _ => false,
                 }
-            })
-            .collect();
-        Ok(deletable_objects)
+            });
+        Ok(objects)
     }
 
-    pub fn get_filtrable_types() -> Vec<MgmObjectType> {
+    pub fn get_search_by_types() -> Vec<MgmObjectType> {
         vec![
             MgmObjectType::Asymmetric,
             MgmObjectType::Symmetric,
             MgmObjectType::Certificate,
-            MgmObjectType::Wrap,
             MgmObjectType::Authentication,
+            MgmObjectType::Wrap,
         ]
     }
 
     pub fn get_generatable_types(authkey: &ObjectDescriptor) -> Vec<MgmObjectType> {
         let mut types = Vec::new();
-        if MgmCommand::contains_command(&AsymOps.get_authorized_commands(authkey), &MgmCommandType::Generate) {
+        if authkey.capabilities.contains(&ObjectCapability::GenerateAsymmetricKey) {
             types.push(MgmObjectType::Asymmetric);
         }
-        if MgmCommand::contains_command(&SymOps.get_authorized_commands(authkey), &MgmCommandType::Generate) {
+        if authkey.capabilities.contains(&ObjectCapability::GenerateSymmetricKey) {
             types.push(MgmObjectType::Symmetric);
         }
-        if MgmCommand::contains_command(&WrapOps.get_authorized_commands(authkey), &MgmCommandType::Generate) {
+        if authkey.capabilities.contains(&ObjectCapability::GenerateWrapKey) {
             types.push(MgmObjectType::Wrap);
-        }
-        if MgmCommand::contains_command(&JavaOps.get_authorized_commands(authkey), &MgmCommandType::Generate) {
-            types.push(MgmObjectType::Java);
         }
         types
     }
@@ -252,17 +247,17 @@ impl MainOps {
 
     pub fn get_importable_types(authkey: &ObjectDescriptor) -> Vec<MgmObjectType> {
         let mut types = Vec::new();
-        if MgmCommand::contains_command(&AsymOps.get_authorized_commands(authkey), &MgmCommandType::Import) {
+        if authkey.capabilities.contains(&ObjectCapability::PutAsymmetricKey) {
             types.push(MgmObjectType::Asymmetric);
         }
-        if MgmCommand::contains_command(&SymOps.get_authorized_commands(authkey), &MgmCommandType::Import) {
+        if authkey.capabilities.contains(&ObjectCapability::PutOpaque) {
+            types.push(MgmObjectType::Certificate);
+        }
+        if authkey.capabilities.contains(&ObjectCapability::PutSymmetricKey) {
             types.push(MgmObjectType::Symmetric);
         }
-        if MgmCommand::contains_command(&WrapOps.get_authorized_commands(authkey), &MgmCommandType::Import) {
+        if authkey.capabilities.contains(&ObjectCapability::PutWrapKey) {
             types.push(MgmObjectType::Wrap);
-        }
-        if MgmCommand::contains_command(&JavaOps.get_authorized_commands(authkey), &MgmCommandType::Import) {
-            types.push(MgmObjectType::Java);
         }
         types
     }
@@ -271,13 +266,9 @@ impl MainOps {
         vec![
             MgmObjectType::Asymmetric,
             MgmObjectType::Symmetric,
+            MgmObjectType::Certificate,
             MgmObjectType::Wrap,
             MgmObjectType::Authentication,
-        ]
-    }
-
-    pub fn get_special_case_types() -> Vec<MgmObjectType> {
-        vec![
             MgmObjectType::Java,
             MgmObjectType::Ksp,
         ]

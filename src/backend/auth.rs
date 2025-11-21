@@ -16,11 +16,12 @@
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::traits::backend_traits::{YubihsmOperations, YubihsmOperationsCommon};
+use crate::traits::backend_traits::YubihsmOperations;
 use crate::backend::types::NewObjectSpec;
 use crate::backend::error::MgmError;
 use crate::backend::algorithms::MgmAlgorithm;
 use crate::backend::types::{MgmCommand, MgmCommandType};
+use crate::backend::common::get_object_descriptors;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UserType {
@@ -53,7 +54,7 @@ impl YubihsmOperations for AuthOps {
             "",
             ObjectAlgorithm::ANY,
             &Vec::new())?;
-        YubihsmOperationsCommon.get_object_descriptors(session, &keys)
+        get_object_descriptors(session, &keys)
     }
 
     fn get_generation_algorithms(&self) -> Vec<MgmAlgorithm> {
@@ -139,7 +140,7 @@ impl AuthOps {
         ObjectCapability::ExportableUnderWrap,
     ];
 
-    const AUTH_COMMANDS: [MgmCommand;9] = [
+    const AUTH_COMMANDS: [MgmCommand;8] = [
         MgmCommand {
             command: MgmCommandType::List,
             label: "List",
@@ -189,7 +190,6 @@ impl AuthOps {
             required_capabilities: &[ObjectCapability::PutAuthenticationKey],
             require_all_capabilities: false,
         },
-        MgmCommand::RETURN_COMMAND,
         MgmCommand::EXIT_COMMAND,
     ];
 

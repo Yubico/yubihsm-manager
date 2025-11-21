@@ -40,6 +40,14 @@ use backend::error::MgmError;
 use backend::asym::AsymOps;
 use backend::common::get_id_from_string;
 use backend::validators::pem_private_ecp256_file_validator;
+use ui::asym_menu::AsymmetricMenu;
+use ui::auth_menu::AuthenticationMenu;
+use ui::device_menu::DeviceMenu;
+use ui::java_menu::JavaMenu;
+use ui::ksp_menu::Ksp;
+use ui::main_menu::MainMenu;
+use ui::sym_menu::SymmetricMenu;
+use ui::wrap_menu::WrapMenu;
 
 pub mod backend;
 pub mod ui;
@@ -169,18 +177,18 @@ fn main() -> Result<(), MgmError>{
     match matches.subcommand() {
         Some(subcommand) => {
             match subcommand.0 {
-                "asym" => ui::asym_menu::exec_asym_command(&session, &authkey),
-                "sym" => ui::sym_menu::exec_sym_command(&session, &authkey),
-                "auth" => ui::auth_menu::exec_auth_command(&session, &authkey),
-                "wrap" => ui::wrap_menu::exec_wrap_command(&session, &authkey),
-                "ksp" => ui::ksp_menu::guided_ksp_setup(&session, &authkey),
-                "sunpkcs11" => ui::java_menu::exec_java_command(&session, &authkey),
-                "reset" => ui::device_menu::reset(&session),
+                "asym" => AsymmetricMenu.exec_command(&session, &authkey),
+                "sym" => SymmetricMenu.exec_command(&session, &authkey),
+                "auth" => AuthenticationMenu.exec_command(&session, &authkey),
+                "wrap" => WrapMenu.exec_command(&session, &authkey),
+                "ksp" => Ksp.guided_setup(&session, &authkey),
+                "sunpkcs11" => JavaMenu.exec_command(&session, &authkey),
+                "reset" => DeviceMenu.reset(&session),
                 _ => unreachable!(),
             }
         },
         None => {
-            ui::main_menu::exec_main_command(&session, &authkey)
+            MainMenu.exec_command(&session, &authkey)
         }
     }
 }

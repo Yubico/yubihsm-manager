@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::backend::common::{get_delegated_capabilities, get_authorized_commands};
 use crate::backend::algorithms::MgmAlgorithm;
@@ -51,28 +51,6 @@ pub trait YubihsmOperations {
     fn generate(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError>;
     fn import(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError>;
     fn delete(&self, session: &Session, object_id: u16, object_type: ObjectType) -> Result<(), MgmError> {
-        YubihsmOperationsCommon.delete(session, object_id, object_type)
-    }
-}
-
-pub struct YubihsmOperationsCommon;
-
-impl YubihsmOperationsCommon {
-
-    pub fn get_object_descriptor(&self, session: &Session, object_id: u16, object_type: ObjectType) -> Result<ObjectDescriptor, MgmError> {
-        Ok(session.get_object_info(object_id, object_type)?)
-    }
-
-    pub fn get_object_descriptors(&self, session: &Session, handlers: &[ObjectHandle]) -> Result<Vec<ObjectDescriptor>, MgmError> {
-        let descriptors: Vec<ObjectDescriptor> = handlers
-            .iter()
-            .map(|k| session.get_object_info(k.object_id, k.object_type))
-            .collect::<Result<_, _>>()?;
-        Ok(descriptors)
-    }
-
-    pub fn delete(&self, session: &Session, object_id: u16, object_type: ObjectType) -> Result<(), MgmError> {
         Ok(session.delete_object(object_id, object_type)?)
     }
 }
-

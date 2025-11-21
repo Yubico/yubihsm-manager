@@ -121,7 +121,7 @@ impl YubihsmUi for Cmdline {
 
         let p = prompt.unwrap_or("Select object capabilities");
         let mut capabilities = cliclack::multiselect(
-            format!("{}. {}", p, MULTI_SELECT_PROMPT_HELP));
+            format!("{}. {}", p, MULTI_SELECT_PROMPT_HELP)).required(false);
 
         capabilities = capabilities.initial_values(preselected_capabilities.to_vec());
         for c in caps {

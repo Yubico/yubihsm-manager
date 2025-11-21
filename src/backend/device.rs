@@ -24,7 +24,7 @@ pub struct DeviceOps;
 
 impl DeviceOps {
 
-    const DEVICE_COMMANDS: [MgmCommand;6] = [
+    const DEVICE_COMMANDS: [MgmCommand;5] = [
         MgmCommand {
             command: MgmCommandType::GetRandom,
             label: "Generate pseudo random number",
@@ -53,7 +53,6 @@ impl DeviceOps {
             required_capabilities: &[],
             require_all_capabilities: false,
         },
-        MgmCommand::RETURN_COMMAND,
         MgmCommand::EXIT_COMMAND,
     ];
 

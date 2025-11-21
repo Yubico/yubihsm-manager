@@ -16,9 +16,9 @@
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::traits::backend_traits::{YubihsmOperations, YubihsmOperationsCommon};
+use crate::traits::backend_traits::YubihsmOperations;
 use crate::backend::error::MgmError;
-use crate::backend::common::{get_op_keys};
+use crate::backend::common::{get_op_keys, get_object_descriptors};
 use crate::backend::algorithms::MgmAlgorithm;
 use crate::backend::types::{MgmCommand, NewObjectSpec, MgmCommandType};
 
@@ -60,7 +60,7 @@ impl YubihsmOperations for SymOps {
             "",
             ObjectAlgorithm::ANY,
             &Vec::new())?;
-        YubihsmOperationsCommon.get_object_descriptors(session, &keys)
+        get_object_descriptors(session, &keys)
     }
 
     fn get_generation_algorithms(&self) -> Vec<MgmAlgorithm> {
@@ -105,7 +105,7 @@ impl SymOps {
         ObjectCapability::DecryptEcb,
         ObjectCapability::ExportableUnderWrap];
 
-    const SYM_COMMANDS: [MgmCommand;10] = [
+    const SYM_COMMANDS: [MgmCommand;9] = [
         MgmCommand {
             command: MgmCommandType::List,
             label: "List",
@@ -162,7 +162,6 @@ impl SymOps {
             required_capabilities: &[ObjectCapability::GetPseudoRandom],
             require_all_capabilities: false,
         },
-        MgmCommand::RETURN_COMMAND,
         MgmCommand::EXIT_COMMAND,
     ];
 

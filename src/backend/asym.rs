@@ -28,10 +28,10 @@ use openssl::pkey::PKey;
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
 use yubihsmrs::Session;
-use crate::traits::backend_traits::{YubihsmOperations, YubihsmOperationsCommon};
+use crate::traits::backend_traits::{YubihsmOperations};
 use crate::backend::error::MgmError;
 use crate::backend::algorithms::MgmAlgorithm;
-use crate::backend::common::{get_op_keys};
+use crate::backend::common::{get_op_keys, get_object_descriptors};
 use crate::backend::types::{MgmCommand, NewObjectSpec, MgmCommandType};
 
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
@@ -164,7 +164,7 @@ impl AsymOps {
     const OPAQUE_CAPABILITIES: [ObjectCapability; 1] = [
         ObjectCapability::ExportableUnderWrap];
 
-    const ASYM_COMMANDS: [MgmCommand;13] = [
+    const ASYM_COMMANDS: [MgmCommand;12] = [
         MgmCommand {
             command: MgmCommandType::List,
             label: "List",
@@ -247,7 +247,6 @@ impl AsymOps {
             required_capabilities: &[ObjectCapability::SignAttestationCertificate],
             require_all_capabilities: false,
         },
-        MgmCommand::RETURN_COMMAND,
         MgmCommand::EXIT_COMMAND,
     ];
 
@@ -263,7 +262,7 @@ impl AsymOps {
         if types.contains(&ObjectType::AsymmetricKey) {
             objects.extend(session.list_objects_with_filter(0, ObjectType::AsymmetricKey, "", ObjectAlgorithm::ANY, &Vec::new())?);
         }
-        YubihsmOperationsCommon.get_object_descriptors( session, &objects)
+        get_object_descriptors(session, &objects)
     }
 
     pub fn get_signing_keys(session: &Session, authkey: &ObjectDescriptor) -> Result<Vec<ObjectDescriptor>, MgmError> {
@@ -773,7 +772,7 @@ impl YubihsmOperations for JavaOps {
 
 impl JavaOps {
 
-    const JAVA_COMMANDS: [MgmCommand;7] = [
+    const JAVA_COMMANDS: [MgmCommand;6] = [
         MgmCommand {
             command: MgmCommandType::List,
             label: "List",
@@ -809,7 +808,6 @@ impl JavaOps {
             required_capabilities: &[ObjectCapability::DeleteAsymmetricKey, ObjectCapability::DeleteOpaque],
             require_all_capabilities: true,
         },
-        MgmCommand::RETURN_COMMAND,
         MgmCommand::EXIT_COMMAND,
     ];
 

@@ -14,5 +14,5 @@
  * limitations under the License.
  */
 
-pub mod ui_traits;
 pub mod backend_traits;
+pub mod ui_traits;

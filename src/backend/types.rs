@@ -48,6 +48,42 @@ impl Display for NewObjectSpec {
     }
 }
 
+impl From<ObjectDescriptor> for NewObjectSpec {
+    fn from(spec: ObjectDescriptor) -> Self {
+        NewObjectSpec {
+            id: spec.id,
+            object_type: spec.object_type,
+            label: spec.label,
+            algorithm: spec.algorithm,
+            domains: spec.domains,
+            capabilities: spec.capabilities,
+            delegated_capabilities: if spec.delegated_capabilities.is_some() {
+                spec.delegated_capabilities.unwrap()
+            } else {
+                vec![]
+            },
+            data: vec![],
+        }
+    }
+}
+
+impl From<NewObjectSpec> for ObjectDescriptor {
+    fn from(spec: NewObjectSpec) -> Self {
+        let mut desc = ObjectDescriptor::new();
+        desc.id = spec.id;
+        desc.object_type = spec.object_type;
+        desc.label = spec.label;
+        desc.algorithm = spec.algorithm;
+        desc.domains = spec.domains;
+        desc.capabilities = spec.capabilities;
+        desc.delegated_capabilities = if spec.delegated_capabilities.is_empty() {
+            None
+        } else {
+            Some(spec.delegated_capabilities)
+        };
+        desc
+    }
+}
 
 impl NewObjectSpec {
     pub fn new(
@@ -123,69 +159,16 @@ impl NewObjectSpec {
     }
 }
 
-impl From<ObjectDescriptor> for NewObjectSpec {
-    fn from(spec: ObjectDescriptor) -> Self {
-        NewObjectSpec {
-            id: spec.id,
-            object_type: spec.object_type,
-            label: spec.label,
-            algorithm: spec.algorithm,
-            domains: spec.domains,
-            capabilities: spec.capabilities,
-            delegated_capabilities: if spec.delegated_capabilities.is_some() {
-                spec.delegated_capabilities.unwrap()
-            } else {
-                vec![]
-            },
-            data: vec![],
-        }
-    }
-}
-
-impl From<NewObjectSpec> for ObjectDescriptor {
-    fn from(spec: NewObjectSpec) -> Self {
-        let mut desc = ObjectDescriptor::new();
-        desc.id = spec.id;
-        desc.object_type = spec.object_type;
-        desc.label = spec.label;
-        desc.algorithm = spec.algorithm;
-        desc.domains = spec.domains;
-        desc.capabilities = spec.capabilities;
-        desc.delegated_capabilities = if spec.delegated_capabilities.is_empty() {
-            None
-        } else {
-            Some(spec.delegated_capabilities)
-        };
-        desc
-    }
-}
 
 
 
 
-// #[derive(Clone, Debug)]
-// pub struct ImportObjectSpec {
-//     pub object: NewObjectSpec,
-//     pub data: Vec<Vec<u8>>,
-// }
-//
-// impl ImportObjectSpec {
-//     pub fn new(object: NewObjectSpec, object_data: Vec<Vec<u8>>) -> Self {
-//         Self { object, data: object_data }
-//     }
-//
-//     pub fn empty() -> Self {
-//         Self {
-//             object: NewObjectSpec::empty(),
-//             data: vec![],
-//         }
-//     }
-// }
 
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
 pub enum MgmCommandType {
     #[default]
     List,
+    Search,
     GetKeyProperties,
     Generate,
     Import,
@@ -212,7 +195,6 @@ pub enum MgmCommandType {
     GetDevicePublicKey,
     GetRandom,
     Reset,
-    ReturnToMainMenu,
     Exit,
 }
 
@@ -226,13 +208,6 @@ pub struct MgmCommand {
 }
 
 impl MgmCommand {
-    pub const RETURN_COMMAND: MgmCommand = MgmCommand {
-        command: MgmCommandType::ReturnToMainMenu,
-        label: "Return to Previous Menu",
-        description: "",
-        required_capabilities: &[],
-        require_all_capabilities: false,
-    };
 
     pub const EXIT_COMMAND: MgmCommand = MgmCommand {
         command: MgmCommandType::Exit,
@@ -276,6 +251,11 @@ impl MgmCommand {
         commands.iter().any(|cmd| cmd.command == *commands_to_check)
     }
 }
+
+
+
+
+
 
 #[derive(Debug, Clone, PartialEq,  Eq, Default)]
 pub struct SelectionItem<T: Clone + Eq> {
