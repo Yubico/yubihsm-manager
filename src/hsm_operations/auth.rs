@@ -16,12 +16,12 @@
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::traits::backend_traits::YubihsmOperations;
+use crate::traits::operation_traits::YubihsmOperations;
 use crate::hsm_operations::types::NewObjectSpec;
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::algorithms::MgmAlgorithm;
 use crate::hsm_operations::types::{MgmCommand, MgmCommandType};
-use crate::hsm_operations::common::get_object_descriptors;
+use crate::hsm_operations::common::{get_object_descriptors, get_delegated_capabilities};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UserType {
@@ -44,7 +44,58 @@ pub struct AuthenticationOperations;
 impl YubihsmOperations for AuthenticationOperations {
 
     fn get_commands(&self) -> Vec<MgmCommand> {
-        AuthenticationOperations::AUTH_COMMANDS.to_vec()
+        [
+            MgmCommand {
+                command: MgmCommandType::List,
+                label: "List",
+                description: "List all authentication keys stored in the YubiHSM",
+                required_capabilities: &[],
+                require_all_capabilities: false
+            },
+            MgmCommand {
+                command: MgmCommandType::GetKeyProperties,
+                label: "Get object properties",
+                description: "Get properties of an authentication key stored on the YubiHSM",
+                required_capabilities: &[],
+                require_all_capabilities: false,
+            },
+            MgmCommand {
+                command: MgmCommandType::Delete,
+                label: "Delete",
+                description: "Delete an authentication key from the YubiHSM",
+                required_capabilities: &[ObjectCapability::DeleteAuthenticationKey],
+                require_all_capabilities: false,
+            },
+            MgmCommand {
+                command: MgmCommandType::SetupUser,
+                label: "Setup (a)symmetric keys user",
+                description: "Can only use (a)symmetric keys stored on the YubiHSM",
+                required_capabilities: &[ObjectCapability::PutAuthenticationKey],
+                require_all_capabilities: false,
+            },
+            MgmCommand {
+                command: MgmCommandType::SetupAdmin,
+                label: "Setup (a)symmetric keys admin",
+                description: "Can only manage (a)symmetric keys stored on the YubiHSM",
+                required_capabilities: &[ObjectCapability::PutAuthenticationKey],
+                require_all_capabilities: false,
+            },
+            MgmCommand {
+                command: MgmCommandType::SetupAuditor,
+                label: "Setup auditor user",
+                description: "Can only perform audit functions on the YubiHSM",
+                required_capabilities: &[ObjectCapability::PutAuthenticationKey],
+                require_all_capabilities: false,
+            },
+            MgmCommand {
+                command: MgmCommandType::SetupBackupAdmin,
+                label: "Setup custom user",
+                description: "Can have all capabilities of the current user",
+                required_capabilities: &[ObjectCapability::PutAuthenticationKey],
+                require_all_capabilities: false,
+            },
+            MgmCommand::EXIT_COMMAND,
+        ].to_vec()
     }
 
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
@@ -140,57 +191,18 @@ impl AuthenticationOperations {
         ObjectCapability::ExportableUnderWrap,
     ];
 
-    const AUTH_COMMANDS: [MgmCommand;8] = [
-        MgmCommand {
-            command: MgmCommandType::List,
-            label: "List",
-            description: "List all authentication keys stored in the YubiHSM",
-            required_capabilities: &[],
-            require_all_capabilities: false
-        },
-        MgmCommand {
-            command: MgmCommandType::GetKeyProperties,
-            label: "Get object properties",
-            description: "Get properties of an authentication key stored on the YubiHSM",
-            required_capabilities: &[],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::Delete,
-            label: "Delete",
-            description: "Delete an authentication key from the YubiHSM",
-            required_capabilities: &[ObjectCapability::DeleteAuthenticationKey],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::SetupUser,
-            label: "Setup (a)symmetric keys user",
-            description: "Can only use (a)symmetric keys stored on the YubiHSM",
-            required_capabilities: &[ObjectCapability::PutAuthenticationKey],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::SetupAdmin,
-            label: "Setup (a)symmetric keys admin",
-            description: "Can only manage (a)symmetric keys stored on the YubiHSM",
-            required_capabilities: &[ObjectCapability::PutAuthenticationKey],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::SetupAuditor,
-            label: "Setup auditor user",
-            description: "Can only perform audit functions on the YubiHSM",
-            required_capabilities: &[ObjectCapability::PutAuthenticationKey],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::SetupBackupAdmin,
-            label: "Setup custom user",
-            description: "Can have all capabilities of the current user",
-            required_capabilities: &[ObjectCapability::PutAuthenticationKey],
-            require_all_capabilities: false,
-        },
-        MgmCommand::EXIT_COMMAND,
-    ];
+    pub fn get_applicable_capabilities(authkey: &ObjectDescriptor, user_type: UserType) -> Vec<ObjectCapability> {
+        let auth_delegated = get_delegated_capabilities(authkey);
+        let mut caps = match user_type {
+            UserType::AsymUser => Self::KEY_USER_CAPABILITIES.to_vec(),
+            UserType::AsymAdmin => Self::KEY_ADMIN_CAPABILITIES.to_vec(),
+            UserType::Auditor => Self::AUDITOR_CAPABILITIES.to_vec(),
+            UserType::BackupAdmin => get_delegated_capabilities(authkey),
+        };
 
+        if user_type != UserType::BackupAdmin {
+            caps.retain(|c| auth_delegated.contains(c));
+        }
+        caps
+    }
 }

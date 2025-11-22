@@ -110,6 +110,8 @@ impl YubihsmUi for Cmdline {
         preselected_capabilities: &[ObjectCapability],
         prompt: Option<&str>) -> Result<Vec<ObjectCapability>, MgmError> {
         if available_capabilities.is_empty() {
+            cliclack::log::info(
+                "No capabilities available to select from. Most likely because logged in user does not have sufficient delegated capabilities")?;
             return Ok(vec![]);
         }
 

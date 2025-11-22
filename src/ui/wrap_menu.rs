@@ -26,7 +26,7 @@ use crate::ui::helper_operations::{delete_objects, display_menu_headers, generat
 use crate::ui::helper_operations::display_object_properties;
 use crate::ui::device_menu::DeviceMenu;
 use crate::ui::asym_menu::AsymmetricMenu;
-use crate::traits::backend_traits::YubihsmOperations;
+use crate::traits::operation_traits::YubihsmOperations;
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::types::{MgmCommandType, NewObjectSpec, SelectionItem};
 use crate::hsm_operations::validators::{aes_key_validator, pem_private_rsa_file_validator, pem_public_rsa_file_validator};

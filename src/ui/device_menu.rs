@@ -18,7 +18,7 @@ use std::fs::File;
 use std::io::Read;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor};
 use yubihsmrs::Session;
-use crate::traits::backend_traits::YubihsmOperations;
+use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::helper_operations::display_menu_headers;
 use crate::hsm_operations::error::MgmError;

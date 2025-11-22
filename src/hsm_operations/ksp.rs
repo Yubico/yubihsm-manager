@@ -16,7 +16,7 @@
 
 use yubihsmrs::Session;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
-use crate::traits::backend_traits::YubihsmOperations;
+use crate::traits::operation_traits::YubihsmOperations;
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::common::contains_all;
 use crate::hsm_operations::wrap::{WrapKeyShares, WrapOperations};

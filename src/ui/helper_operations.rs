@@ -17,7 +17,7 @@
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::hsm_operations::types::NewObjectSpec;
-use crate::traits::backend_traits::YubihsmOperations;
+use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::types::MgmCommand;

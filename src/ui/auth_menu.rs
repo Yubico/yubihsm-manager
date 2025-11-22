@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::traits::backend_traits::YubihsmOperations;
+use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_object_properties, list_objects};
 use crate::hsm_operations::error::MgmError;
@@ -122,37 +122,58 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
         new_key.id = self.ui.get_new_object_id(0)?;
         new_key.label = self.ui.get_object_label("")?;
         new_key.domains = self.ui.select_object_domains(&current_authkey.domains)?;
-        match user_type {
-            UserType::AsymUser => new_key.capabilities = self.ui.select_object_capabilities(
-                &AuthenticationOperations::KEY_USER_CAPABILITIES,
-                &AuthenticationOperations::KEY_USER_CAPABILITIES,
-                None)?,
-            UserType::AsymAdmin => {
-                new_key.capabilities = self.ui.select_object_capabilities(
-                    &AuthenticationOperations::KEY_ADMIN_CAPABILITIES,
-                    &[],
-                    None)?;
-                new_key.delegated_capabilities = self.ui.select_object_capabilities(
-                    &AuthenticationOperations::KEY_USER_CAPABILITIES,
-                    &[],
-                    Some("Select delegated capabilities"))?;
-            },
-            UserType::Auditor => new_key.capabilities = self.ui.select_object_capabilities(
-                &AuthenticationOperations::AUDITOR_CAPABILITIES,
-                &[ObjectCapability::GetLogEntries],
-                None)?,
-            UserType::BackupAdmin => {
-                let current_authkey_delegated = get_delegated_capabilities(current_authkey);
-                new_key.capabilities = self.ui.select_object_capabilities(
-                    &current_authkey_delegated,
-                    &current_authkey_delegated,
-                    None)?;
-                new_key.delegated_capabilities = self.ui.select_object_capabilities(
-                    &current_authkey_delegated,
-                    &current_authkey_delegated,
-                    Some("Select delegated capabilities"))?;
-            },
-        };
+        let applicable_capabilities = AuthenticationOperations::get_applicable_capabilities(current_authkey, user_type);
+        new_key.capabilities = self.ui.select_object_capabilities(
+            &applicable_capabilities,
+            &applicable_capabilities,
+            None)?;
+
+        if user_type == UserType::AsymAdmin {
+            new_key.delegated_capabilities = self.ui.select_object_capabilities(
+                &AuthenticationOperations::get_applicable_capabilities(current_authkey, UserType::AsymUser),
+                &[],
+                Some("Select delegated capabilities"))?;
+        }
+
+        if user_type == UserType::BackupAdmin {
+            let current_authkey_delegated = get_delegated_capabilities(current_authkey);
+            new_key.delegated_capabilities = self.ui.select_object_capabilities(
+                &current_authkey_delegated,
+                &current_authkey_delegated,
+                Some("Select delegated capabilities"))?;
+        }
+        //
+        // match user_type {
+        //     UserType::AsymUser => new_key.capabilities = self.ui.select_object_capabilities(
+        //         &AuthenticationOperations::KEY_USER_CAPABILITIES,
+        //         &AuthenticationOperations::KEY_USER_CAPABILITIES,
+        //         None)?,
+        //     UserType::AsymAdmin => {
+        //         new_key.capabilities = self.ui.select_object_capabilities(
+        //             &AuthenticationOperations::KEY_ADMIN_CAPABILITIES,
+        //             &[],
+        //             None)?;
+        //         new_key.delegated_capabilities = self.ui.select_object_capabilities(
+        //             &AuthenticationOperations::KEY_USER_CAPABILITIES,
+        //             &[],
+        //             Some("Select delegated capabilities"))?;
+        //     },
+        //     UserType::Auditor => new_key.capabilities = self.ui.select_object_capabilities(
+        //         &AuthenticationOperations::AUDITOR_CAPABILITIES,
+        //         &[ObjectCapability::GetLogEntries],
+        //         None)?,
+        //     UserType::BackupAdmin => {
+        //         let current_authkey_delegated = get_delegated_capabilities(current_authkey);
+        //         new_key.capabilities = self.ui.select_object_capabilities(
+        //             &current_authkey_delegated,
+        //             &current_authkey_delegated,
+        //             None)?;
+        //         new_key.delegated_capabilities = self.ui.select_object_capabilities(
+        //             &current_authkey_delegated,
+        //             &current_authkey_delegated,
+        //             Some("Select delegated capabilities"))?;
+        //     },
+        // };
         Ok(new_key)
     }
 }

@@ -19,7 +19,7 @@ use yubihsmrs::Session;
 use crate::ui::helper_operations::{delete_objects, display_object_properties, generate_object, import_object, list_objects};
 use crate::ui::helper_operations::display_menu_headers;
 use crate::traits::ui_traits::YubihsmUi;
-use crate::traits::backend_traits::YubihsmOperations;
+use crate::traits::operation_traits::YubihsmOperations;
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::types::{MgmCommandType, SelectionItem};
 use crate::hsm_operations::wrap::WrapOperations;

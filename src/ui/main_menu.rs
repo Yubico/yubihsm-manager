@@ -26,7 +26,7 @@ use crate::ui::auth_menu::AuthenticationMenu;
 use crate::ui::asym_menu::AsymmetricMenu;
 use crate::ui::helper_operations::{list_objects, delete_objects, display_menu_headers, generate_object};
 use crate::cli::cmdline::Cmdline;
-use crate::traits::backend_traits::YubihsmOperations;
+use crate::traits::operation_traits::YubihsmOperations;
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::sym::SymmetricOperations;
 use crate::hsm_operations::wrap::WrapOperations;
