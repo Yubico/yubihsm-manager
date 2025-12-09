@@ -44,7 +44,7 @@ macro_rules! unwrap_or_exit1 {
         match $e {
             Ok(x) => x,
             Err(err) => {
-                YubihsmUi::display_error_message(&Cmdline, format!("{}. {}", $msg, err).as_str())?;
+                YubihsmUi::display_error_message(&Cmdline, format!("{}. {}", $msg, err).as_str());
                 std::process::exit(1);
             },
         }
@@ -56,6 +56,10 @@ const YH_EC_P256_PUBKEY_LEN: usize = 65;
 pub static MAIN_HEADER: &str = "YubiHSM Manager";
 
 fn main() -> Result<(), MgmError>{
+
+    let ui = Cmdline::new();
+
+
     let matches = clap::Command::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
@@ -98,7 +102,7 @@ fn main() -> Result<(), MgmError>{
         .get_matches();
 
     let Some(connector) = matches.get_one::<String>("connector") else {
-        YubihsmUi::display_error_message(&Cmdline, "Failed to read connector value")?;
+        YubihsmUi::display_error_message(&ui, "Failed to read connector value");
         std::process::exit(1);
     };
 
@@ -124,26 +128,30 @@ fn main() -> Result<(), MgmError>{
     } else {
         1
     };
-    YubihsmUi::display_info_message(&Cmdline, format!("Using authentication key 0x{:04x}", authkey).as_str())?;
+    YubihsmUi::display_info_message(&ui, format!("Using authentication key 0x{:04x}", authkey).as_str());
 
     let session =
     if matches.contains_id("privkey") {
         let filename = if let Some(f) = matches.get_one::<String>("privkey") {
             f.to_owned()
         } else {
-            YubihsmUi::display_error_message(&Cmdline, "Unable to read private key file name")?;
+            YubihsmUi::display_error_message(&ui, "Unable to read private key file name");
             std::process::exit(1);
         };
 
         if pem_private_ecp256_file_validator(&filename).is_err() {
-            YubihsmUi::display_error_message(&Cmdline, "Private key in PEM file is not a private EC P256 key")?;
+            YubihsmUi::display_error_message(&ui, "Private key in PEM file is not a private EC P256 key");
             std::process::exit(1);
         }
 
-        let (_, _, privkey) = AsymmetricOperations::parse_asym_pem(get_pem_from_file(&filename)?[0].clone())?;
+        let pems = get_pem_from_file(&filename)?;
+        if pems.len() > 1 {
+            YubihsmUi::display_warning(&ui, "Warning!! More than one PEM object found in file. Only the first object is read");
+        }
+        let (_, _, privkey) = AsymmetricOperations::parse_asym_pem(pems[0].clone())?;
         let device_pubkey = h.get_device_pubkey()?;
         if device_pubkey.len() != YH_EC_P256_PUBKEY_LEN {
-            YubihsmUi::display_error_message(&Cmdline, "Wrong length of device public key")?;
+            YubihsmUi::display_error_message(&ui, "Wrong length of device public key");
             std::process::exit(1);
         }
         unwrap_or_exit1!(h.establish_session_asym(authkey, privkey.as_slice(), device_pubkey.as_slice()), "Unable to open asymmetric session")
@@ -151,28 +159,33 @@ fn main() -> Result<(), MgmError>{
         let password = if let Some(pwd) = matches.get_one::<String>("password") {
             pwd.to_owned()
         } else {
-            YubihsmUi::get_password(&Cmdline, "Enter authentication password:", false)?
+            YubihsmUi::get_password(&ui, "Enter authentication password:", false)?
         };
+
+        if authkey == 1 && password == "password" {
+            YubihsmUi::display_warning(&ui, "Warning!! Opening a session using default authentication key and default password. It is strongly recommended to change default credentials");
+        }
         unwrap_or_exit1!(h.establish_session(authkey, &password, true), "Unable to open session")
     };
+
 
     let authkey = session.get_object_info(authkey, ObjectType::AuthenticationKey)?;
 
     match matches.subcommand() {
         Some(subcommand) => {
             match subcommand.0 {
-                "asym" => AsymmetricMenu::new(Cmdline).exec_command(&session, &authkey),
-                "sym" => SymmetricMenu::new(Cmdline).exec_command(&session, &authkey),
-                "auth" => AuthenticationMenu::new(Cmdline).exec_command(&session, &authkey),
-                "wrap" => WrapMenu::new(Cmdline).exec_command(&session, &authkey),
-                "ksp" => Ksp::new(Cmdline).guided_setup(&session, &authkey),
-                "sunpkcs11" => JavaMenu::new(Cmdline).exec_command(&session, &authkey),
-                "reset" => DeviceMenu::new(Cmdline).reset(&session),
+                "asym" => AsymmetricMenu::new(ui).exec_command(&session, &authkey),
+                "sym" => SymmetricMenu::new(ui).exec_command(&session, &authkey),
+                "auth" => AuthenticationMenu::new(ui).exec_command(&session, &authkey),
+                "wrap" => WrapMenu::new(ui).exec_command(&session, &authkey),
+                "ksp" => Ksp::new(ui).guided_setup(&session, &authkey),
+                "sunpkcs11" => JavaMenu::new(ui).exec_command(&session, &authkey),
+                "reset" => DeviceMenu::new(ui).reset(&session),
                 _ => unreachable!(),
             }
         },
         None => {
-            MainMenu::new(Cmdline).exec_command(&session, &authkey)
+            MainMenu::new(ui).exec_command(&session, &authkey)
         }
     }
 }

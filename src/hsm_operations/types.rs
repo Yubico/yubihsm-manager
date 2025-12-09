@@ -134,28 +134,13 @@ impl NewObjectSpec {
         // format!("{:?}", self.algorithm)
     }
     pub fn get_domains_str(&self) -> String {
-        let mut dom_str = String::new().to_owned();
-        self.domains.iter().for_each(|domain| dom_str.push_str(format!("{},", domain).as_str()));
-        if !dom_str.is_empty() {
-            dom_str.pop();
-        }
-        dom_str
+        self.domains.iter().map(|d| format!("{}", d)).collect::<Vec<String>>().join(",")
     }
     pub fn get_capabilities_str(&self) -> String {
-        let mut caps_str = String::new().to_owned();
-        self.capabilities.iter().for_each(|cap| caps_str.push_str(format!("{:?},", cap).as_str()));
-        if !caps_str.is_empty() {
-            caps_str.pop();
-        }
-        caps_str
+        self.capabilities.iter().map(|c| format!("{:?}", c)).collect::<Vec<String>>().join(",")
     }
     pub fn get_delegated_capabilities_str(&self) -> String {
-        let mut caps_str = String::new().to_owned();
-        self.delegated_capabilities.iter().for_each(|cap| caps_str.push_str(format!("{:?},", cap).as_str()));
-        if !caps_str.is_empty() {
-            caps_str.pop();
-        }
-        caps_str
+        self.delegated_capabilities.iter().map(|c| format!("{:?}", c)).collect::<Vec<String>>().join(",")
     }
 }
 
@@ -182,7 +167,7 @@ pub enum MgmCommandType {
     SetupUser,
     SetupAdmin,
     SetupAuditor,
-    SetupBackupAdmin,
+    SetupCustomUser,
     SignAttestationCert,
     ExportWrapped,
     ImportWrapped,

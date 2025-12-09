@@ -31,6 +31,8 @@ pub enum MgmError {
     HexError(hex::FromHexError),
     /// Unexpected or unsupported parameter
     InvalidInput(String),
+    /// Unexpected or unsupported parameter
+    UIError(String),
     /// Generic Error
     Error(String),
 }
@@ -44,6 +46,7 @@ impl fmt::Display for MgmError {
             MgmError::PemError(err) => err.fmt(f),
             MgmError::HexError(err) => err.fmt(f),
             MgmError::InvalidInput(param) => write!(f, "Unsupported or unrecognized value: {}", param),
+            MgmError::UIError(param) => write!(f, "{}", param),
             MgmError::Error(param) => write!(f, "{}", param),
         }
     }
@@ -70,6 +73,7 @@ impl error::Error for MgmError {
             MgmError::PemError(err) => Some(err),
             MgmError::HexError(err) => Some(err),
             MgmError::InvalidInput(_) => None,
+            MgmError::UIError(_) => None,
             MgmError::Error(_) => None,
         }
     }

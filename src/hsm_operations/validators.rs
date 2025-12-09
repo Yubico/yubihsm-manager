@@ -68,7 +68,10 @@ pub fn hex_validator(input: &str) -> Result<(), MgmError> {
 }
 
 pub fn aes_key_validator(input: &str) -> Result<(), MgmError> {
-    let key_bytes = hex::decode(input)?;
+    let key_bytes = match hex::decode(input) {
+        Ok(bytes) => bytes,
+        Err(_) => return Err(MgmError::InvalidInput("AES key not in HEX format".to_string())),
+    };
     match key_bytes.len() {
         16 | 24 | 32 => Ok(()),
         _ => Err(MgmError::InvalidInput("AES key must be 16, 24, or 32 bytes long".to_string())),
@@ -76,7 +79,10 @@ pub fn aes_key_validator(input: &str) -> Result<(), MgmError> {
 }
 
 pub fn aes_operation_input_validator(input: &str) -> Result<(), MgmError> {
-    let data_bytes = hex::decode(input)?;
+    let data_bytes = match hex::decode(input) {
+        Ok(bytes) => bytes,
+        Err(_) => return Err(MgmError::InvalidInput("Input not in HEX format".to_string())),
+    };
     match data_bytes.len() % 16 {
         0 => Ok(()),
         _ => Err(MgmError::InvalidInput("Input data must be a multiple of 16 bytes long".to_string())),
@@ -84,19 +90,14 @@ pub fn aes_operation_input_validator(input: &str) -> Result<(), MgmError> {
 }
 
 pub fn iv_validator(input: &str) -> Result<(), MgmError> {
-    let iv_bytes = hex::decode(input)?;
+    let iv_bytes = match hex::decode(input) {
+        Ok(bytes) => bytes,
+        Err(_) => return Err(MgmError::InvalidInput("IV not in HEX format".to_string())),
+    };
     match iv_bytes.len() {
         16 => Ok(()),
         _ => Err(MgmError::InvalidInput("IV must be 16 bytes long".to_string())),
     }
-}
-
-fn get_validated_pem_content(input: &str) -> Result<Pem, MgmError> {
-    if !std::path::Path::new(input).exists() {
-        return Err(MgmError::InvalidInput("File does not exist".to_string()));
-    }
-    let content = std::fs::read_to_string(input)?;
-    Ok(pem::parse(content)?)
 }
 
 pub fn pem_file_validator(input: &str) -> Result<(), MgmError> {
@@ -106,58 +107,87 @@ pub fn pem_file_validator(input: &str) -> Result<(), MgmError> {
     }
 }
 
-pub fn pem_certificate_file_validator(input: &str) -> Result<(), MgmError> {
-    let pem = get_validated_pem_content(input)?;
-    let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
+pub fn pem_certificate_file_validator(input: &str, required: bool) -> Result<(), MgmError> {
+    if input.is_empty() && !required {
+        return Ok(());
+    }
+    let pem = get_validated_pem_content(input)?[0].to_owned();
+    let (_, _algo, _) = AsymmetricOperations::parse_asym_pem(pem)?;
     if _algo != ObjectAlgorithm::OpaqueX509Certificate {
-        return Err(MgmError::InvalidInput("PEM content is not an X509Certificate".to_string()));
+        return Err(MgmError::InvalidInput("Found PEM object is not an X509Certificate".to_string()));
+    }
+    Ok(())
+}
+
+pub fn pem_private_key_file_validator(input: &str) -> Result<(), MgmError> {
+    let pem = get_validated_pem_content(input)?[0].to_owned();
+    let (_type, _, _) = AsymmetricOperations::parse_asym_pem(pem)?;
+    if _type != ObjectType::AsymmetricKey {
+        return Err(MgmError::InvalidInput("Found PEM object is not an asymmetric private key".to_string()));
     }
     Ok(())
 }
 
 pub fn pem_public_eckey_file_validator(input: &str) -> Result<(), MgmError> {
-    let pem = get_validated_pem_content(input)?;
-    let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
+    let pem = get_validated_pem_content(input)?[0].to_owned();
+    let (_type, _algo, _) = AsymmetricOperations::parse_asym_pem(pem)?;
     if _type != ObjectType::PublicKey || !AsymmetricOperations::is_ec_key_algorithm(&_algo) {
-        return Err(MgmError::InvalidInput("PEM is not a public EC key".to_string()));
+        return Err(MgmError::InvalidInput("Found PEM object is not a public EC key".to_string()));
     }
     Ok(())
 }
 
 pub fn pem_public_ecp256_file_validator(input: &str) -> Result<(), MgmError> {
-    let pem = get_validated_pem_content(input)?;
-    let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
+    let pem = get_validated_pem_content(input)?[0].to_owned();
+    let (_type, _algo, _) = AsymmetricOperations::parse_asym_pem(pem)?;
     if _type != ObjectType::PublicKey || _algo != ObjectAlgorithm::EcP256 {
-        return Err(MgmError::InvalidInput("PEM is not a public ECP256 key".to_string()));
+        return Err(MgmError::InvalidInput("Found PEM object is not a public ECP256 key".to_string()));
     }
     Ok(())
 }
 
 pub fn pem_private_ecp256_file_validator(input: &str) -> Result<(), MgmError> {
-    let pem = get_validated_pem_content(input)?;
-    let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
+    let pem = get_validated_pem_content(input)?[0].to_owned();
+    let (_type, _algo, _) = AsymmetricOperations::parse_asym_pem(pem)?;
     if _type != ObjectType::AsymmetricKey || _algo != ObjectAlgorithm::EcP256 {
-        return Err(MgmError::InvalidInput("PEM is not a private ECP256 key".to_string()));
+        return Err(MgmError::InvalidInput("Found PEM object is not a private ECP256 key".to_string()));
     }
     Ok(())
 }
 
 pub fn pem_private_rsa_file_validator(input: &str) -> Result<(), MgmError> {
-    let pem = get_validated_pem_content(input)?;
-    let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
-    if _type != ObjectType::AsymmetricKey || AsymmetricOperations::is_rsa_key_algorithm(&_algo) {
-        return Err(MgmError::InvalidInput("PEM is not a private RSA key".to_string()));
+    let pem = get_validated_pem_content(input)?[0].to_owned();
+    let (_type, _algo, _) = AsymmetricOperations::parse_asym_pem(pem)?;
+    if _type != ObjectType::AsymmetricKey || !AsymmetricOperations::is_rsa_key_algorithm(&_algo) {
+        return Err(MgmError::InvalidInput("Found PEM object is not a private RSA key".to_string()));
     }
     Ok(())
 }
 
 pub fn pem_public_rsa_file_validator(input: &str) -> Result<(), MgmError> {
-    let pem = get_validated_pem_content(input)?;
-    let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
-    if _type != ObjectType::PublicKey || AsymmetricOperations::is_rsa_key_algorithm(&_algo) {
-        return Err(MgmError::InvalidInput("PEM is not a public RSA key".to_string()));
+    let pem = get_validated_pem_content(input)?[0].to_owned();
+    let (_type, _algo, _) = AsymmetricOperations::parse_asym_pem(pem)?;
+    if _type != ObjectType::PublicKey || !AsymmetricOperations::is_rsa_key_algorithm(&_algo) {
+        return Err(MgmError::InvalidInput("Found PEM object is not a public RSA key".to_string()));
     }
     Ok(())
+}
+pub fn pem_sunpkcs11_file_validator(input: &str) -> Result<(), MgmError> {
+    let pems = get_validated_pem_content(input)?;
+    let mut privkey_found = false;
+    let mut cert_found = false;
+    for pem in pems {
+        let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem.clone())?;
+        if _type == ObjectType::AsymmetricKey {
+            privkey_found = true;
+        } else if _algo == ObjectAlgorithm::OpaqueX509Certificate {
+            cert_found = true;
+        }
+        if privkey_found && cert_found {
+            return Ok(())
+        }
+    }
+    Err(MgmError::InvalidInput("PEM file must contain both a private key and an X509Certificate".to_string()))
 }
 
 pub fn aes_share_validator(input: &str, share_length: Option<u8>) -> Result<(), MgmError> {
@@ -177,4 +207,18 @@ pub fn aes_share_validator(input: &str, share_length: Option<u8>) -> Result<(), 
     } else {
         Err(MgmError::InvalidInput("Share format is invalid".to_string()))
     }
+}
+
+// Helper functions
+
+fn get_validated_pem_content(input: &str) -> Result<Vec<Pem>, MgmError> {
+    if !std::path::Path::new(input).exists() {
+        return Err(MgmError::InvalidInput("File does not exist".to_string()));
+    }
+    let content = std::fs::read_to_string(input)?;
+    match pem::parse_many(content) {
+       Ok(pems) => Ok(pems),
+       Err(_) => Err(MgmError::InvalidInput("File is not a valid PEM".to_string())),
+    }
+
 }

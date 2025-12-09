@@ -56,12 +56,12 @@ pub enum MgmObjectType {
 impl Display for MgmObjectType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            MgmObjectType::Asymmetric => write!(f, "Asymmetric key"),
-            MgmObjectType::Symmetric => write!(f, "Symmetric key"),
-            MgmObjectType::Certificate => write!(f, "X509Certificate"),
-            MgmObjectType::Wrap => write!(f, "Wrap key"),
-            MgmObjectType::Authentication => write!(f, "Authentication key"),
-            MgmObjectType::Java => write!(f, "Special case: SunPKCS11 compatible key"),
+            MgmObjectType::Asymmetric => write!(f, "Asymmetric key operations"),
+            MgmObjectType::Symmetric => write!(f, "Symmetric key operations"),
+            MgmObjectType::Certificate => write!(f, "X509Certificate operations"),
+            MgmObjectType::Wrap => write!(f, "Wrap key operations"),
+            MgmObjectType::Authentication => write!(f, "Authentication key operations"),
+            MgmObjectType::Java => write!(f, "Special case: SunPKCS11 compatible key operations"),
             MgmObjectType::Ksp => write!(f, "Special case: KSP setup"),
 
         }
@@ -257,6 +257,9 @@ impl MainOperations {
         }
         if authkey.capabilities.contains(&ObjectCapability::PutWrapKey) {
             types.push(MgmObjectType::Wrap);
+        }
+        if authkey.capabilities.contains(&ObjectCapability::PutAuthenticationKey) {
+            types.push(MgmObjectType::Authentication);
         }
         types
     }

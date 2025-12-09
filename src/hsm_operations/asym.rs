@@ -239,10 +239,9 @@ impl AsymmetricOperations {
         ObjectCapability::ExportableUnderWrap,
         ObjectCapability::SignAttestationCertificate];
 
-    const ED_KEY_CAPABILITIES: [ObjectCapability; 3] = [
+    const ED_KEY_CAPABILITIES: [ObjectCapability; 2] = [
         ObjectCapability::SignEddsa,
-        ObjectCapability::ExportableUnderWrap,
-        ObjectCapability::SignAttestationCertificate];
+        ObjectCapability::ExportableUnderWrap];
 
     const OPAQUE_CAPABILITIES: [ObjectCapability; 1] = [
         ObjectCapability::ExportableUnderWrap];
@@ -577,6 +576,28 @@ impl AsymmetricOperations {
         let pem = Pem::try_from(pem_bytes.as_slice())?;
         Ok(pem)
     }
+    //
+    // pub fn parse_subject_dn_string(dn_string: &str) -> Result<X509Name, MgmError> {
+    //     // Ex: "CN=Test,O=Example,C=US"
+    //
+    //     let mut builder = X509NameBuilder::new()?;
+    //
+    //     // Split by comma, but be careful with escaped commas
+    //     for component in dn_string.split(',') {
+    //         let component = component.trim();
+    //
+    //         // Split by '=' to get key and value
+    //         if let Some((key, value)) = component.split_once('=') {
+    //             let key = key.trim();
+    //             let value = value.trim();
+    //             builder.append_entry_by_text(key, value)?;
+    //         } else {
+    //             return Err(MgmError::InvalidInput(format!("Invalid DN component: {}", component)));
+    //         }
+    //     }
+    //
+    //     Ok(builder.build())
+    // }
 
 
 //----------------------------------------------------------
@@ -719,7 +740,8 @@ impl YubihsmOperations for JavaOps {
                 session.delete_object(key_id, ObjectType::AsymmetricKey)?;
                 Err(MgmError::from(e))
             }
-        }    }
+        }
+    }
 
     fn import(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError> {
         Self::check_free_id(session, spec.id)?;

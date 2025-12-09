@@ -74,8 +74,14 @@ pub fn get_op_keys(
     op_key_capabilities: &[ObjectCapability],
     op_key_type: ObjectType,
     op_key_algorithms: Option<&[ObjectAlgorithm]>) -> Result<Vec<ObjectDescriptor>, MgmError> {
+
     let mut caps = op_key_capabilities.to_vec();
     caps.retain(|c| authkey.capabilities.contains(c));
+    if caps.is_empty() {
+        let caps_str = op_key_capabilities.iter().map(|c| format!("{:?}", c)).collect::<Vec<String>>().join(", ");
+        return Err(MgmError::Error(
+            format!("Authentication key does not have required capabilities. Operation requires one of the capabilities: {}", caps_str)));
+    }
 
     let keys = session.list_objects_with_filter(
         0,
@@ -83,10 +89,21 @@ pub fn get_op_keys(
         "",
         ObjectAlgorithm::ANY,
         &caps)?;
+    if keys.is_empty() {
+        let caps_str = caps.iter().map(|c| format!("{:?}", c)).collect::<Vec<String>>().join(", ");
+        return Err(MgmError::Error(
+            format!("No {} key with the required capabilities was found. Key must have one of the capabilities: {}", op_key_type, caps_str)));
+    }
+
     let mut keys = get_object_descriptors(session, &keys)?;
 
-    if let Some(item) = op_key_algorithms {
-        keys.retain(|desc| item.contains(&desc.algorithm));
+    if let Some(algo) = op_key_algorithms {
+        keys.retain(|desc| algo.contains(&desc.algorithm));
+        if keys.is_empty() {
+            let algo_str = algo.iter().map(|a| format!("{:?}", a)).collect::<Vec<String>>().join(", ");
+            return Err(MgmError::Error(
+                format!("No {} key with the required algorithms was found. Key must have one of the algorithms: {}", op_key_type, algo_str)));
+        }
     }
     Ok(keys)
 }

@@ -16,7 +16,7 @@
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain};
 use crate::hsm_operations::error::MgmError;
-use crate::hsm_operations::types::{MgmCommand, SelectionItem, NewObjectSpec};
+use crate::hsm_operations::types::{MgmCommand, SelectionItem};
 use crate::hsm_operations::algorithms::MgmAlgorithm;
 
 pub trait YubihsmUi {
@@ -57,12 +57,14 @@ pub trait YubihsmUi {
                                     prompt: Option<&str>) -> Result<Vec<T>, MgmError>;
 
 
-    fn get_string_input(&self, prompt: &str, required: bool) -> Result<String, MgmError>;
+    fn get_string_input(&self, prompt: &str, required: bool, default_value: Option<&str>, placeholder: Option<&str>) -> Result<String, MgmError>;
     fn get_integer_input(&self, prompt: &str, required: bool, default: Option<usize>, placeholder: Option<&str>, min: usize, max: usize) -> Result<usize, MgmError>;
     fn get_path_input(&self, prompt: &str, required: bool, default: Option<&str>, placeholder: Option<&str>) -> Result<String, MgmError>;
 
     fn get_pem_filepath(&self, prompt: &str, required: bool, place_holder: Option<&str>) -> Result<String, MgmError>;
     fn get_certificate_filepath(&self, prompt: &str, required: bool, place_holder: Option<&str>) -> Result<String, MgmError>;
+    fn get_asymmetric_import_filepath(&self, prompt: &str, place_holder: Option<&str>) -> Result<String, MgmError>;
+    fn get_sunpkcs11_import_filepath(&self, prompt: &str, place_holder: Option<&str>) -> Result<String, MgmError>;
     fn get_public_eckey_filepath(&self, prompt: &str) -> Result<String, MgmError>;
     fn get_public_ecp256_filepath(&self, prompt: &str) -> Result<String, MgmError>;
     fn get_private_rsa_filepath(&self, prompt: &str) -> Result<String, MgmError>;
@@ -76,29 +78,21 @@ pub trait YubihsmUi {
     fn get_split_aes_share(&self, prompt: &str, share_length: Option<u8>) -> Result<String, MgmError>;
 
 
-    fn display_objects_basic(&self, objects: &[ObjectDescriptor]) -> Result<(), MgmError>;
-    fn display_objects_full(&self, objects: &[ObjectDescriptor]) -> Result<(), MgmError>;
-    fn display_objects_spec(&self, objects: &[NewObjectSpec]) -> Result<(), MgmError>;
+    fn display_objects_list(&self, objects: &[ObjectDescriptor]);
+    fn display_objects_properties(&self, objects: &[ObjectDescriptor]);
 
-    fn display_success_message(&self, message: &str) -> Result<(), MgmError>;
-    fn display_info_message(&self, message: &str) -> Result<(), MgmError>;
-    fn display_note(&self, header: &str, note: &str) -> Result<(), MgmError>;
-    fn display_warning(&self, message: &str) -> Result<(), MgmError>;
-    fn display_error_message(&self, message: &str) -> Result<(), MgmError>;
+    fn display_success_message(&self, message: &str);
+    fn display_info_message(&self, message: &str);
+    fn display_note(&self, header: &str, note: &str);
+    fn display_warning(&self, message: &str);
+    fn display_error_message(&self, message: &str);
     fn get_confirmation(&self, prompt: &str) -> Result<bool, MgmError>;
     fn get_warning_confirmation(&self, warning_message: &str) -> Result<bool, MgmError>;
     fn get_note_confirmation(&self, prompt: &str,  message: &str) -> Result<bool, MgmError>;
 
-    fn clear_screen(&self) -> Result<(), MgmError>;
-    fn start_spinner(&self, message: Option<&str>) -> Box<dyn SpinnerHandler>;
-    fn stop_spinner(&self, spinner_handler: Box<dyn SpinnerHandler>, message: Option<&str>);
-    // fn start_progress(&self, message: Option<&str>) -> Box<dyn ProgressBarHandler>;
-    // fn stop_progress(&self, progress_handler: Box<dyn ProgressBarHandler>, message: Option<&str>);
-}
-
-pub trait SpinnerHandler {
-    fn start(&mut self, message: Option<&str>);
-    fn stop(&mut self, success_message: Option<&str>);
+    fn clear_screen(&self);
+    fn start_progress(&self, message: Option<&str>) -> Box<dyn ProgressBarHandler>;
+    fn stop_progress(&self, progress_handler: Box<dyn ProgressBarHandler>, message: Option<&str>);
 }
 
 pub trait ProgressBarHandler {
