@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use yubihsmrs::object::{ObjectCapability, ObjectDescriptor, ObjectOrigin, ObjectType};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectOrigin, ObjectType};
 use yubihsmrs::Session;
 use crate::ui::helper_operations::{delete_objects, display_object_properties, generate_object, import_object, list_objects};
 use crate::ui::helper_operations::display_menu_headers;
@@ -24,7 +24,7 @@ use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::types::{MgmCommandType, SelectionItem};
 use crate::hsm_operations::wrap::WrapOperations;
 use crate::hsm_operations::asym::{AsymmetricOperations, AttestationType};
-use crate::ui::helper_io::{get_hex_or_bytes_from_file, get_pem_from_file, get_string_or_bytes_from_file, write_bytes_to_file};
+use crate::ui::helper_io::{get_hex_or_bytes_from_file, get_pem_from_file, get_string_or_bytes_from_file, write_bytes_to_file, get_path};
 
 static ASYM_HEADER: &str = "Asymmetric keys";
 
@@ -64,21 +64,24 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
             };
 
             if let Err(e) = res {
-                self.ui.display_error_message(e.to_string().as_str())?
+                self.ui.display_error_message(e.to_string().as_str())
             }
         }
     }
 
     pub fn import(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        let filepath = self.ui.get_pem_filepath(
+        let filepath = self.ui.get_asymmetric_import_filepath(
             "Enter path to PEM file containing private key or X509Certificate:",
-            true,
             None)?;
-        let pem = get_pem_from_file(&filepath)?[0].clone();
+        let pem = get_pem_from_file(&filepath)?;
+        if pem.len() > 1 {
+            self.ui.display_warning("PEM file contains multiple objects, only the first one is read");
+        }
+        let pem = pem[0].to_owned();
         let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
 
         if _type != ObjectType::AsymmetricKey && _type != ObjectType::Opaque {
-            return Err(MgmError::InvalidInput("PEM file contains neither a private key nor an X509 certificate".to_string()));
+            return Err(MgmError::InvalidInput("File does not contain a private key nor an X509 certificate".to_string()));
         }
 
         import_object(&self.ui, &AsymmetricOperations, session, authkey, _type, _algo, [_bytes].to_vec())
@@ -97,12 +100,15 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
         let key = self.ui.select_one_object(&keys, Some("Select key"))?;
 
         let pubkey = AsymmetricOperations::get_pubkey(session, key.id, key.object_type)?;
-        self.ui.display_success_message(pubkey.to_string().as_str())?;
+        self.ui.display_success_message(pubkey.to_string().as_str());
 
         if self.ui.get_confirmation("Write to file?")? {
-            let filename = format!("0x{:04x}.pubkey.pem", key.id);
-            if let Err(err) = write_bytes_to_file(&self.ui, &pubkey.to_string().into_bytes(), filename.as_str(), None) {
-                self.ui.display_error_message(format!("Failed to write public key 0x{:04x} to file. {}", key.id, err).as_str())?;
+            let filename = get_path(&self.ui,
+                                    "Enter path to file to write public key to:",
+                                    false,
+                                    format!("./0x{:04x}.pubkey.pem", key.id).as_str())?;
+            if let Err(err) = write_bytes_to_file(&self.ui, &pubkey.to_string().into_bytes(), filename.as_str()) {
+                self.ui.display_error_message(format!("Failed to write public key 0x{:04x} to file. {}", key.id, err).as_str());
             }
         }
         Ok(())
@@ -113,12 +119,15 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
         let cert = self.ui.select_one_object(&certs, Some("Select certificate(s):"))?;
 
         let cert_pem = AsymmetricOperations::get_certificate(session, cert.id)?;
-        self.ui.display_success_message(cert_pem.to_string().as_str())?;
+        self.ui.display_success_message(cert_pem.to_string().as_str());
 
         if self.ui.get_confirmation("Write to file?")? {
-            let filename = format!("0x{:04x}.cert.pem", cert.id);
-            if let Err(err) = write_bytes_to_file(&self.ui, &cert_pem.to_string().into_bytes(), filename.as_str(), None) {
-                self.ui.display_error_message(format!("Failed to write certificate 0x{:04x} to file. {}", cert.id, err).as_str())?;
+            let filename = get_path(&self.ui,
+                                    "Enter path to file to write certificate to:",
+                                    false,
+                                    format!("./0x{:04x}.cert.pem", cert.id).as_str())?;
+            if let Err(err) = write_bytes_to_file(&self.ui, &cert_pem.to_string().into_bytes(), filename.as_str()) {
+                self.ui.display_error_message(format!("Failed to write certificate 0x{:04x} to file. {}", cert.id, err).as_str());
             }
         }
         Ok(())
@@ -126,21 +135,29 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
 
     fn sign(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let input = self.ui.get_string_input(
-            "Enter data to sign or absolut path to file containing data to sign", true)?;
+            "Enter data to sign or absolut path to file containing data to sign", true, None, None)?;
         let input = get_string_or_bytes_from_file(&self.ui, input)?;
 
         let key = self.ui.select_one_object(
             &AsymmetricOperations::get_signing_keys(session, authkey)?,
             Some("Select signing key"))?;
 
-        let sign_algo = self.ui.select_algorithm(
-            &AsymmetricOperations::get_signing_algorithms(authkey, &key), None, Some("Select RSA signing algorithm"))?;
+        let sign_algo = if key.algorithm == ObjectAlgorithm::Ed25519 {
+            ObjectAlgorithm::Ed25519
+        } else {
+            self.ui.select_algorithm(
+                &AsymmetricOperations::get_signing_algorithms(authkey, &key), None, Some("Select RSA signing algorithm"))?
+        };
         let sig = AsymmetricOperations::sign(session, key.id, &sign_algo, &input)?;
-        self.ui.display_success_message(format!("Signed data using {} and key 0x{:04x}:\n{}", sign_algo, key.id, hex::encode(&sig)).as_str())?;
+        self.ui.display_success_message(format!("Signed data using {} and key 0x{:04x}:\n{}", sign_algo, key.id, hex::encode(&sig)).as_str());
 
         if self.ui.get_confirmation("Write to binary file?")? {
-            if let Err(err) = write_bytes_to_file(&self.ui, &sig, "data.sig", None) {
-                self.ui.display_error_message(format!("Failed to write signature to file. {}", err).as_str())?;
+            let filename = get_path(&self.ui,
+                                    "Enter path to file to write signature to:",
+                                    false,
+                                    "./data.sig")?;
+            if let Err(err) = write_bytes_to_file(&self.ui, &sig, filename.as_str()) {
+                self.ui.display_error_message(format!("Failed to write signature to file. {}", err).as_str());
             }
         }
         Ok(())
@@ -148,7 +165,7 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
 
     fn decrypt(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let enc = self.ui.get_string_input(
-            "Enter data to decrypt in Hex format or absolut path to binary file", true)?;
+            "Enter data to decrypt in Hex format or absolut path to binary file", true, None, None)?;
         let enc = get_hex_or_bytes_from_file(&self.ui, enc)?;
 
         let key = self.ui.select_one_object(
@@ -160,15 +177,19 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
             Some("Select RSA decryption algorithm"))?;
 
         let data = AsymmetricOperations::decrypt(session, key.id, &algorithm, &enc)?;
-        self.ui.display_success_message(format!("Decrypted data using {} and key 0x{:04x}", algorithm, key.id).as_str())?;
+        self.ui.display_success_message(format!("Decrypted data using {} and key 0x{:04x}", algorithm, key.id).as_str());
 
         if let Ok(data_str) = std::str::from_utf8(data.as_slice()) {
-            self.ui.display_success_message(format!("Plain text data:\n{}", data_str).as_str())?;
+            self.ui.display_success_message(format!("Plain text data:\n{}", data_str).as_str());
         }
 
         if self.ui.get_confirmation("Write to binary file?")? {
-            if let Err(err) = write_bytes_to_file(&self.ui, &data, "data.dec", None) {
-                self.ui.display_error_message(format!("Failed to write decrypted data to file. {}", err).as_str())?;
+            let filename = get_path(&self.ui,
+                                    "Enter path to file to write decrypted data to:",
+                                    false,
+                                    "./data.dec")?;
+            if let Err(err) = write_bytes_to_file(&self.ui, &data, filename.as_str()) {
+                self.ui.display_error_message(format!("Failed to write decrypted data to file. {}", err).as_str());
             }
         }
         Ok(())
@@ -181,10 +202,15 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
 
         let peer_key = self.ui.get_public_eckey_filepath(
             "Enter path to PEM file containing the peer public key:")?;
-        let peer_key = get_pem_from_file(&peer_key)?[0].clone();
+
+        let peer_key = get_pem_from_file(&peer_key)?;
+        if peer_key.len() > 1 {
+            self.ui.display_warning("PEM file contains multiple objects, only the first one is read");
+        }
+        let peer_key = peer_key[0].to_owned();
 
         let shared_secret = AsymmetricOperations::derive_ecdh(session, &hsm_key, peer_key)?;
-        self.ui.display_success_message(hex::encode(shared_secret).as_str())?;
+        self.ui.display_success_message(hex::encode(shared_secret).as_str());
 
         Ok(())
     }
@@ -243,7 +269,11 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
                 let template_cert = if template_file.is_empty() {
                     None
                 } else {
-                    Some(get_pem_from_file(&template_file)?[0].clone())
+                    let pems = get_pem_from_file(&template_file)?;
+                    if pems.len() > 1 {
+                        self.ui.display_warning("PEM file contains multiple objects, only the first one is read");
+                    }
+                    Some(pems[0].to_owned())
                 };
 
                 (attested_key.id, attesting_key.id, template_cert)
@@ -251,12 +281,15 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
         };
 
         let cert = AsymmetricOperations::get_attestation_cert(session, attested_key, attesting_key, template_cert)?;
-        self.ui.display_success_message(cert.to_string().as_str())?;
+        self.ui.display_success_message(cert.to_string().as_str());
 
         if self.ui.get_confirmation("Write to file?")? {
-            let filename = format!("0x{:04x}.attestation_cert.pem", attested_key);
-            if let Err(err) = write_bytes_to_file(&self.ui, &cert.to_string().into_bytes(), filename.as_str(), None) {
-                self.ui.display_error_message(format!("Failed to write attestation certificate to file. {}", err).as_str())?;
+            let filename = get_path(&self.ui,
+                                    "Enter path to file to write attestation certificate to:",
+                                    false,
+                                    format!("./0x{:04x}.attestation_cert.pem", attested_key).as_str())?;
+            if let Err(err) = write_bytes_to_file(&self.ui, &cert.to_string().into_bytes(), filename.as_str()) {
+                self.ui.display_error_message(format!("Failed to write attestation certificate to file. {}", err).as_str());
             }
         }
         Ok(())

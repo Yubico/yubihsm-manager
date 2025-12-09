@@ -308,6 +308,10 @@ impl WrapOperations {
         let mut keys = Self::get_wrapkeys_by_type(session, WrapKeyType::Aes)?;
         keys.extend_from_slice(&Self::get_wrapkeys_by_type(session, WrapKeyType::RsaPublic)?);
         keys.retain(|k| k.capabilities.contains(&ObjectCapability::ExportWrapped));
+        if keys.is_empty() {
+            return Err(MgmError::Error(
+                format!("No wrap keys with {:?} capability were found", ObjectCapability::ExportWrapped)));
+        }
         Ok(keys)
     }
 
@@ -318,6 +322,10 @@ impl WrapOperations {
         let mut keys = Self::get_wrapkeys_by_type(session, WrapKeyType::Aes)?;
         keys.extend_from_slice(&Self::get_wrapkeys_by_type(session, WrapKeyType::Rsa)?);
         keys.retain(|k| k.capabilities.contains(&ObjectCapability::ImportWrapped));
+        if keys.is_empty() {
+            return Err(MgmError::Error(
+                format!("No wrap keys with {:?} capability were found", ObjectCapability::ImportWrapped)));
+        }
         Ok(keys)
     }
 

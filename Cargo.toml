@@ -29,16 +29,18 @@ clap = "4.5.26"
 serde = "1.0.164"
 pem = "2.0.1"
 openssl = "0.10.54"
-#openssl = { version = "0.10.54", features = ["vendored"] }
+x509-parser = "0.15.0"
 regex = "1.8.4"
 rusty_secrets = "0.0.2"
 hex = "0.4.3"
 base64 = "0.21.2"
 scan_dir = "0.3.3"
-#openssl-sys = "0.9.88"
-cliclack = "0.1.9"
+cliclack = "0.3.6"
+ctrlc = "3.4.0"
 console = "0.15.7"
-comfy-table = "7.0.1"
+shellexpand = "3.1.0"
+tabled = "0.12.2"
+crossterm = "0.26.1"
 
 
 [dependencies.yubihsmrs]

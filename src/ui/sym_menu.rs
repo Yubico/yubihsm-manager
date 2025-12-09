@@ -24,7 +24,7 @@ use crate::traits::operation_traits::YubihsmOperations;
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::types::{MgmCommandType, SelectionItem};
 use crate::hsm_operations::sym::{AesMode, AesOperationSpec, EncryptionMode, SymmetricOperations};
-use crate::ui::helper_io::{get_hex_or_bytes_from_file, write_bytes_to_file};
+use crate::ui::helper_io::{get_hex_or_bytes_from_file, write_bytes_to_file, get_path};
 
 static SYM_HEADER: &str = "Symmetric keys";
 
@@ -60,7 +60,7 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
             };
 
             if let Err(e) = res {
-                self.ui.display_error_message(e.to_string().as_str())?
+                self.ui.display_error_message(e.to_string().as_str())
             }
         }
     }
@@ -90,7 +90,7 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
 
 
         let in_data = self.ui.get_string_input(
-            "Enter data in hex or absolut path to binary file (data must be a multiple of 16 bytes long):", true)?;
+            "Enter data in hex or absolut path to binary file (data must be a multiple of 16 bytes long):", true, None, None)?;
         let in_data = get_hex_or_bytes_from_file(&self.ui, in_data)?;
         if in_data.len() % 16 != 0 {
             return Err(MgmError::InvalidInput("Input data must be a multiple of 16 bytes".to_string()))
@@ -111,12 +111,13 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
         };
         let out_data = SymmetricOperations::operate(session, op_spec)?;
 
-        self.ui.display_success_message(hex::encode(&out_data).as_str())?;
+        self.ui.display_success_message(hex::encode(&out_data).as_str());
 
         if self.ui.get_confirmation("Write to binary file?")? {
-            let filename = if enc_mode == EncryptionMode::Encrypt { "data.enc" } else { "data.dec" };
-            if let Err(err) = write_bytes_to_file(&self.ui, &out_data, filename, None) {
-                self.ui.display_error_message(format!("Failed to write binary data to file. {}", err).as_str())?;
+            let filename = if enc_mode == EncryptionMode::Encrypt { "./data.enc" } else { "./data.dec" };
+            let filename = get_path(&self.ui, "Enter output file:", false, filename)?;
+            if let Err(err) = write_bytes_to_file(&self.ui, &out_data, filename.as_str()) {
+                self.ui.display_error_message(format!("Failed to write binary data to file. {}", err).as_str());
             }
         }
 

@@ -70,7 +70,7 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
             };
 
             if let Err(e) = res {
-                self.ui.display_error_message(e.to_string().as_str())?
+                self.ui.display_error_message(e.to_string().as_str())
             }
         }
     }
@@ -104,7 +104,8 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
                 MainOperations::get_filtered_objects(session, FilterType::Label(label))?
             },
         };
-        self.ui.display_objects_full(&objects)
+        self.ui.display_objects_properties(&objects);
+        Ok(())
     }
 
     fn generate(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
@@ -131,6 +132,7 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
             MgmObjectType::Asymmetric | MgmObjectType::Certificate => AsymmetricMenu::new(Cmdline).import(session, authkey),
             MgmObjectType::Symmetric => SymmetricMenu::new(Cmdline).import(session, authkey),
             MgmObjectType::Wrap => WrapMenu::new(Cmdline).import(session, authkey),
+            MgmObjectType::Authentication => AuthenticationMenu::new(Cmdline).exec_command(session, authkey),
             _ => Ok(())
         }
     }

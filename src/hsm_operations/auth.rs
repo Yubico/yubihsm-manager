@@ -26,10 +26,10 @@ use crate::hsm_operations::common::{get_object_descriptors, get_delegated_capabi
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UserType {
     #[default]
-    AsymUser,
-    AsymAdmin,
+    KeyUser,
+    KeyAdmin,
     Auditor,
-    BackupAdmin,
+    CustomUser,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -68,15 +68,15 @@ impl YubihsmOperations for AuthenticationOperations {
             },
             MgmCommand {
                 command: MgmCommandType::SetupUser,
-                label: "Setup (a)symmetric keys user",
-                description: "Can only use (a)symmetric keys stored on the YubiHSM",
+                label: "Setup keys user",
+                description: "Can only use (a)symmetric keys and wrap keys stored on the YubiHSM",
                 required_capabilities: &[ObjectCapability::PutAuthenticationKey],
                 require_all_capabilities: false,
             },
             MgmCommand {
                 command: MgmCommandType::SetupAdmin,
-                label: "Setup (a)symmetric keys admin",
-                description: "Can only manage (a)symmetric keys stored on the YubiHSM",
+                label: "Setup keys admin",
+                description: "Can only manage (a)symmetric keys and wrap keys stored on the YubiHSM",
                 required_capabilities: &[ObjectCapability::PutAuthenticationKey],
                 require_all_capabilities: false,
             },
@@ -88,7 +88,7 @@ impl YubihsmOperations for AuthenticationOperations {
                 require_all_capabilities: false,
             },
             MgmCommand {
-                command: MgmCommandType::SetupBackupAdmin,
+                command: MgmCommandType::SetupCustomUser,
                 label: "Setup custom user",
                 description: "Can have all capabilities of the current user",
                 required_capabilities: &[ObjectCapability::PutAuthenticationKey],
@@ -158,7 +158,7 @@ impl YubihsmOperations for AuthenticationOperations {
 }
 
 impl AuthenticationOperations {
-    pub const KEY_USER_CAPABILITIES: [ObjectCapability; 13] = [
+    pub const KEY_USER_CAPABILITIES: [ObjectCapability; 15] = [
         ObjectCapability::SignPkcs,
         ObjectCapability::SignPss,
         ObjectCapability::SignEcdsa,
@@ -171,10 +171,12 @@ impl AuthenticationOperations {
         ObjectCapability::EncryptCbc,
         ObjectCapability::DecryptEcb,
         ObjectCapability::DecryptCbc,
+        ObjectCapability::ExportWrapped,
+        ObjectCapability::ImportWrapped,
         ObjectCapability::ExportableUnderWrap,
     ];
 
-    pub const KEY_ADMIN_CAPABILITIES: [ObjectCapability; 9] = [
+    pub const KEY_ADMIN_CAPABILITIES: [ObjectCapability; 12] = [
         ObjectCapability::GenerateAsymmetricKey,
         ObjectCapability::PutAsymmetricKey,
         ObjectCapability::DeleteAsymmetricKey,
@@ -183,6 +185,9 @@ impl AuthenticationOperations {
         ObjectCapability::GenerateSymmetricKey,
         ObjectCapability::PutSymmetricKey,
         ObjectCapability::DeleteSymmetricKey,
+        ObjectCapability::GenerateWrapKey,
+        ObjectCapability::PutWrapKey,
+        ObjectCapability::DeleteWrapKey,
         ObjectCapability::ExportableUnderWrap,
     ];
 
@@ -194,13 +199,13 @@ impl AuthenticationOperations {
     pub fn get_applicable_capabilities(authkey: &ObjectDescriptor, user_type: UserType) -> Vec<ObjectCapability> {
         let auth_delegated = get_delegated_capabilities(authkey);
         let mut caps = match user_type {
-            UserType::AsymUser => Self::KEY_USER_CAPABILITIES.to_vec(),
-            UserType::AsymAdmin => Self::KEY_ADMIN_CAPABILITIES.to_vec(),
+            UserType::KeyUser => Self::KEY_USER_CAPABILITIES.to_vec(),
+            UserType::KeyAdmin => Self::KEY_ADMIN_CAPABILITIES.to_vec(),
             UserType::Auditor => Self::AUDITOR_CAPABILITIES.to_vec(),
-            UserType::BackupAdmin => get_delegated_capabilities(authkey),
+            UserType::CustomUser => get_delegated_capabilities(authkey),
         };
 
-        if user_type != UserType::BackupAdmin {
+        if user_type != UserType::CustomUser {
             caps.retain(|c| auth_delegated.contains(c));
         }
         caps

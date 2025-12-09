@@ -27,7 +27,7 @@ use crate::hsm_operations::device::DeviceOperations;
 use crate::hsm_operations::sym::SymmetricOperations;
 use crate::hsm_operations::types::MgmCommandType;
 use crate::hsm_operations::wrap::{WrapKeyType, WrapOperations, WrapOpSpec, WrapType};
-use crate::ui::helper_io::write_bytes_to_file;
+use crate::ui::helper_io::{write_bytes_to_file, get_path};
 
 static DEVICE_HEADER: &str = "YubiHSM Device Operations";
 
@@ -59,7 +59,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
             };
 
             if let Err(e) = res {
-                self.ui.display_error_message(e.to_string().as_str())?
+                self.ui.display_error_message(e.to_string().as_str())
             }
         }
     }
@@ -73,7 +73,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
             1,
             2028)?;
         let bytes = DeviceOperations::get_random(session, n)?;
-        self.ui.display_success_message(hex::encode(bytes).to_string().as_str())?;
+        self.ui.display_success_message(hex::encode(bytes).to_string().as_str());
         Ok(())
     }
 
@@ -110,21 +110,17 @@ impl<T: YubihsmUi> DeviceMenu<T> {
                 Some("Select OAEP algorithm to use for wrapping"))?);
         }
 
-        let dir = self.ui.get_path_input(
-            "Enter path to backup directory:",
-            false,
-            Some("."),
-            Some("Default is current directory"))?;
+        let dir = get_path(&self.ui, "Enter path to backup directory:", true, "")?;
 
         let wrapped_objects = WrapOperations::export_wrapped(session, &wrap_op, &export_objects)?;
 
         for object in &wrapped_objects {
             if object.error.is_some() {
-                self.ui.display_error_message(format!("Failed to wrap {} with ID 0x{:04x}: {}. Skipping...", object.object_type, object.object_id, object.error.as_ref().unwrap()).as_str())?;
+                self.ui.display_error_message(format!("Failed to wrap {} with ID 0x{:04x}: {}. Skipping...", object.object_type, object.object_id, object.error.as_ref().unwrap()).as_str());
                 continue;
             }
-            let filename = format!("0x{:04x}-{}.yhw", object.object_id, object.object_type);
-            write_bytes_to_file(&self.ui, openssl::base64::encode_block(&object.wrapped_data).as_bytes(), filename.as_str(), Some(&dir))?;
+            let filename = format!("{}/0x{:04x}-{}.yhw", dir, object.object_id, object.object_type);
+            write_bytes_to_file(&self.ui, openssl::base64::encode_block(&object.wrapped_data).as_bytes(), filename.as_str())?;
         }
 
         Ok(())
@@ -148,13 +144,13 @@ impl<T: YubihsmUi> DeviceMenu<T> {
         }) {
             Ok(f) => f,
             Err(err) => {
-                self.ui.display_error_message(err.to_string().as_str())?;
+                self.ui.display_error_message(err.to_string().as_str());
                 return Err(MgmError::Error("Failed to read files".to_string()))
             }
         };
 
         if files.is_empty() {
-            self.ui.display_info_message(format!("No backup files were found in {}", dir).as_str())?;
+            self.ui.display_info_message(format!("No backup files were found in {}", dir).as_str());
             return Ok(())
         }
 
@@ -174,7 +170,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
         }
 
         for f in files {
-            self.ui.display_info_message(format!("reading {}", &f.display()).as_str())?;
+            self.ui.display_info_message(format!("reading {}", &f.display()).as_str());
             let mut file = File::open(&f)?;
 
             let mut wrap = String::new();
@@ -183,10 +179,10 @@ impl<T: YubihsmUi> DeviceMenu<T> {
             let res = WrapOperations::import_wrapped(session, &wrap_op, wrap, None);
             match res {
                 Ok(handle) => {
-                    self.ui.display_success_message(format!("Successfully imported object {}, with ID 0x{:04x}", handle.object_type, handle.object_id).as_str())?;
+                    self.ui.display_success_message(format!("Successfully imported object {}, with ID 0x{:04x}", handle.object_type, handle.object_id).as_str());
                 },
                 Err(e) => {
-                    self.ui.display_error_message(format!("Failed to import wrapped object from file {}: {}. Skipping...", f.display(), e).as_str())?;
+                    self.ui.display_error_message(format!("Failed to import wrapped object from file {}: {}. Skipping...", f.display(), e).as_str());
                 }
             }
         }
@@ -196,7 +192,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
     pub fn reset(&self, session: &Session) -> Result<(), MgmError> {
         if self.ui.get_warning_confirmation("All data will be deleted from the device and cannot be recovered.")? {
             DeviceOperations::reset_device(session)?;
-            self.ui.display_success_message("Device has been reset to factory defaults.")?;
+            self.ui.display_success_message("Device has been reset to factory defaults.");
         }
         Ok(())
     }

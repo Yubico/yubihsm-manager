@@ -59,48 +59,26 @@ impl<T: YubihsmUi> JavaMenu<T> {
             };
 
             if let Err(e) = res {
-                self.ui.display_error_message(e.to_string().as_str())?
+                self.ui.display_error_message(e.to_string().as_str())
             }
         }
     }
 
     fn import(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        let filepath = self.ui.get_pem_filepath(
-            "Enter absolute path to PEM file containing private key and/or X509Certificate (Only the first object of its type will be imported):",
-            true,
+        let filepath = self.ui.get_sunpkcs11_import_filepath(
+            "Enter absolute path to PEM file containing private key and X509Certificate (Only the first object of its type will be imported):",
             None)?;
-        let mut pems = get_pem_from_file(&filepath)?;
-
-        let object_algorithm;
-        let mut key_data: Vec<Vec<u8>> = Vec::new();
-        loop {
-            if let Ok((_algo, _value)) = Self::get_first_object_from_pem(pems.clone(), ObjectType::AsymmetricKey) {
-                object_algorithm = _algo;
-                key_data.push(_value);
-                break;
-            }
-            self.ui.display_error_message("No private key found in PEM file. Please try again or press ESC to go back to menu")?;
-            pems = get_pem_from_file(&self.ui.get_pem_filepath(
-                "Enter absolute path to PEM file containing a private key:",
-                true,
-                None)?)?;
+        let pems = get_pem_from_file(&filepath)?;
+        if pems.len() > 2 {
+            self.ui.display_warning("Warning!! More than two PEM objects found in file. Only the first private key and first X509Certificate will be imported");
         }
-        self.ui.display_info_message("Private key loaded from PEM file")?;
 
-        loop {
-            if let Ok((_, _value)) = Self::get_first_object_from_pem(pems.clone(), ObjectType::Opaque) {
-                key_data.push(_value);
-                break;
-            }
-            self.ui.display_error_message("No X509Certificate found in PEM file. Please try again or press ESC to go back to menu")?;
-            pems = get_pem_from_file(&self.ui.get_pem_filepath(
-                "Enter absolute path to PEM file containing an X509Certificate:",
-                true,
-                None)?)?;
-        }
-        self.ui.display_info_message("X509Certificate loaded from PEM file")?;
+        let (algo, key) = Self::get_first_object_from_pem(pems.clone(), ObjectType::AsymmetricKey)?;
+        self.ui.display_info_message("Private key loaded from PEM file");
+        let (_, cert) = Self::get_first_object_from_pem(pems.clone(), ObjectType::Opaque)?;
+        self.ui.display_info_message("X509Certificate loaded from PEM file");
 
-        import_object(&self.ui, &JavaOps, session, authkey, ObjectType::AsymmetricKey, object_algorithm, key_data)
+        import_object(&self.ui, &JavaOps, session, authkey, ObjectType::AsymmetricKey, algo, [key, cert].to_vec())
     }
 
     fn get_first_object_from_pem(pems: Vec<Pem>, object_type: ObjectType) -> Result<(ObjectAlgorithm, Vec<u8>), MgmError> {

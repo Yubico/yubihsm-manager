@@ -14,16 +14,44 @@
  * limitations under the License.
  */
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::str::FromStr;
-use comfy_table::{ContentArrangement, Table};
+use tabled::{Table, builder::Builder, settings::{Width, Modify, Style, object::Columns}};
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain};
 use crate::traits::ui_traits::YubihsmUi;
-use crate::traits::ui_traits::SpinnerHandler;
+use crate::traits::ui_traits::ProgressBarHandler;
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::common;
 use crate::hsm_operations::validators;
 use crate::hsm_operations::types::{MgmCommand, SelectionItem, NewObjectSpec};
 use crate::hsm_operations::algorithms::MgmAlgorithm;
+
+macro_rules! return_or_exit {
+    ( $e:expr) => {
+        match $e {
+            Ok(x) => x,
+            Err(err) => {
+                if CTRL_C_PRESSED.load(Ordering::SeqCst) {
+                    let _ = cliclack::outro_cancel("Exiting YubiHSM Manager!");
+                    std::process::exit(1);
+                } else {
+                    return Err(MgmError::from(err));
+                }
+            },
+        }
+    }
+}
+
+macro_rules! do_or_exit {
+    ( $e:expr) => {
+        match $e {
+            Ok(_) => {},
+            Err(_err) => std::process::exit(1),
+        }
+    }
+}
+
+static CTRL_C_PRESSED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone)]
 pub struct Cmdline;
@@ -33,33 +61,30 @@ static MULTI_SELECT_PROMPT_HELP: &str = "Press the space button to select and un
 impl YubihsmUi for Cmdline {
 
     fn get_new_object_id(&self, default: u16) -> Result<u16, MgmError> {
-        let id: String = cliclack::input("Enter object ID:")
+        let mut id = cliclack::input("Enter object ID:")
             .default_input(default.to_string().as_str())
             .placeholder(format!("Default is {} for device generated ID", default).as_str())
-            .validate(|input: &String| validators::object_id_validator(input))
-            .interact()?;
+            .validate(|input: &String| validators::object_id_validator(input));
+        let id:String = return_or_exit!(id.interact());
         common::get_id_from_string(id.as_str())
     }
 
     fn get_object_id(&self) -> Result<u16, MgmError> {
-        let id: String = cliclack::input("Enter object ID:")
+        let mut id = cliclack::input("Enter object ID:")
             .placeholder("Object ID in range [0, 65535]")
-            .validate(|input: &String| validators::object_id_validator(input))
-            .interact()?;
-
+            .validate(|input: &String| validators::object_id_validator(input));
+        let id:String = return_or_exit!(id.interact());
         common::get_id_from_string(id.as_str())
     }
 
     fn get_password(&self, prompt: &str, confirm: bool) -> Result<String, MgmError> {
-        let pwd = cliclack::password(prompt)
-            .mask('*')
-            .interact()?;
+        let pwd = return_or_exit!(cliclack::password(prompt).mask('*').interact());
         if !confirm {
             return Ok(pwd);
         }
 
         let pwd_clone = pwd.clone();
-        cliclack::password("Re-enter password")
+        return_or_exit!(cliclack::password("Re-enter password")
             .mask('*')
             .validate(move |input: &String| {
                 if input != &pwd_clone {
@@ -67,17 +92,16 @@ impl YubihsmUi for Cmdline {
                 } else {
                     Ok(())
                 }
-            })
-            .interact()?;
+            }).interact());
         Ok(pwd)
     }
 
     fn get_object_label(&self, default: &str) -> Result<String, MgmError> {
-        let label: String = cliclack::input("Enter object label:")
+        let label: String = return_or_exit!(cliclack::input("Enter object label:")
             .default_input(default)
             .placeholder("Default is empty. Max 40 characters")
             .validate(|input: &String| validators::object_label_validator(input))
-            .interact()?;
+            .interact());
         Ok(label)
     }
 
@@ -94,7 +118,7 @@ impl YubihsmUi for Cmdline {
         for d in domain_strings {
             domains = domains.item(d.clone(), d, "");
         }
-        let domains = domains.interact()?;
+        let domains = return_or_exit!(domains.interact());
 
         if domains.contains(&"all".to_string()) {
             Ok(available_domains.to_vec())
@@ -110,8 +134,8 @@ impl YubihsmUi for Cmdline {
         preselected_capabilities: &[ObjectCapability],
         prompt: Option<&str>) -> Result<Vec<ObjectCapability>, MgmError> {
         if available_capabilities.is_empty() {
-            cliclack::log::info(
-                "No capabilities available to select from. Most likely because logged in user does not have sufficient delegated capabilities")?;
+            do_or_exit!(cliclack::log::info(
+                "No capabilities available to select from. Most likely because logged in user does not have sufficient delegated capabilities"));
             return Ok(vec![]);
         }
 
@@ -126,7 +150,8 @@ impl YubihsmUi for Cmdline {
         for c in caps {
             capabilities = capabilities.item(c, c.to_string(), "");
         }
-        Ok(capabilities.interact()?)
+        let capabilities = return_or_exit!(capabilities.interact());
+        Ok(capabilities)
     }
 
     fn select_command(&self, available_commands: &[MgmCommand]) -> Result<MgmCommand, MgmError> {
@@ -134,7 +159,9 @@ impl YubihsmUi for Cmdline {
         for cmd in available_commands {
             cmd_select = cmd_select.item(cmd.clone(), cmd.label, cmd.description);
         }
-        Ok(cmd_select.interact()?)
+        let cmd_select = return_or_exit!(cmd_select.interact());
+
+        Ok(cmd_select)
     }
 
     fn select_algorithm(
@@ -155,13 +182,18 @@ impl YubihsmUi for Cmdline {
         for a in available_algorithms {
             algorithms = algorithms.item(a.algorithm(), a.label(), a.description());
         }
-        Ok(algorithms.interact()?)
+        let algorithms = return_or_exit!(algorithms.interact());
+        Ok(algorithms)
     }
 
     fn select_one_object(
         &self,
         available_objects: &[ObjectDescriptor],
         prompt: Option<&str>) -> Result<ObjectDescriptor, MgmError> {
+
+        if available_objects.is_empty() {
+            return Err(MgmError::InvalidInput("No available objects to select from".to_string()));
+        }
 
         let p = prompt.unwrap_or("Select object:");
         let mut selector = cliclack::select(p);
@@ -172,7 +204,8 @@ impl YubihsmUi for Cmdline {
             let label = format!("0x{:04x} : {:40} : {}", obj.id, obj.label, obj.algorithm);
             selector = selector.item(obj, label, "");
         }
-        Ok(selector.interact()?)
+        let selector = return_or_exit!(selector.interact());
+        Ok(selector)
     }
 
     fn select_multiple_objects(
@@ -185,20 +218,21 @@ impl YubihsmUi for Cmdline {
         }
 
         let p = prompt.unwrap_or("Select objects");
-        let mut selector = cliclack::multiselect(
+        let mut selected = cliclack::multiselect(
             format!("{}. {}", p, MULTI_SELECT_PROMPT_HELP)
         ).required(false);
         if preselect_all {
-            selector = selector.initial_values(available_objects.to_vec());
+            selected = selected.initial_values(available_objects.to_vec());
         }
 
         let mut objects = available_objects.to_vec();
         objects.sort_by_key(|a| a.label.clone());
         for obj in available_objects {
             let label = format!("0x{:04x} : {:40} : {}", obj.id, obj.label, obj.algorithm);
-            selector = selector.item(obj.to_owned(), label, "");
+            selected = selected.item(obj.to_owned(), label, "");
         }
-        Ok(selector.interact()?)
+        let selected = return_or_exit!(selected.interact());
+        Ok(selected)
     }
 
     fn select_one_item<T: Clone+Eq>(
@@ -212,15 +246,16 @@ impl YubihsmUi for Cmdline {
 
         let p = prompt.unwrap_or("");
 
-        let mut selector = cliclack::select(p);
+        let mut selected = cliclack::select(p);
         if let Some(default) = default_item {
-            selector = selector.initial_value(default.clone());
+            selected = selected.initial_value(default.clone());
         }
 
         for item in items {
-            selector = selector.item(item.value.to_owned(), item.label.to_owned(), item.hint.to_owned());
+            selected = selected.item(item.value.to_owned(), item.label.to_owned(), item.hint.to_owned());
         }
-        Ok(selector.interact()?)
+        let selected = return_or_exit!(selected.interact());
+        Ok(selected)
     }
 
     fn select_multiple_items<T: Clone+Eq>(
@@ -239,23 +274,29 @@ impl YubihsmUi for Cmdline {
             MULTI_SELECT_PROMPT_HELP.to_string()
         };
 
-        let mut selector = cliclack::multiselect(p).required(required);
-        selector = selector.initial_values(preselected_items.to_vec());
+        let mut selected = cliclack::multiselect(p).required(required);
+        selected = selected.initial_values(preselected_items.to_vec());
 
         for item in available_items {
-            selector = selector.item(item.value.to_owned(), item.label.to_owned(), item.hint.to_owned());
+            selected = selected.item(item.value.to_owned(), item.label.to_owned(), item.hint.to_owned());
         }
-        Ok(selector.interact()?)
+        let selected = return_or_exit!(selected.interact());
+        Ok(selected)
     }
 
 
 
 
 
-    fn get_string_input(&self, prompt: &str, required: bool) -> Result<String, MgmError> {
-        let input: String = cliclack::input(prompt)
-            .required(required)
-            .interact()?;
+    fn get_string_input(&self, prompt: &str, required: bool, default_value: Option<&str>, placeholder: Option<&str>) -> Result<String, MgmError> {
+        let mut input = cliclack::input(prompt).required(required);
+        if let Some(d) = default_value {
+            input = input.default_input(d);
+        }
+        if let Some(p) = placeholder {
+            input = input.placeholder(p);
+        }
+        let input = return_or_exit!(input.interact());
         Ok(input)
     }
 
@@ -269,7 +310,7 @@ impl YubihsmUi for Cmdline {
         if let Some(p) = placeholder {
             number = number.placeholder(p);
         }
-        let input: String = number.interact()?;
+        let input: String = return_or_exit!(number.interact());
         Ok(usize::from_str(&input).unwrap())
     }
 
@@ -283,7 +324,7 @@ impl YubihsmUi for Cmdline {
         if let Some(p) = placeholder {
             path = path.placeholder(p);
         }
-        let input: String = path.interact()?;
+        let input: String = return_or_exit!(path.interact());
         Ok(input)
     }
 
@@ -296,12 +337,55 @@ impl YubihsmUi for Cmdline {
             Some(validators::pem_file_validator))
     }
 
-    fn get_certificate_filepath(&self, prompt: &str, required: bool, place_holder: Option<&str>) -> Result<String, MgmError> {
+    fn get_certificate_filepath(&self, prompt: &str, required: bool, placeholder: Option<&str>) -> Result<String, MgmError> {
+        let mut file_path = cliclack::input(prompt)
+            .required(required)
+            .placeholder(placeholder.unwrap_or("Absolute path to PEM file"))
+            .validate(move |input: &String| {
+                let f = if shellexpand::full(input.as_str()).is_ok() {
+                    shellexpand::full(input.as_str()).unwrap().to_string()
+                } else {
+                    input.to_string()
+                };
+                validators::pem_certificate_file_validator(f.as_str(), required)
+            });
+        let file_path:String = return_or_exit!(file_path.interact());
+        if let Ok(expanded) = shellexpand::full(file_path.as_str()) {
+            return Ok(expanded.to_string());
+        }
+        Ok(file_path)
+    }
+
+    fn get_asymmetric_import_filepath(&self, prompt: &str, placeholder: Option<&str>) -> Result<String, MgmError> {
+        let mut file_path = cliclack::input(prompt)
+            .placeholder(placeholder.unwrap_or("Absolute path to PEM file containing asymmetric private key or X509 certificate"))
+            .validate(move |input: &String| {
+                let f = if shellexpand::full(input.as_str()).is_ok() {
+                    shellexpand::full(input.as_str()).unwrap().to_string()
+                } else {
+                    input.to_string()
+                };
+
+                if validators::pem_certificate_file_validator(f.as_str(), true).is_ok() ||
+                   validators::pem_private_key_file_validator(f.as_str()).is_ok() {
+                    Ok(())
+                } else {
+                    Err(MgmError::InvalidInput("File is not a valid PEM certificate or private key".to_string()))
+                }
+            });
+        let file_path:String = return_or_exit!(file_path.interact());
+        if let Ok(expanded) = shellexpand::full(file_path.as_str()) {
+            return Ok(expanded.to_string());
+        }
+        Ok(file_path)
+    }
+
+    fn get_sunpkcs11_import_filepath(&self, prompt: &str, placeholder: Option<&str>) -> Result<String, MgmError> {
         self.get_pem_filepath_ex(
             prompt,
-            required,
-            place_holder,
-            Some(validators::pem_certificate_file_validator))
+            true,
+            placeholder,
+            Some(validators::pem_sunpkcs11_file_validator))
     }
 
     fn get_public_eckey_filepath(&self, prompt: &str) -> Result<String, MgmError> {
@@ -390,7 +474,8 @@ impl YubihsmUi for Cmdline {
         let mut share = cliclack::input(prompt)
             .required(false)
             .validate(move |input: &String| validators::aes_share_validator(input.as_str(), share_length));
-        Ok(share.interact()?)
+        let share = return_or_exit!(share.interact());
+        Ok(share)
     }
 
 
@@ -408,28 +493,50 @@ impl YubihsmUi for Cmdline {
 
 
 
-    fn display_objects_basic(&self, objects: &[ObjectDescriptor]) -> Result<(), MgmError> {
-        let specs:Vec<NewObjectSpec> = objects.iter().map(|d| NewObjectSpec::from(d.clone())).collect::<Vec<_>>();
-        self.display_objects_spec(&specs)
-    }
-
-    fn display_objects_full(&self, objects: &[ObjectDescriptor]) -> Result<(), MgmError> {
+    fn display_objects_list(&self, objects: &[ObjectDescriptor]) {
         if objects.is_empty() {
-            cliclack::log::info("No objects to display.")?;
-            return Ok(());
+            do_or_exit!(cliclack::log::info("No objects to display."));
+            return
+        }
+
+        let mut specs:Vec<NewObjectSpec> = objects.iter().map(|d| NewObjectSpec::from(d.clone())).collect::<Vec<_>>();
+        specs.sort_by_key(|a| a.label.clone());
+
+        let mut builder = Builder::default();
+        builder.push_record(vec!["ID", "Type", "Label", "Algorithm", "Domains", "Capabilities"]);
+
+        for spec in specs {
+
+            builder.push_record(vec![
+                spec.get_id_str(),
+                spec.get_type_str(),
+                spec.label.to_string(),
+                spec.get_algorithm_str(),
+                spec.get_domains_str(),
+                spec.get_capabilities_str()]);
+
+        }
+        let table = builder.build();
+        let table = Self::get_resized_table(table, 6);
+        do_or_exit!(cliclack::log::success(table.to_string().as_str()));
+    }
+
+    fn display_objects_properties(&self, objects: &[ObjectDescriptor]) {
+        if objects.is_empty() {
+            do_or_exit!(cliclack::log::info("No objects to display."));
+            return
         }
 
         let mut _objects = objects.to_vec();
         _objects.sort_by_key(|a| a.label.clone());
 
-        let mut table = Table::new();
-        table.set_content_arrangement(ContentArrangement::Dynamic);
-        table.set_header(vec!["ID", "Type", "Label", "Algorithm", "Sequence", "Origin", "Domains", "Capabilities", "Delegated Capabilities"]);
+        let mut builder = Builder::default();
+        builder.push_record(vec!["ID", "Type", "Label", "Algorithm", "Sequence", "Origin", "Domains", "Capabilities", "Delegated Capabilities"]);
 
         for object in _objects {
             let spec = NewObjectSpec::from(object.clone());
 
-            table.add_row(vec![
+            builder.push_record(vec![
                 spec.get_id_str(),
                 spec.get_type_str(),
                 spec.label.to_string(),
@@ -441,123 +548,93 @@ impl YubihsmUi for Cmdline {
                 spec.get_delegated_capabilities_str()]);
 
         }
-        cliclack::log::success(table.to_string().as_str())?;
-        Ok(())
-    }
-
-    fn display_objects_spec(&self, objects: &[NewObjectSpec]) -> Result<(), MgmError> {
-        if objects.is_empty() {
-            cliclack::log::info("No objects to display.")?;
-            return Ok(());
-        }
-
-        let mut specs = objects.to_vec();
-        specs.sort_by_key(|a| a.label.clone());
-
-        let mut table = Table::new();
-        table.set_content_arrangement(ContentArrangement::Dynamic);
-        table.set_header(vec!["ID", "Type", "Label", "Algorithm", "Domains", "Capabilities"]);
-
-        for spec in specs {
-
-            table.add_row(vec![
-                spec.get_id_str(),
-                spec.get_type_str(),
-                spec.label.to_string(),
-                spec.get_algorithm_str(),
-                spec.get_domains_str(),
-                spec.get_capabilities_str()]);
-
-        }
-        cliclack::log::success(table.to_string().as_str())?;
-        Ok(())
+        let table = builder.build();
+        let table = Self::get_resized_table(table, 9);
+        do_or_exit!(cliclack::log::success(table.to_string().as_str()));
     }
 
 
 
 
 
-    fn display_success_message(&self, message: &str) -> Result<(), MgmError> {
-        Ok(cliclack::log::success(message)?)
+    fn display_success_message(&self, message: &str) {
+        do_or_exit!(cliclack::log::success(message))
     }
 
-    fn display_info_message(&self, message: &str) -> Result<(), MgmError> {
-        Ok(cliclack::log::info(message)?)
+    fn display_info_message(&self, message: &str) {
+        do_or_exit!(cliclack::log::info(message))
     }
 
-    fn display_note(&self, header: &str, note: &str) -> Result<(), MgmError> {
-        Ok(cliclack::note(header, note)?)
+    fn display_note(&self, header: &str, note: &str) {
+        do_or_exit!(cliclack::note(header, note))
     }
 
-    fn display_warning(&self, message: &str) -> Result<(), MgmError> {
-        Ok(cliclack::log::warning(message)?)
+    fn display_warning(&self, message: &str) {
+        do_or_exit!(cliclack::log::warning(message))
     }
 
-    fn display_error_message(&self, message: &str) -> Result<(), MgmError> {
-        Ok(cliclack::log::error(message)?)
+    fn display_error_message(&self, message: &str) {
+        do_or_exit!(cliclack::log::error(message))
     }
 
     fn get_confirmation(&self, prompt: &str) -> Result<bool, MgmError> {
-        Ok(cliclack::confirm(prompt).interact()?)
+        let b = return_or_exit!(cliclack::confirm(prompt).interact());
+        Ok(b)
     }
 
     fn get_warning_confirmation(&self, warning_message: &str) -> Result<bool, MgmError> {
-        cliclack::log::warning(warning_message)?;
-        Ok(cliclack::confirm("Continue?").interact()?)
+        do_or_exit!(cliclack::log::warning(warning_message));
+        let b = return_or_exit!(cliclack::confirm("Continue?").interact());
+        Ok(b)
     }
 
     fn get_note_confirmation(&self, prompt: &str,  message: &str) -> Result<bool, MgmError> {
-        cliclack::note(prompt, message)?;
-        Ok(cliclack::confirm("Continue?").interact()?)
+        do_or_exit!(cliclack::note(prompt, message));
+        let b = return_or_exit!(cliclack::confirm("Continue?").interact());
+        Ok(b)
     }
 
 
-    fn clear_screen(&self) -> Result<(), MgmError> {
-        Ok(cliclack::clear_screen()?)
+    fn clear_screen(&self) {
+        do_or_exit!(cliclack::clear_screen())
     }
 
-    fn start_spinner(&self, message: Option<&str>) -> Box<dyn SpinnerHandler> {
-        let mut spinner = CliclackSpinner { spinner: cliclack::spinner() };
-        spinner.start(message);
-        Box::new(spinner)
+    fn start_progress(&self, message: Option<&str>) -> Box<dyn ProgressBarHandler> {
+        let mut pb = CliclackProgressBar { progress: cliclack::progress_bar(0) };
+        pb.start(message);
+        Box::new(pb)
     }
 
-    fn stop_spinner(&self, mut spinner_handler: Box<dyn SpinnerHandler>, message: Option<&str>) {
-        spinner_handler.stop(message);
+    fn stop_progress(&self, mut progress_handler: Box<dyn ProgressBarHandler>, message: Option<&str>) {
+        progress_handler.stop(message);
     }
 }
 
-pub struct CliclackSpinner {
-    spinner: cliclack::Spinner,
+pub struct CliclackProgressBar {
+    progress: cliclack::ProgressBar,
 }
-impl SpinnerHandler for CliclackSpinner {
+impl ProgressBarHandler for CliclackProgressBar {
     fn start(&mut self, message: Option<&str>) {
         let msg = message.unwrap_or("");
-        self.spinner.start(msg);
+        self.progress.start(msg);
     }
 
     fn stop(&mut self, success_message: Option<&str>) {
         let msg = success_message.unwrap_or("");
-        self.spinner.stop(msg);
+        self.progress.stop(msg);
     }
 }
 
-// pub struct CliclackProgressBar {
-//     progress: cliclack::progress_bar(100),
-// }
-// impl SpinnerHandler for CliclackSpinner {
-//     fn start(&mut self, message: Option<&str>) {
-//         let msg = message.unwrap_or("");
-//         self.spinner.start(msg);
-//     }
-//
-//     fn stop(&mut self, success_message: Option<&str>) {
-//         let msg = success_message.unwrap_or("");
-//         self.spinner.stop(msg);
-//     }
-// }
-
 impl Cmdline {
+    pub fn new() -> Self {
+        // This code handles CRTL-C. Otherwise CRTL-C would behave like ESC and just exist the current prompt
+        ctrlc::set_handler(move || {
+            // std::process::exit(0);
+            CTRL_C_PRESSED.store(true, Ordering::SeqCst);
+        }).expect("Error setting Ctrl-C handler");
+        Cmdline {}
+    }
+
 
     fn get_hex_input_ex<F>(
         &self,
@@ -576,7 +653,7 @@ impl Cmdline {
         if let Some(v) = validator {
             input_prompt = input_prompt.validate(move |input: &String| v(input.as_str()));
         }
-        let input: String = input_prompt.interact()?;
+        let input: String = return_or_exit!(input_prompt.interact());
         Ok(hex::decode(input)?)
     }
 
@@ -595,8 +672,34 @@ impl Cmdline {
             .placeholder(placeholder.unwrap_or("Absolute path to PEM file"));
 
         if let Some(v) = validator {
-            file_path = file_path.validate(move |input: &String| v(input.as_str()));
+            file_path = file_path.validate(move |input: &String| {
+                if let Ok(expanded) = shellexpand::full(input. as_str()) {
+                    v(expanded.as_ref())
+                } else {
+                    v(input.as_str())
+                }
+            });
         }
-        Ok(file_path.interact()?)
+        let file_path: String = return_or_exit!(file_path.interact());
+        if let Ok(expanded) = shellexpand::full(file_path.as_str()) {
+            return Ok(expanded.to_string());
+        }
+        Ok(file_path)
+    }
+
+    fn get_resized_table(mut table: Table, columns: usize) -> String {
+
+        table.with(Style::modern());
+
+
+        if let Ok((terminal_width, _)) = crossterm::terminal::size() {
+            let table_width = (terminal_width as f32 * 0.9) as usize;
+            table.with(Width::increase(table_width));
+
+            table.with(Modify::new(Columns::new(0..))
+                .with(Width::wrap(table_width/columns).keep_words()));
+
+        }
+        table.to_string()
     }
 }

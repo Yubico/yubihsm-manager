@@ -29,7 +29,11 @@ pub fn get_string_or_bytes_from_file(ui: &impl YubihsmUi, string: String) -> Res
 
     match get_bytes_from_file(ui, &string) {
         Ok(bytes) => Ok(bytes),
-        Err(_) => Ok(string.as_bytes().to_vec())
+        Err(_) => {
+            ui.display_info_message(
+                format!("Read input as string \"{}\"", string).as_str());
+            Ok(string.as_bytes().to_vec())
+        }
     }
 }
 
@@ -47,7 +51,7 @@ pub fn get_hex_or_bytes_from_file(ui: &impl YubihsmUi, string: String) -> Result
 pub fn get_bytes_from_file(ui: &impl YubihsmUi, filepath: &String) -> Result<Vec<u8>, MgmError> {
     if Path::new(filepath).exists() {
         ui.display_info_message(
-            format!("Read bytes from file: {}", filepath).as_str())?;
+            format!("Read bytes from file: {}", filepath).as_str());
         return Ok(fs::read(filepath)?)
     }
     Err(MgmError::InvalidInput("File does not exist".to_string()))
@@ -58,19 +62,72 @@ pub fn get_pem_from_file(file_path: &String) -> Result<Vec<Pem>, MgmError> {
     Ok(pem::parse_many(content)?)
 }
 
-pub fn write_bytes_to_file(ui: &impl YubihsmUi, content: &[u8], filename: &str, directory: Option<&str>) -> Result<(), MgmError> {
-    let dir = if let Some(d) = directory { d.to_owned() } else { ".".to_owned() };
-    let filepath = format!("{}/{}", dir, filename);
+fn expand_path(path:&str, is_directory: bool) -> Result<String, MgmError> {
+    let expanded = if shellexpand::full(path).is_ok() {
+        shellexpand::full(path).unwrap().to_string()
+    } else {
+        path.to_string()
+    };
 
-    let mut file = match File::options().create_new(true).write(true).open(&filepath) {
+    let mut full_path = Path::new(expanded.as_str());
+    if !is_directory {
+        full_path = full_path.parent().unwrap_or(Path::new("."));
+    }
+    if let Err(e) = fs::create_dir_all(full_path) {
+        return Err(MgmError::InvalidInput(format!("Failed to create or access directory {}. {}", full_path.display(), e)))
+    }
+
+    Ok(expanded)
+}
+
+pub fn get_path(ui: &impl YubihsmUi, prompt: &str, is_directory:bool, default_filepath: &str) -> Result<String, MgmError> {
+    let path;
+    loop {
+        let p = if is_directory {
+            ui.get_string_input(
+                prompt,
+                false,
+                Some("."),
+                Some("Default is current directory"))?
+        } else {
+            ui.get_string_input(
+                prompt,
+                false,
+                Some(default_filepath),
+                Some(format!("Default is {}", default_filepath).as_str()))?
+        };
+        match expand_path(p.as_str(), is_directory) {
+            Ok(expanded) => {
+                path = expanded;
+                break;
+            },
+            Err(err) => ui.display_error_message(
+                format!("{}\nPlease try again or press Esc to return to menu.", err).as_str()),
+        }
+    }
+    Ok(path)
+}
+
+pub fn write_bytes_to_file(
+    ui: &impl YubihsmUi,
+    content: &[u8],
+    filepath: &str) -> Result<(), MgmError> {
+
+    let mut file = match File::options().create_new(true).write(true).open(filepath) {
         Ok(f) => f,
         Err(error) => {
             if error.kind() == std::io::ErrorKind::AlreadyExists {
-                if ui.get_confirmation(format!("File {} already exist. Overwrite it?", &filepath).as_str())? {
-                    fs::remove_file(&filepath)?;
-                    File::options().create_new(true).write(true).open(&filepath)?
+                if ui.get_confirmation(format!("File {} already exist. Overwrite it?", filepath).as_str())? {
+                    fs::remove_file(filepath)?;
+                    File::options().create_new(true).write(true).open(filepath)?
                 } else {
-                    return Ok(())
+                    let filename = Path::new(filepath).file_name().unwrap().to_str().unwrap();
+                    let filename = get_path(
+                        ui,
+                        "Enter new output file path:",
+                        false,
+                        format!("./{}", filename).as_str())?;
+                    return write_bytes_to_file(ui, content, filename.as_str())
                 }
             } else {
                 return Err(MgmError::StdIoError(error))
@@ -78,7 +135,7 @@ pub fn write_bytes_to_file(ui: &impl YubihsmUi, content: &[u8], filename: &str, 
         }
     };
     file.write_all(content)?;
-    ui.display_success_message(format!("Wrote file {}", &filepath).as_str())?;
+    ui.display_success_message(format!("Wrote file {}", filepath).as_str());
     Ok(())
 }
 
