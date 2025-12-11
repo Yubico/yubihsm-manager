@@ -125,13 +125,6 @@ jobs:
           fi
           dpkg -i ../libyubihsm*_amd64.deb
 
-      - name: clone yubihsmrs
-        working-directory: yubihsm-manager
-        run: |
-          set -x -e
-          cd ..
-          git clone -b yubihsm-manager https://github.com/Yubico/yubihsmrs.git
-
       - name: Build installer
         working-directory: yubihsm-manager
         env:
@@ -252,10 +245,6 @@ jobs:
           QA_SKIP_BUILD_ROOT=1 QA_RPATHS=$(( 0x0001|0x0010 )) rpmbuild -bb $RPM_DIR/SPECS/yubihsm-shell.spec
           yum install -y /github/home/rpmbuild/RPMS/x86_64/yubihsm-devel-*.rpm
 
-      - name: clone yubihsmrs
-        run: |
-          git clone -b yubihsm-manager https://github.com/Yubico/yubihsmrs.git
-
       - name: build release binary
         working-directory: yubihsm-manager
         env:
@@ -336,14 +325,6 @@ jobs:
           curl -L --max-redirs 2 -o yubihsm-sdk-installer.pkg https://developers.yubico.com/YubiHSM2/Releases/yubihsm2-sdk-$YUBIHSMSDK_VERSION-darwin-universal.pkg
           sudo installer -verbose -store -pkg yubihsm-sdk-installer.pkg -target /
 
-      - name: clone yubihsmrs
-        run: |
-          set -e -o pipefail
-          set -x
-
-          cd ..
-          git clone -b yubihsm-manager https://github.com/Yubico/yubihsmrs.git
-
       - name: Build yubihsm-manager
         run: |
           set -e -o pipefail
@@ -410,14 +391,6 @@ jobs:
           $log = "$env:GITHUB_WORKSPACE\install.log"
           $procMain = Start-Process "msiexec" "/i `"yubihsm-shell.msi`" /qn /l*! `"$log`"" -NoNewWindow -PassThru
           $procMain.WaitForExit()
-
-      - name: clone yubihsmrs
-        run: |
-          $ErrorActionPreference = "Stop"
-          Set-PSDebug -Trace 1
-
-          cd ..
-          git clone -b yubihsm-manager https://github.com/Yubico/yubihsmrs.git
 
       - name: Build yubihsm-manager
         run: |
