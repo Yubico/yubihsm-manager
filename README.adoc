@@ -21,11 +21,6 @@ Set the environment variable `YUBIHSM_LIB_DIR` to point to the directory contain
 $ cargo build
 ```
 
-==== Note about building
-
-Currently `yubihsmrs` has not been published to crates.io. This means that either a local or a git path should be
-specified when adding it as dependency. Specifically, `yubihsm-manager` expects to find `yubihsmrs` inside `../yubihsmrs/`.
-
 === Run
 
 Set the environment variable `LD_LIBRARY_PATH` to point to the directory containing the libyubihsm library then run:
