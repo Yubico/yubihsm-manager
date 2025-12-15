@@ -1,3 +1,11 @@
 fn main() {
-    println!("cargo:rustc-link-arg=-Wl,-rpath,@loader_path/../lib");
+    #[cfg(target_os = "linux")]
+    {
+        println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../lib");
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        println!("cargo:rustc-link-arg=-Wl,-rpath,@loader_path/../lib");
+    }
 }

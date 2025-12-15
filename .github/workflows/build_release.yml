@@ -30,6 +30,7 @@ jobs:
       fail-fast: false
       matrix:
         environment: [
+          "ubuntu:25.10",
           "ubuntu:25.04",
           "ubuntu:24.04",
           "ubuntu:22.04",
@@ -108,12 +109,12 @@ jobs:
           #git clone https://github.com/Yubico/yubihsm-shell.git
           cd yubihsm-shell
 
-          if [ "$PLATFORM" = "ubuntu2404" ] || [ "$PLATFORM" = "ubuntu2504" ]; then
+          if [ "$PLATFORM" = "ubuntu2404" ] || [ "$PLATFORM" = "ubuntu2504" ] || [ "$PLATFORM" = "ubuntu2510" ]; then
             # ubuntu 24.04 and newer come with _FORTIFY_SOURCE already set
             sed -i 's/add_definitions (-D_FORTIFY_SOURCE=2)/add_definitions (-D_FORTIFY_SOURCE=3)/' cmake/SecurityFlags.cmake
           fi
 
-          if [ "$PLATFORM" = "ubuntu2504" ] || [ "$PLATFORM" = "debian13" ]; then
+          if [ "$PLATFORM" = "ubuntu2504" ] || [ "$PLATFORM" = "debian13" ] || [ "$PLATFORM" = "ubuntu2510" ]; then
             # Set PCSC flags
             sed -i 's/#SET(CMAKE_C_FLAGS/SET(CMAKE_C_FLAGS/' ykhsmauth/CMakeLists.txt
           fi
@@ -454,7 +455,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           Set-PSDebug -Trace 1
           cd artifact/bin
-          
+
           ./yubihsm-manager.exe --help
           ./yubihsm-manager.exe --version
 
