@@ -210,6 +210,13 @@ impl MgmAlgorithm {
         MgmAlgorithm(ObjectAlgorithm::RsaOaepSha512),
     ];
 
+    pub const MGF1_ALGORITHMS: [MgmAlgorithm; 4] = [
+        MgmAlgorithm(ObjectAlgorithm::Mgf1Sha1),
+        MgmAlgorithm(ObjectAlgorithm::Mgf1Sha256),
+        MgmAlgorithm(ObjectAlgorithm::Mgf1Sha384),
+        MgmAlgorithm(ObjectAlgorithm::Mgf1Sha512),
+    ];
+
     pub const ECDSA_ALGORITHMS: [MgmAlgorithm; 4] = [
         MgmAlgorithm(ObjectAlgorithm::EcdsaSha1),
         MgmAlgorithm(ObjectAlgorithm::EcdsaSha256),

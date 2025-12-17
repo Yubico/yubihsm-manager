@@ -370,7 +370,7 @@ impl AsymmetricOperations {
         let data = if decryption_algorithm == &ObjectAlgorithm::RsaPkcs1Decrypt {
             session.decrypt_pkcs1v1_5(decryption_key_id, ciphertext)?
         } else if Self::is_oaep_algorithm(decryption_algorithm) {
-            let oaep_label: &[u8; 64] = &[0; 64];
+            let oaep_label: &[u8] = &[];
             let oaep_label = Self::get_hashed_bytes(decryption_algorithm, oaep_label)?;
             let mgf1_algo = Self::get_mgf1_algorithm(decryption_algorithm)?;
             session.decrypt_oaep(decryption_key_id, ciphertext, &oaep_label, mgf1_algo)?

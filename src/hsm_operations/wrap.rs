@@ -16,7 +16,6 @@
 
 use std::fmt;
 use std::fmt::Display;
-use openssl::base64;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
@@ -68,6 +67,7 @@ pub struct WrapOpSpec {
     pub include_ed_seed: bool,
     pub aes_algorithm: Option<ObjectAlgorithm>,
     pub oaep_algorithm: Option<ObjectAlgorithm>,
+    pub mgf1_algorithm: Option<ObjectAlgorithm>,
 }
 
 pub struct WrappedData {
@@ -430,7 +430,10 @@ impl WrapOperations {
                     };
 
                     let oaep_label = Self::get_oaep_label(&oaep_algo)?;
-                    let mgf1_algo = AsymmetricOperations::get_mgf1_algorithm(&oaep_algo)?;
+                    let mgf1_algo = match wrap_op_spec.mgf1_algorithm {
+                        Some(algo) => algo,
+                        None => ObjectAlgorithm::Mgf1Sha256,
+                    };
 
                     match wrap_op_spec.wrap_type {
                         WrapType::Object => session.export_rsa_wrapped_object(
@@ -467,8 +470,8 @@ impl WrapOperations {
         Ok(wrapped)
     }
 
-    pub fn import_wrapped(session: &Session, wrap_op_spec: &WrapOpSpec, wrapped: String, new_key_spec: Option<NewObjectSpec>) -> Result<ObjectHandle, MgmError> {
-        let data = base64::decode_block(&wrapped)?;
+    pub fn import_wrapped(session: &Session, wrap_op_spec: &WrapOpSpec, wrapped: &[u8], new_key_spec: Option<NewObjectSpec>) -> Result<ObjectHandle, MgmError> {
+        let data = wrapped.to_vec();
 
         let handle = match wrap_op_spec.wrapkey_type {
             WrapKeyType::Aes => session.import_wrapped(wrap_op_spec.wrapkey_id, &data)?,
@@ -478,7 +481,10 @@ impl WrapOperations {
                     None => ObjectAlgorithm::RsaOaepSha256,
                 };
                 let oaep_label = Self::get_oaep_label(&oaep_algo)?;
-                let mgf1_algo = AsymmetricOperations::get_mgf1_algorithm(&oaep_algo)?;
+                let mgf1_algo = match wrap_op_spec.mgf1_algorithm {
+                    Some(algo) => algo,
+                    None => ObjectAlgorithm::Mgf1Sha256,
+                };
                 match wrap_op_spec.wrap_type {
                     WrapType::Object => session.import_rsa_wrapped_object(
                         wrap_op_spec.wrapkey_id,
@@ -517,7 +523,7 @@ impl WrapOperations {
     }
 
     fn get_oaep_label(algorithm: &ObjectAlgorithm) -> Result<Vec<u8>, MgmError> {
-        let oaep_label:&[u8;64] = &[0;64];
+        let oaep_label: &[u8] = &[];
         AsymmetricOperations::get_hashed_bytes(algorithm, oaep_label)
     }
 }

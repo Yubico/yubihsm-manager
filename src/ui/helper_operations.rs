@@ -17,11 +17,12 @@
 use tabled::{builder::Builder, settings::{Width, Modify, Style, object::Columns}};
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::hsm_operations::types::NewObjectSpec;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::hsm_operations::error::MgmError;
-use crate::hsm_operations::types::MgmCommand;
+use crate::hsm_operations::types::{MgmCommand, NewObjectSpec};
+use crate::hsm_operations::common::get_delegated_capabilities;
+
 
 static ESC_HELP_TEXT: &str = "Pressing 'Esc' will always cancel current operation and return to previous menu";
 
@@ -124,6 +125,13 @@ pub fn generate_object(ui: &impl YubihsmUi,yh_operation: &dyn YubihsmOperations,
         &yh_operation.get_applicable_capabilities(authkey, Some(new_key.object_type), Some(new_key.algorithm))?,
         &[],
         None)?;
+
+    if object_type == ObjectType::WrapKey {
+        new_key.delegated_capabilities = ui.select_object_capabilities(
+            &get_delegated_capabilities(authkey),
+            &get_delegated_capabilities(authkey),
+            Some("Select delegated capabilities"))?;
+    }
 
     if !ui.get_note_confirmation("Generating asymmetric key with:", &get_new_spec_table(&new_key))? {
         ui.display_info_message("Key is not generated");
