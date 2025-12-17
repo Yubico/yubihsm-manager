@@ -212,6 +212,7 @@ impl MainOperations {
                     ObjectType::Opaque => authkey.capabilities.contains(&ObjectCapability::DeleteOpaque),
                     ObjectType::SymmetricKey => authkey.capabilities.contains(&ObjectCapability::DeleteSymmetricKey),
                     ObjectType::WrapKey => authkey.capabilities.contains(&ObjectCapability::DeleteWrapKey),
+                    ObjectType::PublicWrapKey => authkey.capabilities.contains(&ObjectCapability::DeleteWrapKey),
                     ObjectType::AuthenticationKey => authkey.capabilities.contains(&ObjectCapability::DeleteAuthenticationKey),
                     _ => false,
                 }
@@ -268,7 +269,6 @@ impl MainOperations {
         vec![
             MgmObjectType::Asymmetric,
             MgmObjectType::Symmetric,
-            MgmObjectType::Certificate,
             MgmObjectType::Wrap,
             MgmObjectType::Authentication,
             MgmObjectType::Java,

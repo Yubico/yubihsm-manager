@@ -426,6 +426,7 @@ impl YubihsmUi for Cmdline {
             prompt,
             true,
             None,
+            Some("16, 24 or 32 bytes in HEX format"),
             Some(validators::aes_key_validator))
     }
 
@@ -434,6 +435,7 @@ impl YubihsmUi for Cmdline {
             prompt,
             required,
             default,
+            Some("16 bytes in HEX format"),
             Some(validators::iv_validator))
     }
 
@@ -441,6 +443,7 @@ impl YubihsmUi for Cmdline {
         self.get_hex_input_ex(
             prompt,
             true,
+            None,
             None,
             Some(validators::aes_operation_input_validator))
     }
@@ -641,6 +644,7 @@ impl Cmdline {
         prompt: &str,
         required: bool,
         default: Option<&str>,
+        placeholder: Option<&str>,
         validator: Option<F>,
     ) -> Result<Vec<u8>, MgmError>
         where
@@ -652,6 +656,9 @@ impl Cmdline {
 
         if let Some(v) = validator {
             input_prompt = input_prompt.validate(move |input: &String| v(input.as_str()));
+        }
+        if let Some(p) = placeholder {
+            input_prompt = input_prompt.placeholder(p);
         }
         let input: String = return_or_exit!(input_prompt.interact());
         Ok(hex::decode(input)?)
