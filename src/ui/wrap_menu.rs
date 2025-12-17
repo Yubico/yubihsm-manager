@@ -35,7 +35,7 @@ use crate::hsm_operations::asym::AsymmetricOperations;
 use crate::hsm_operations::sym::SymmetricOperations;
 use crate::hsm_operations::wrap::{WrapKeyType, WrapOperations, WrapOpSpec, WrapType};
 use crate::hsm_operations::common::get_delegated_capabilities;
-use crate::ui::helper_io::{get_pem_from_file, write_bytes_to_file};
+use crate::ui::helper_io::{get_pem_from_file, write_bytes_to_file, get_path};
 
 static WRAP_HEADER: &str = "Wrap keys";
 
@@ -93,7 +93,6 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             "Enter wrap key in HEX format or path to PEM file containing RSA key:", true, None, None)?;
         loop {
             if aes_key_validator(&input).is_ok() || pem_private_rsa_file_validator(&input).is_ok() || pem_public_rsa_file_validator(&input).is_ok() {
-                println!("{} - {} - {}", aes_key_validator(&input).is_ok(), pem_private_rsa_file_validator(&input).is_ok(), pem_public_rsa_file_validator(&input).is_ok());
                 break;
             }
             self.ui.display_error_message("Input is neither valid AES key in HEX format nor valid path to a file containing RSA key in PEM format");
@@ -230,11 +229,10 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                 Some("Select OAEP algorithm to use for wrapping"))?);
         }
 
-        let dir = self.ui.get_path_input(
-            "Enter path to backup directory:",
-            false,
-            Some("."),
-            Some("Default is current directory"))?;
+        let dir = get_path(&self.ui,
+                                "Enter path to backup directory:",
+                                true,
+                                ".")?;
 
         let wrapped_objects = WrapOperations::export_wrapped(session, &wrap_op, &export_objects)?;
 
