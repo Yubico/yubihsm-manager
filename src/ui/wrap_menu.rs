@@ -14,10 +14,7 @@
  * limitations under the License.
  */
 
-use std::fs::File;
-use std::io::Read;
-
-use openssl::base64;
+use std::fs;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
@@ -207,6 +204,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             include_ed_seed: false,
             aes_algorithm: None,
             oaep_algorithm: None,
+            mgf1_algorithm: None,
         };
 
         let exportable_objects = WrapOperations::get_exportable_objects(session, &wrapkey, wrap_type)?;
@@ -227,6 +225,10 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                 &MgmAlgorithm::RSA_OAEP_ALGORITHMS,
                 Some(ObjectAlgorithm::RsaOaepSha256),
                 Some("Select OAEP algorithm to use for wrapping"))?);
+            wrap_op.mgf1_algorithm = Some(self.ui.select_algorithm(
+                &MgmAlgorithm::MGF1_ALGORITHMS,
+                Some(ObjectAlgorithm::Mgf1Sha256),
+                Some("Select MGF1 algorithm to use for wrapping"))?);
         }
 
         let dir = get_path(&self.ui,
@@ -242,7 +244,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                 continue;
             }
             let filename = format!("{}/0x{:04x}-{}.yhw", dir, object.object_id, object.object_type);
-            write_bytes_to_file(&self.ui, base64::encode_block(&object.wrapped_data).as_bytes(), filename.as_str())?;
+            write_bytes_to_file(&self.ui,&object.wrapped_data, filename.as_str())?;
         }
 
         Ok(())
@@ -255,14 +257,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             None,
             Some("Files containing wrapped YubiHSM objects usually have the file extension .yhw"))?;
 
-        let mut file = File::open(&filepath)?;
-
-        let mut wrapped = String::new();
-        file.read_to_string(&mut wrapped)?;
-        if wrapped.is_empty() {
-            return Err(MgmError::Error(format!("File {} is empty", filepath)));
-        }
-        // let data = base64::decode_block(&wrapped)?;
+        let wrapped = fs::read(&filepath)?;
 
         let wrapkeys = WrapOperations::get_unwrapping_keys(session, authkey)?;
         let wrapkey = self.ui.select_one_object(
@@ -277,20 +272,26 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             include_ed_seed: false,
             aes_algorithm: None,
             oaep_algorithm: None,
+            mgf1_algorithm: None,
         };
         if wrapkey_type == WrapKeyType::Rsa {
             wrap_op.oaep_algorithm = Some(self.ui.select_algorithm(
                 &MgmAlgorithm::RSA_OAEP_ALGORITHMS,
                 Some(ObjectAlgorithm::RsaOaepSha256),
                 Some("Select OAEP algorithm to use for wrapping"))?);
+            wrap_op.mgf1_algorithm = Some(self.ui.select_algorithm(
+                &MgmAlgorithm::MGF1_ALGORITHMS,
+                Some(ObjectAlgorithm::Mgf1Sha256),
+                Some("Select MGF1 algorithm to use for wrapping"))?);
         }
 
-        let res = WrapOperations::import_wrapped(session, &wrap_op, wrapped.clone(), None);
+        let res = WrapOperations::import_wrapped(session, &wrap_op, &wrapped, None);
         let handle = match res {
             Ok(h) => h,
             Err(e) => {
-                if wrapkey_type == WrapKeyType::Rsa {
-                    self.ui.display_info_message("Failed to unwrap as object, trying as key data...");
+                if wrapkey_type == WrapKeyType::Rsa && e.to_string() == "Malformed command / invalid data" {
+                    self.ui.display_info_message(format!("Failed to unwrap as object: {}. Trying as key data...", e).as_str());
+                    wrap_op.wrap_type = WrapType::Key;
 
                     let algo = self.ui.select_algorithm(
                         &WrapOperations::get_unwrapped_key_algorithms(),
@@ -304,6 +305,11 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
 
                     let mut new_key = NewObjectSpec::empty();
                     new_key.algorithm = algo;
+                    new_key.object_type = if SymmetricOperations::is_aes_algorithm(&algo) {
+                        ObjectType::SymmetricKey
+                    } else {
+                        ObjectType::AsymmetricKey
+                    };
                     new_key.id = self.ui.get_new_object_id(0)?;
                     new_key.label = self.ui.get_object_label("")?;
                     new_key.domains = self.ui.select_object_domains(&authkey.domains)?;
@@ -312,7 +318,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                         &[],
                         Some("Select object capabilities"))?;
 
-                    WrapOperations::import_wrapped(session, &wrap_op, wrapped, Some(new_key))?
+                    WrapOperations::import_wrapped(session, &wrap_op, &wrapped, Some(new_key))?
                 } else {
                     return Err(e)
                 }

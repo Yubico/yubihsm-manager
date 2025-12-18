@@ -118,6 +118,7 @@ impl<T: YubihsmUi + Clone> Ksp<T> {
             include_ed_seed: false,
             aes_algorithm: None,
             oaep_algorithm: None,
+            mgf1_algorithm: None,
         };
 
         let wrapped_keys = WrapOperations::export_wrapped(session, &wrap_op_spec, &export_objects)?;

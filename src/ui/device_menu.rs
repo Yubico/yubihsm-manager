@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-use std::fs::File;
-use std::io::Read;
+use std::fs;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
@@ -92,6 +91,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
             include_ed_seed: false,
             aes_algorithm: None,
             oaep_algorithm: None,
+            mgf1_algorithm: None,
         };
 
         let export_objects = WrapOperations::get_exportable_objects(session, &wrapkey, WrapType::Object)?;
@@ -108,6 +108,10 @@ impl<T: YubihsmUi> DeviceMenu<T> {
                 &MgmAlgorithm::RSA_OAEP_ALGORITHMS,
                 Some(ObjectAlgorithm::RsaOaepSha256),
                 Some("Select OAEP algorithm to use for wrapping"))?);
+            wrap_op.mgf1_algorithm = Some(self.ui.select_algorithm(
+                &MgmAlgorithm::MGF1_ALGORITHMS,
+                Some(ObjectAlgorithm::Mgf1Sha256),
+                Some("Select MGF1 algorithm to use for wrapping"))?);
         }
 
         let dir = get_path(&self.ui, "Enter path to backup directory:", true, "")?;
@@ -120,7 +124,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
                 continue;
             }
             let filename = format!("{}/0x{:04x}-{}.yhw", dir, object.object_id, object.object_type);
-            write_bytes_to_file(&self.ui, openssl::base64::encode_block(&object.wrapped_data).as_bytes(), filename.as_str())?;
+            write_bytes_to_file(&self.ui, &object.wrapped_data, filename.as_str())?;
         }
 
         Ok(())
@@ -161,22 +165,25 @@ impl<T: YubihsmUi> DeviceMenu<T> {
             include_ed_seed: false,
             aes_algorithm: None,
             oaep_algorithm: None,
+            mgf1_algorithm: None,
         };
         if wrapkey_type == WrapKeyType::Rsa {
             wrap_op.oaep_algorithm = Some(self.ui.select_algorithm(
                 &MgmAlgorithm::RSA_OAEP_ALGORITHMS,
                 Some(ObjectAlgorithm::RsaOaepSha256),
                 Some("Select OAEP algorithm to use for unwrapping", ))?);
+            wrap_op.mgf1_algorithm = Some(self.ui.select_algorithm(
+                &MgmAlgorithm::MGF1_ALGORITHMS,
+                Some(ObjectAlgorithm::Mgf1Sha256),
+                Some("Select MGF1 algorithm to use for unwrapping", ))?);
         }
 
         for f in files {
             self.ui.display_info_message(format!("reading {}", &f.display()).as_str());
-            let mut file = File::open(&f)?;
 
-            let mut wrap = String::new();
-            file.read_to_string(&mut wrap)?;
+            let wrap = fs::read(&f)?;
 
-            let res = WrapOperations::import_wrapped(session, &wrap_op, wrap, None);
+            let res = WrapOperations::import_wrapped(session, &wrap_op, &wrap, None);
             match res {
                 Ok(handle) => {
                     self.ui.display_success_message(format!("Successfully imported object {}, with ID 0x{:04x}", handle.object_type, handle.object_id).as_str());
