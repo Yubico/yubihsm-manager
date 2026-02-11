@@ -289,7 +289,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         let handle = match res {
             Ok(h) => h,
             Err(e) => {
-                if wrapkey_type == WrapKeyType::Rsa && e.to_string() == "Malformed command / invalid data" {
+                if wrapkey_type == WrapKeyType::Rsa {
                     self.ui.display_info_message(format!("Failed to unwrap as object: {}. Trying as key data...", e).as_str());
                     wrap_op.wrap_type = WrapType::Key;
 
