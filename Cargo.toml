@@ -26,7 +26,9 @@ edition = "2024"
 
 [dependencies]
 clap = "4.5.26"
-serde = "1.0.164"
+serde = { version = "1.0.164" , features = ["derive"] }
+serde_json = "1.0.96"
+chrono = { version = "0.4.43", features = ["serde"] } # for timestamps
 pem = "2.0.1"
 openssl = "0.10.54"
 x509-parser = "0.15.0"
@@ -42,3 +44,6 @@ shellexpand = "3.1.0"
 tabled = "0.12.2"
 crossterm = "0.26.1"
 yubihsmrs = { git = "https://github.com/Yubico/yubihsmrs.git", branch = "yubihsm-manager" }
+
+[dev-dependencies]
+tempfile = "3.3.0"
