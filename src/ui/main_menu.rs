@@ -24,7 +24,7 @@ use crate::ui::java_menu::JavaMenu;
 use crate::ui::device_menu::DeviceMenu;
 use crate::ui::auth_menu::AuthenticationMenu;
 use crate::ui::asym_menu::AsymmetricMenu;
-use crate::ui::helper_operations::{list_objects, delete_objects, display_menu_headers, generate_object};
+use crate::ui::helper_operations::{list_objects, delete_objects, display_menu_headers, generate_object, exit_manager};
 use crate::cli::cmdline::Cmdline;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::hsm_operations::error::MgmError;
@@ -43,7 +43,7 @@ pub struct MainMenu<T: YubihsmUi + Clone> {
 impl<T: YubihsmUi + Clone> MainMenu<T> {
 
     pub fn new(interface: T) -> Self {
-        MainMenu { ui: interface  }
+        MainMenu { ui: interface }
     }
 
     pub fn exec_command(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
@@ -60,12 +60,12 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
             let res = match cmd.command {
                 MgmCommandType::List => list_objects(&self.ui, &MainOperations, session),
                 MgmCommandType::Search => self.search(session),
-                MgmCommandType::Delete => delete_objects(&self.ui, &MainOperations, session, &MainOperations::get_objects_for_delete(session, authkey)?),
+                MgmCommandType::Delete => delete_objects(&self.ui, &None, &MainOperations, session, &MainOperations::get_objects_for_delete(session, authkey)?),
                 MgmCommandType::Generate => self.generate(session, authkey),
                 MgmCommandType::Import => self.import(session, authkey),
                 MgmCommandType::GotoKey => self.goto_key(session, authkey),
                 MgmCommandType::GotoDevice => DeviceMenu::new(self.ui.clone()).exec_command(session, authkey),
-                MgmCommandType::Exit => std::process::exit(0),
+                MgmCommandType::Exit => Ok(exit_manager(&self.ui, &None)),
                 _ => unreachable!()
             };
 
@@ -115,9 +115,9 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
             Some("\nSelect object type:")
         )?;
         match _type {
-            MgmObjectType::Asymmetric => generate_object(&self.ui, &AsymmetricOperations, session, authkey, ObjectType::AsymmetricKey),
-            MgmObjectType::Symmetric => generate_object(&self.ui, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey),
-            MgmObjectType::Wrap => generate_object(&self.ui, &WrapOperations, session, authkey, ObjectType::WrapKey),
+            MgmObjectType::Asymmetric => generate_object(&self.ui, &None, &AsymmetricOperations, session, authkey, ObjectType::AsymmetricKey),
+            MgmObjectType::Symmetric => generate_object(&self.ui, &None, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey),
+            MgmObjectType::Wrap => generate_object(&self.ui, &None, &WrapOperations, session, authkey, ObjectType::WrapKey),
             _ => Ok(())
         }
     }
@@ -144,7 +144,7 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
             Some("\nSelect object type:")
         )?;
         match _type {
-            MgmObjectType::Asymmetric | MgmObjectType::Certificate => AsymmetricMenu::new(Cmdline).exec_command(session, authkey),
+            MgmObjectType::Asymmetric | MgmObjectType::Certificate => AsymmetricMenu::new(Cmdline).exec_command(session, authkey, &None),
             MgmObjectType::Symmetric => SymmetricMenu::new(Cmdline).exec_command(session, authkey),
             MgmObjectType::Wrap => WrapMenu::new(Cmdline).exec_command(session, authkey),
             MgmObjectType::Authentication => AuthenticationMenu::new(self.ui.clone()).exec_command(session, authkey),

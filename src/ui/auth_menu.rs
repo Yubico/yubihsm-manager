@@ -18,7 +18,8 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
-use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_object_properties, list_objects, get_new_spec_table};
+use crate::ui::helper_operations::{delete_objects, display_object_properties, list_objects, get_new_spec_table};
+use crate::ui::helper_operations::{display_menu_headers, exit_manager};
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::asym::AsymmetricOperations;
 use crate::hsm_operations::types::{MgmCommandType, NewObjectSpec, SelectionItem};
@@ -50,12 +51,12 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
             let res = match cmd.command {
                 MgmCommandType::List => list_objects(&self.ui, &AuthenticationOperations, session),
                 MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &AuthenticationOperations, session),
-                MgmCommandType::Delete => delete_objects(&self.ui, &AuthenticationOperations, session, &AuthenticationOperations.get_all_objects(session)?),
+                MgmCommandType::Delete => delete_objects(&self.ui, &None, &AuthenticationOperations, session, &AuthenticationOperations.get_all_objects(session)?),
                 MgmCommandType::SetupUser => self.create_authkey(session, authkey, UserType::KeyUser),
                 MgmCommandType::SetupAdmin => self.create_authkey(session, authkey, UserType::KeyAdmin),
                 MgmCommandType::SetupAuditor => self.create_authkey(session, authkey, UserType::Auditor),
                 MgmCommandType::SetupCustomUser => self.create_authkey(session, authkey, UserType::CustomUser),
-                MgmCommandType::Exit => std::process::exit(0),
+                MgmCommandType::Exit => Ok(exit_manager(&self.ui, &None)),
                 _ => unreachable!()
             };
 

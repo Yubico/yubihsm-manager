@@ -19,7 +19,7 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
-use crate::ui::helper_operations::display_menu_headers;
+use crate::ui::helper_operations::{display_menu_headers, exit_manager};
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::algorithms::MgmAlgorithm;
 use crate::hsm_operations::device::DeviceOperations;
@@ -53,7 +53,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
                 MgmCommandType::BackupDevice => self.backup(session, authkey),
                 MgmCommandType::RestoreDevice => self.restore(session, authkey),
                 MgmCommandType::Reset => self.reset(session),
-                MgmCommandType::Exit => std::process::exit(0),
+                MgmCommandType::Exit => Ok(exit_manager(&self.ui, &None)),
                 _ => unreachable!()
             };
 

@@ -24,6 +24,7 @@ use hsm_operations::validators::pem_private_ecp256_file_validator;
 use traits::ui_traits::YubihsmUi;
 use ui::helper_io::get_pem_from_file;
 use cli::cmdline::Cmdline;
+use script::recorder::SessionRecorder;
 use ui::asym_menu::AsymmetricMenu;
 use ui::auth_menu::AuthenticationMenu;
 use ui::device_menu::DeviceMenu;
@@ -37,6 +38,7 @@ pub mod hsm_operations;
 pub mod ui;
 pub mod traits;
 pub mod cli;
+pub mod script;
 
 
 macro_rules! unwrap_or_exit1 {
@@ -92,6 +94,13 @@ fn main() -> Result<(), MgmError>{
             .help("Connector URL")
             .default_value("http://127.0.0.1:12345")
             .hide_default_value(false))
+        .arg(Arg::new("record")
+            .long("record")
+            .short('r')
+            .help("Record session operations in a script for later execution")
+            .num_args(0)
+            .default_value("false")
+            .action(clap::ArgAction::SetTrue))
         .arg(Arg::new("verbose")
             .long("verbose")
             .short('v')
@@ -171,10 +180,20 @@ fn main() -> Result<(), MgmError>{
 
     let authkey = session.get_object_info(authkey, ObjectType::AuthenticationKey)?;
 
+    let recorder: Option<SessionRecorder> = if matches.get_flag("record") {
+        YubihsmUi::display_info_message(&ui, "Starting session recording...");
+        Some(SessionRecorder::new(
+            connector.clone(),
+            authkey.id,
+        ))
+    } else {
+        None
+    };
+
     match matches.subcommand() {
         Some(subcommand) => {
             match subcommand.0 {
-                "asym" => AsymmetricMenu::new(ui).exec_command(&session, &authkey),
+                "asym" => AsymmetricMenu::new(ui).exec_command(&session, &authkey, &recorder),
                 "sym" => SymmetricMenu::new(ui).exec_command(&session, &authkey),
                 "auth" => AuthenticationMenu::new(ui).exec_command(&session, &authkey),
                 "wrap" => WrapMenu::new(ui).exec_command(&session, &authkey),

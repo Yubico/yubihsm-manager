@@ -22,7 +22,8 @@ use crate::traits::ui_traits::YubihsmUi;
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::types::{MgmCommand, NewObjectSpec};
 use crate::hsm_operations::common::get_delegated_capabilities;
-
+use crate::script::recorder::SessionRecorder;
+use crate::script::types::RecordedOperation;
 
 static ESC_HELP_TEXT: &str = "Pressing 'Esc' will always cancel current operation and return to previous menu";
 
@@ -34,6 +35,20 @@ pub fn display_menu_headers(ui: &impl YubihsmUi, menu_headers:&[&str], descripti
     ui.display_note(
         headers.as_str(), format!("{} \n{}", description, ESC_HELP_TEXT).as_str());
     Ok(())
+}
+
+pub fn exit_manager(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>) {
+    if let Some(rec) = recorder {
+        if rec.operation_count() > 0 {
+            match rec.flush() {
+                Ok(filename) => YubihsmUi::display_success_message(ui, format!("Session recorded to {}", filename).as_str()),
+                Err(e) => YubihsmUi::display_error_message(ui, format!("Failed to write recording: {}", e).as_str())
+            }
+        } else {
+            YubihsmUi::display_info_message(ui, "No recordable operations were performed. Script is not created");
+        }
+    }
+    std::process::exit(0);
 }
 
 pub fn list_objects(ui: &impl YubihsmUi, yh_operation: &dyn YubihsmOperations, session: &Session) -> Result<(), MgmError> {
@@ -78,7 +93,7 @@ pub fn display_object_properties(ui: &impl YubihsmUi,yh_operation: &dyn YubihsmO
     Ok(())
 }
 
-pub fn delete_objects(ui: &impl YubihsmUi,yh_operation: &dyn YubihsmOperations, session: &Session, available_objects: &[ObjectDescriptor]) -> Result<(), MgmError> {
+pub fn delete_objects(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh_operation: &dyn YubihsmOperations, session: &Session, available_objects: &[ObjectDescriptor]) -> Result<(), MgmError> {
     let objects = ui.select_multiple_objects(
         available_objects,
         false,
@@ -99,6 +114,13 @@ pub fn delete_objects(ui: &impl YubihsmUi,yh_operation: &dyn YubihsmOperations, 
             Ok(_) => {
                 ui.display_success_message(
                     format!("Successfully deleted {} object with ID 0x{:04x} from the YubiHSM", object.object_type, object.id).as_str());
+
+                if let Some(rec) = recorder {
+                    rec.record(RecordedOperation::DeleteObject {
+                        object_id: object.id,
+                        object_type: object.object_type.to_string(),
+                    });
+                }
             },
             Err(err) => {
                 ui.display_error_message(format!("Failed to delete {} object with ID 0x{:04x}. {}", object.object_type, object.id, err).as_str());
@@ -108,10 +130,10 @@ pub fn delete_objects(ui: &impl YubihsmUi,yh_operation: &dyn YubihsmOperations, 
     Ok(())
 }
 
-pub fn generate_object(ui: &impl YubihsmUi,yh_operation: &dyn YubihsmOperations,
-                session: &Session,
-                authkey: &ObjectDescriptor,
-                object_type: ObjectType) -> Result<(), MgmError> {
+pub fn generate_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh_operation: &dyn YubihsmOperations,
+                       session: &Session,
+                       authkey: &ObjectDescriptor,
+                       object_type: ObjectType) -> Result<(), MgmError> {
     let mut new_key = NewObjectSpec::empty();
     new_key.object_type = object_type;
     new_key.algorithm = ui.select_algorithm(
@@ -143,6 +165,11 @@ pub fn generate_object(ui: &impl YubihsmUi,yh_operation: &dyn YubihsmOperations,
     ui.stop_progress(progress, None);
     ui.display_success_message(
         format!("Generated asymmetric keypair with ID 0x{:04x} on the YubiHSM", new_key.id).as_str());
+
+    if let Some(rec) = recorder {
+        rec.record(RecordedOperation::GenerateObject(new_key));
+    }
+
     Ok(())
 }
 

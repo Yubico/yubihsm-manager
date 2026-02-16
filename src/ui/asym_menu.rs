@@ -17,7 +17,7 @@
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectOrigin, ObjectType};
 use yubihsmrs::Session;
 use crate::ui::helper_operations::{delete_objects, display_object_properties, generate_object, import_object, list_objects};
-use crate::ui::helper_operations::display_menu_headers;
+use crate::ui::helper_operations::{display_menu_headers, exit_manager};
 use crate::traits::ui_traits::YubihsmUi;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::hsm_operations::error::MgmError;
@@ -25,6 +25,7 @@ use crate::hsm_operations::types::{MgmCommandType, SelectionItem};
 use crate::hsm_operations::wrap::WrapOperations;
 use crate::hsm_operations::asym::{AsymmetricOperations, AttestationType};
 use crate::ui::helper_io::{get_hex_or_bytes_from_file, get_pem_from_file, get_string_or_bytes_from_file, write_bytes_to_file, get_path};
+use crate::script::recorder::SessionRecorder;
 
 static ASYM_HEADER: &str = "Asymmetric keys";
 
@@ -35,10 +36,10 @@ pub struct AsymmetricMenu<T: YubihsmUi> {
 impl<T: YubihsmUi> AsymmetricMenu<T> {
 
     pub fn new(interface: T) -> Self {
-        AsymmetricMenu { ui: interface  }
+        AsymmetricMenu { ui: interface }
     }
 
-    pub fn exec_command(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    pub fn exec_command(&self, session: &Session, authkey: &ObjectDescriptor, recorder: &Option<SessionRecorder>) -> Result<(), MgmError> {
         loop {
 
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, ASYM_HEADER],
@@ -50,16 +51,16 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
             let res = match cmd.command {
                 MgmCommandType::List => list_objects(&self.ui, &AsymmetricOperations, session),
                 MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &AsymmetricOperations, session),
-                MgmCommandType::Generate => generate_object(&self.ui, &AsymmetricOperations, session, authkey, ObjectType::AsymmetricKey),
+                MgmCommandType::Generate => generate_object(&self.ui, recorder, &AsymmetricOperations, session, authkey, ObjectType::AsymmetricKey),
                 MgmCommandType::Import => self.import(session, authkey),
-                MgmCommandType::Delete => delete_objects(&self.ui, &AsymmetricOperations, session, &AsymmetricOperations.get_all_objects(session)?),
+                MgmCommandType::Delete => delete_objects(&self.ui, recorder, &AsymmetricOperations, session, &AsymmetricOperations.get_all_objects(session)?),
                 MgmCommandType::GetPublicKey => self.get_public_key(session, ObjectType::AsymmetricKey),
                 MgmCommandType::GetCertificate => self.get_cert(session),
                 MgmCommandType::Sign => self.sign(session, authkey),
                 MgmCommandType::Decrypt => self.decrypt(session, authkey),
                 MgmCommandType::DeriveEcdh => self.derive_ecdh(session, authkey),
                 MgmCommandType::SignAttestationCert => self.sign_attestation(session, authkey),
-                MgmCommandType::Exit => std::process::exit(0),
+                MgmCommandType::Exit => Ok(exit_manager(&self.ui, recorder)),
                 _ => unreachable!()
             };
 

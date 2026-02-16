@@ -1,52 +1,54 @@
+use std::cell::RefCell;
 use std::fs;
-use std::path::PathBuf;
-use chrono::Utc;
+use std::path::Path;
+use chrono::Local;
 use crate::script::types::{RecordedOperation, SessionScript};
 
 /// Accumulates recorded operations and writes them to a JSON file on flush.
 pub struct SessionRecorder {
-    operations: Vec<RecordedOperation>,
-    output_path: PathBuf,
+    operations: RefCell<Vec<RecordedOperation>>,
     connector: String,
     auth_key_id: u16,
 }
 
 impl SessionRecorder {
-    pub fn new(output_path: PathBuf, connector: String, auth_key_id: u16) -> Self {
+    pub fn new(connector: String, auth_key_id: u16) -> Self {
         Self {
-            operations: Vec::new(),
-            output_path,
+            operations: RefCell::new(Vec::new()),
             connector,
             auth_key_id,
         }
     }
 
     /// Record a single completed operation.
-    pub fn record(&mut self, operation: RecordedOperation) {
-        self.operations.push(operation);
+    pub fn record(&self, operation: RecordedOperation) {
+        self.operations.borrow_mut().push(operation);
     }
 
     /// Write the accumulated recording to the JSON file.
-    pub fn flush(&self) -> Result<(), std::io::Error> {
+    pub fn flush(&self) -> Result<String, std::io::Error> {
+        let timestamp = Local::now().format("%Y%m%d-%H:%M:%S").to_string();
         let script = SessionScript {
             version: "1.0".to_string(),
-            recorded_at: Utc::now().to_rfc3339(),
+            recorded_at: timestamp.clone(),
             session: crate::script::types::SessionInfo {
                 connector: self.connector.clone(),
                 auth_key_id: self.auth_key_id,
                 password: "<PASSWORD>".to_string(),
             },
-            operations: self.operations.clone(),
+            operations: self.operations.borrow().clone(),
         };
 
-        let json = serde_json::to_string_pretty(&script)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        fs::write(&self.output_path, json)
+        let json = serde_json::to_string_pretty(&script)?;
+
+        let filename = format!("./yubihsm-manager-script-{}.json", timestamp);
+        fs::write(Path::new(&filename), json)?;
+        Ok(filename)
     }
 
     /// Returns how many operations have been recorded so far.
     pub fn operation_count(&self) -> usize {
-        self.operations.len()
+        self.operations.borrow().len()
     }
 }
 

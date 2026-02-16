@@ -20,7 +20,7 @@ use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::cli::cmdline::Cmdline;
 use crate::ui::helper_operations::{delete_objects, display_menu_headers, generate_object, list_objects};
-use crate::ui::helper_operations::{display_object_properties, get_new_spec_table};
+use crate::ui::helper_operations::{display_object_properties, get_new_spec_table, exit_manager};
 use crate::ui::device_menu::DeviceMenu;
 use crate::ui::asym_menu::AsymmetricMenu;
 use crate::traits::operation_traits::YubihsmOperations;
@@ -57,14 +57,14 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             let result = match cmd.command {
                 MgmCommandType::List => list_objects(&self.ui, &WrapOperations, session),
                 MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &WrapOperations, session),
-                MgmCommandType::Generate => generate_object(&self.ui, &WrapOperations, session, authkey, ObjectType::WrapKey),
+                MgmCommandType::Generate => generate_object(&self.ui, &None, &WrapOperations, session, authkey, ObjectType::WrapKey),
                 MgmCommandType::Import => self.import(session, authkey),
-                MgmCommandType::Delete => delete_objects(&self.ui, &WrapOperations, session, &WrapOperations.get_all_objects(session)?),
+                MgmCommandType::Delete => delete_objects(&self.ui, &None, &WrapOperations, session, &WrapOperations.get_all_objects(session)?),
                 MgmCommandType::GetPublicKey => AsymmetricMenu::new(Cmdline).get_public_key(session, ObjectType::WrapKey),
                 MgmCommandType::ExportWrapped => self.export_wrapped(session, authkey),
                 MgmCommandType::ImportWrapped => self.import_wrapped(session, authkey),
                 MgmCommandType::GetRandom => DeviceMenu::new(self.ui.clone()).get_random(session),
-                MgmCommandType::Exit => std::process::exit(0),
+                MgmCommandType::Exit => Ok(exit_manager(&self.ui, &None)),
                 _ => unreachable!()
             };
 

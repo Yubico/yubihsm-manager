@@ -18,7 +18,7 @@ use yubihsmrs::object::{ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::helper_operations::{generate_object, import_object, list_objects};
-use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_object_properties};
+use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_object_properties, exit_manager};
 use crate::ui::device_menu::DeviceMenu;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::hsm_operations::error::MgmError;
@@ -49,13 +49,13 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
             let res = match cmd.command {
                 MgmCommandType::List => list_objects(&self.ui, &SymmetricOperations, session),
                 MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &SymmetricOperations, session),
-                MgmCommandType::Generate => generate_object(&self.ui, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey),
+                MgmCommandType::Generate => generate_object(&self.ui, &None, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey),
                 MgmCommandType::Import => self.import(session, authkey),
-                MgmCommandType::Delete => delete_objects(&self.ui, &SymmetricOperations, session, &SymmetricOperations.get_all_objects(session)?),
+                MgmCommandType::Delete => delete_objects(&self.ui, &None, &SymmetricOperations, session, &SymmetricOperations.get_all_objects(session)?),
                 MgmCommandType::Encrypt => self.operate(session, authkey, EncryptionMode::Encrypt),
                 MgmCommandType::Decrypt => self.operate(session, authkey, EncryptionMode::Decrypt),
                 MgmCommandType::GetRandom => DeviceMenu::new(self.ui.clone()).get_random(session),
-                MgmCommandType::Exit => std::process::exit(0),
+                MgmCommandType::Exit => Ok(exit_manager(&self.ui, &None)),
                 _ => unreachable!()
             };
 

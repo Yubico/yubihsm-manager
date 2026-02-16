@@ -20,7 +20,7 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::helper_operations::{generate_object, import_object, list_objects};
-use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_object_properties};
+use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_object_properties, exit_manager};
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::types::MgmCommandType;
@@ -51,10 +51,10 @@ impl<T: YubihsmUi> JavaMenu<T> {
             let res = match cmd.command {
                 MgmCommandType::List => list_objects(&self.ui, &JavaOps, session),
                 MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &JavaOps, session),
-                MgmCommandType::Generate => generate_object(&self.ui, &JavaOps, session, authkey, ObjectType::AsymmetricKey),
+                MgmCommandType::Generate => generate_object(&self.ui, &None, &JavaOps, session, authkey, ObjectType::AsymmetricKey),
                 MgmCommandType::Import => self.import(session, authkey),
-                MgmCommandType::Delete => delete_objects(&self.ui, &JavaOps, session, &JavaOps.get_all_objects(session)?),
-                MgmCommandType::Exit => std::process::exit(0),
+                MgmCommandType::Delete => delete_objects(&self.ui, &None, &JavaOps, session, &JavaOps.get_all_objects(session)?),
+                MgmCommandType::Exit => Ok(exit_manager(&self.ui, &None)),
                 _ => unreachable!()
             };
 
