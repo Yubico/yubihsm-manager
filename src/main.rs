@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+extern crate yubihsmrs;
+extern crate chrono;
+
 use clap::Arg;
 use yubihsmrs::YubiHsm;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectType};
@@ -24,7 +27,9 @@ use hsm_operations::validators::pem_private_ecp256_file_validator;
 use traits::ui_traits::YubihsmUi;
 use ui::helper_io::get_pem_from_file;
 use cli::cmdline::Cmdline;
-use script::recorder::SessionRecorder;
+use script::script_recorder::SessionRecorder;
+use script::script_runner::{ScriptMode, ScriptRunner};
+use script::types::SessionScript;
 use ui::asym_menu::AsymmetricMenu;
 use ui::auth_menu::AuthenticationMenu;
 use ui::device_menu::DeviceMenu;
@@ -101,6 +106,18 @@ fn main() -> Result<(), MgmError>{
             .num_args(0)
             .default_value("false")
             .action(clap::ArgAction::SetTrue))
+        .arg(Arg::new("exec")
+            .long("exec")
+            .help("Execute operations from a recorded JSON script file")
+            .value_name("FILE")
+            .num_args(1)
+            .conflicts_with("record"))
+        .arg(Arg::new("exec-mode")
+            .long("exec-mode")
+            .help("Execution mode when executing a script")
+            .value_parser(clap::builder::EnumValueParser::<ScriptMode>::new())
+            .default_value("exit-on-error")
+            .requires("exec"))
         .arg(Arg::new("verbose")
             .long("verbose")
             .short('v')
@@ -110,7 +127,24 @@ fn main() -> Result<(), MgmError>{
             .action(clap::ArgAction::SetTrue))
         .get_matches();
 
-    let Some(connector) = matches.get_one::<String>("connector") else {
+    // Check if we are executing a script or entering into command line mode
+    let script: Option<SessionScript> = if let Some(script_path) = matches.get_one::<String>("exec") {
+        let s = ScriptRunner::load(std::path::Path::new(script_path))?;
+
+        ui.display_info_message(&format!(
+            "Loaded script with {} operations", s.operations.len()));
+        Some(s)
+    } else {
+        None
+    };
+
+    // Connector value is needed to create the HSM object. Priority: command line > script > default.
+    let connector =
+    if let Some(c) = matches.get_one::<String>("connector") {
+        c
+     } else if let Some(s) = &script {
+        &s.session.connector
+     } else {
         YubihsmUi::display_error_message(&ui, "Failed to read connector value");
         std::process::exit(1);
     };
@@ -119,26 +153,33 @@ fn main() -> Result<(), MgmError>{
     let h = unwrap_or_exit1!(YubiHsm::new(connector), "Unable to create HSM object");
     unwrap_or_exit1!(h.set_verbosity(matches.get_flag("verbose")), "Unable to set verbosity");
 
+    // This command does not require authentication
     if let Some("get-device-info") = matches.subcommand_name() {
         let info = h.get_device_info()?;
-        println!("{}\n",info);
+          println!("{}\n", info);
         return Ok(());
     };
 
+    // This command does not require authentication
     if let Some("get-device-publickey") = matches.subcommand_name() {
         let pubkey = h.get_device_pubkey()?;
         let pubkey = AsymmetricOperations::get_pubkey_pem(ObjectAlgorithm::EcP256, &pubkey)?;
-        println!("{}\n",pubkey);
+        println!("{}\n", pubkey);
         return Ok(());
     };
 
-    let authkey = if let Some(id) = matches.get_one::<String>("authkey") {
-        get_id_from_string(id)?
-    } else {
-        1
-    };
+    // Determine authentication key ID to use for session. Priority: command line > script > default (1).
+    let authkey =
+        if let Some(id) = matches.get_one::<String>("authkey") {
+            get_id_from_string(id)?
+        } else if let Some(s) = &script {
+            s.session.auth_key_id
+        } else {
+            1
+        };
     YubihsmUi::display_info_message(&ui, format!("Using authentication key 0x{:04x}", authkey).as_str());
 
+    // Open a sessoin authenticated either by a password or a private ECP256 key
     let session =
     if matches.contains_id("privkey") {
         let filename = if let Some(f) = matches.get_one::<String>("privkey") {
@@ -177,18 +218,28 @@ fn main() -> Result<(), MgmError>{
         unwrap_or_exit1!(h.establish_session(authkey, &password, true), "Unable to open session")
     };
 
-
-    let authkey = session.get_object_info(authkey, ObjectType::AuthenticationKey)?;
+    // If a script was loaded, execute it and exit — skip interactive menu.
+    if let Some(s) = &script {
+        let mode = matches.get_one::<ScriptMode>("exec-mode").cloned().unwrap_or_default();  // defaults to ReplayMode::Exit
+        YubihsmUi::display_info_message(&ui, format!("Executing script in {} mode...", mode).as_str());
+        if let Err(e) = ScriptRunner::run(&ui, &session, s, &mode) {
+            YubihsmUi::display_error_message(&ui,e.to_string().as_str());
+        }
+        return Ok(())
+    }
 
     let recorder: Option<SessionRecorder> = if matches.get_flag("record") {
         YubihsmUi::display_info_message(&ui, "Starting session recording...");
         Some(SessionRecorder::new(
             connector.clone(),
-            authkey.id,
+            authkey,
         ))
     } else {
         None
     };
+
+    // Enter command line mode
+    let authkey = session.get_object_info(authkey, ObjectType::AuthenticationKey)?;
 
     match matches.subcommand() {
         Some(subcommand) => {

@@ -55,7 +55,10 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
                 MgmCommandType::Encrypt => self.operate(session, authkey, EncryptionMode::Encrypt),
                 MgmCommandType::Decrypt => self.operate(session, authkey, EncryptionMode::Decrypt),
                 MgmCommandType::GetRandom => DeviceMenu::new(self.ui.clone()).get_random(session),
-                MgmCommandType::Exit => Ok(exit_manager(&self.ui, &None)),
+                MgmCommandType::Exit => {
+                    exit_manager(&self.ui, &None);
+                    Ok(())
+                },
                 _ => unreachable!()
             };
 

@@ -54,7 +54,10 @@ impl<T: YubihsmUi> JavaMenu<T> {
                 MgmCommandType::Generate => generate_object(&self.ui, &None, &JavaOps, session, authkey, ObjectType::AsymmetricKey),
                 MgmCommandType::Import => self.import(session, authkey),
                 MgmCommandType::Delete => delete_objects(&self.ui, &None, &JavaOps, session, &JavaOps.get_all_objects(session)?),
-                MgmCommandType::Exit => Ok(exit_manager(&self.ui, &None)),
+                MgmCommandType::Exit => {
+                    exit_manager(&self.ui, &None);
+                    Ok(())
+                },
                 _ => unreachable!()
             };
 

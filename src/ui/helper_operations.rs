@@ -22,8 +22,8 @@ use crate::traits::ui_traits::YubihsmUi;
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::types::{MgmCommand, NewObjectSpec};
 use crate::hsm_operations::common::get_delegated_capabilities;
-use crate::script::recorder::SessionRecorder;
-use crate::script::types::RecordedOperation;
+use crate::script::script_recorder::SessionRecorder;
+use crate::script::types::{RecordableObjectSpec, RecordedOperation};
 
 static ESC_HELP_TEXT: &str = "Pressing 'Esc' will always cancel current operation and return to previous menu";
 
@@ -118,7 +118,7 @@ pub fn delete_objects(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, y
                 if let Some(rec) = recorder {
                     rec.record(RecordedOperation::DeleteObject {
                         object_id: object.id,
-                        object_type: object.object_type.to_string(),
+                        object_type: object.object_type,
                     });
                 }
             },
@@ -167,7 +167,7 @@ pub fn generate_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, 
         format!("Generated asymmetric keypair with ID 0x{:04x} on the YubiHSM", new_key.id).as_str());
 
     if let Some(rec) = recorder {
-        rec.record(RecordedOperation::GenerateObject(new_key));
+        rec.record(RecordedOperation::GenerateObject(RecordableObjectSpec::from(&new_key)));
     }
 
     Ok(())

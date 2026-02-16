@@ -56,7 +56,10 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
                 MgmCommandType::SetupAdmin => self.create_authkey(session, authkey, UserType::KeyAdmin),
                 MgmCommandType::SetupAuditor => self.create_authkey(session, authkey, UserType::Auditor),
                 MgmCommandType::SetupCustomUser => self.create_authkey(session, authkey, UserType::CustomUser),
-                MgmCommandType::Exit => Ok(exit_manager(&self.ui, &None)),
+                MgmCommandType::Exit => {
+                    exit_manager(&self.ui, &None);
+                    Ok(())
+                },
                 _ => unreachable!()
             };
 

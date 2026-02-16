@@ -25,7 +25,7 @@ use crate::hsm_operations::types::{MgmCommandType, SelectionItem};
 use crate::hsm_operations::wrap::WrapOperations;
 use crate::hsm_operations::asym::{AsymmetricOperations, AttestationType};
 use crate::ui::helper_io::{get_hex_or_bytes_from_file, get_pem_from_file, get_string_or_bytes_from_file, write_bytes_to_file, get_path};
-use crate::script::recorder::SessionRecorder;
+use crate::script::script_recorder::SessionRecorder;
 
 static ASYM_HEADER: &str = "Asymmetric keys";
 
@@ -60,7 +60,10 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
                 MgmCommandType::Decrypt => self.decrypt(session, authkey),
                 MgmCommandType::DeriveEcdh => self.derive_ecdh(session, authkey),
                 MgmCommandType::SignAttestationCert => self.sign_attestation(session, authkey),
-                MgmCommandType::Exit => Ok(exit_manager(&self.ui, recorder)),
+                MgmCommandType::Exit => {
+                    exit_manager(&self.ui, recorder);
+                    Ok(())
+                },
                 _ => unreachable!()
             };
 

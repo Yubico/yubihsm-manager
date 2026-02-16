@@ -53,7 +53,10 @@ impl<T: YubihsmUi> DeviceMenu<T> {
                 MgmCommandType::BackupDevice => self.backup(session, authkey),
                 MgmCommandType::RestoreDevice => self.restore(session, authkey),
                 MgmCommandType::Reset => self.reset(session),
-                MgmCommandType::Exit => Ok(exit_manager(&self.ui, &None)),
+                MgmCommandType::Exit => {
+                    exit_manager(&self.ui, &None);
+                    Ok(())
+                },
                 _ => unreachable!()
             };
 

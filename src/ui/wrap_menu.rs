@@ -64,7 +64,10 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                 MgmCommandType::ExportWrapped => self.export_wrapped(session, authkey),
                 MgmCommandType::ImportWrapped => self.import_wrapped(session, authkey),
                 MgmCommandType::GetRandom => DeviceMenu::new(self.ui.clone()).get_random(session),
-                MgmCommandType::Exit => Ok(exit_manager(&self.ui, &None)),
+                MgmCommandType::Exit => {
+                    exit_manager(&self.ui, &None);
+                    Ok(())
+                },
                 _ => unreachable!()
             };
 
