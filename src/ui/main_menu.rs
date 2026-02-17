@@ -132,10 +132,10 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
             Some("\nSelect object type:")
         )?;
         match _type {
-            MgmObjectType::Asymmetric | MgmObjectType::Certificate => AsymmetricMenu::new(Cmdline).import(session, authkey),
+            MgmObjectType::Asymmetric | MgmObjectType::Certificate => AsymmetricMenu::new(Cmdline).import(session, &None, authkey),
             MgmObjectType::Symmetric => SymmetricMenu::new(Cmdline).import(session, authkey),
             MgmObjectType::Wrap => WrapMenu::new(Cmdline).import(session, authkey),
-            MgmObjectType::Authentication => AuthenticationMenu::new(Cmdline).exec_command(session, authkey),
+            MgmObjectType::Authentication => AuthenticationMenu::new(Cmdline).exec_command(session, &None, authkey),
             _ => Ok(())
         }
     }
@@ -147,10 +147,10 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
             Some("\nSelect object type:")
         )?;
         match _type {
-            MgmObjectType::Asymmetric | MgmObjectType::Certificate => AsymmetricMenu::new(Cmdline).exec_command(session, authkey, &None),
+            MgmObjectType::Asymmetric | MgmObjectType::Certificate => AsymmetricMenu::new(Cmdline).exec_command(session, &None, authkey),
             MgmObjectType::Symmetric => SymmetricMenu::new(Cmdline).exec_command(session, authkey),
             MgmObjectType::Wrap => WrapMenu::new(Cmdline).exec_command(session, authkey),
-            MgmObjectType::Authentication => AuthenticationMenu::new(self.ui.clone()).exec_command(session, authkey),
+            MgmObjectType::Authentication => AuthenticationMenu::new(self.ui.clone()).exec_command(session, &None, authkey),
             MgmObjectType::Java => JavaMenu::new(self.ui.clone()).exec_command(session, authkey),
             MgmObjectType::Ksp => Ksp::new(self.ui.clone()).guided_setup(session, authkey),
         }

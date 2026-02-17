@@ -26,6 +26,8 @@ use crate::hsm_operations::types::{MgmCommandType, NewObjectSpec, SelectionItem}
 use crate::hsm_operations::common::get_delegated_capabilities;
 use crate::hsm_operations::auth::{AuthenticationType, AuthenticationOperations, UserType};
 use crate::ui::helper_io::get_pem_from_file;
+use crate::script::script_recorder::{SessionRecorder, RedactMode};
+use crate::script::types::{RecordableObjectSpec, RecordedOperation};
 
 static AUTH_HEADER: &str = "Authentication keys";
 
@@ -39,7 +41,7 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
         AuthenticationMenu { ui: interface  }
     }
 
-    pub fn exec_command(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    pub fn exec_command(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         loop {
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, AUTH_HEADER],
                                  "Authentication key operations allow you to setup users by managing authentication keys stored on the YubiHSM")?;
@@ -52,12 +54,12 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
                 MgmCommandType::List => list_objects(&self.ui, &AuthenticationOperations, session),
                 MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &AuthenticationOperations, session),
                 MgmCommandType::Delete => delete_objects(&self.ui, &None, &AuthenticationOperations, session, &AuthenticationOperations.get_all_objects(session)?),
-                MgmCommandType::SetupUser => self.create_authkey(session, authkey, UserType::KeyUser),
-                MgmCommandType::SetupAdmin => self.create_authkey(session, authkey, UserType::KeyAdmin),
-                MgmCommandType::SetupAuditor => self.create_authkey(session, authkey, UserType::Auditor),
-                MgmCommandType::SetupCustomUser => self.create_authkey(session, authkey, UserType::CustomUser),
+                MgmCommandType::SetupUser => self.create_authkey(session, recorder, authkey, UserType::KeyUser),
+                MgmCommandType::SetupAdmin => self.create_authkey(session, recorder, authkey, UserType::KeyAdmin),
+                MgmCommandType::SetupAuditor => self.create_authkey(session, recorder, authkey, UserType::Auditor),
+                MgmCommandType::SetupCustomUser => self.create_authkey(session, recorder, authkey, UserType::CustomUser),
                 MgmCommandType::Exit => {
-                    exit_manager(&self.ui, &None);
+                    exit_manager(&self.ui, recorder);
                     Ok(())
                 },
                 _ => unreachable!()
@@ -71,6 +73,7 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
 
     fn create_authkey(&self,
                       session: &Session,
+                      recorder: &Option<SessionRecorder>,
                       current_authkey: &ObjectDescriptor,
                       user_type: UserType
     ) -> Result<(), MgmError> {
@@ -118,6 +121,18 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
 
         new_key.id = AuthenticationOperations.import(session, &new_key)?;
         self.ui.display_success_message(format!("Created new authentication key with ID 0x{:04x}", new_key.id).as_str());
+
+        if let Some(rec) = recorder {
+
+            let credential = if rec.mode == RedactMode::None {
+                hex::encode(&new_key.data[0])
+            } else {
+                "<REDACTED>".to_string()
+            };
+
+            rec.record(RecordedOperation::CreateAuthKey { spec: RecordableObjectSpec::from(&new_key), credential });
+        }
+
         Ok(())
     }
 

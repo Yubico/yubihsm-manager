@@ -39,7 +39,7 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
         AsymmetricMenu { ui: interface }
     }
 
-    pub fn exec_command(&self, session: &Session, authkey: &ObjectDescriptor, recorder: &Option<SessionRecorder>) -> Result<(), MgmError> {
+    pub fn exec_command(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         loop {
 
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, ASYM_HEADER],
@@ -52,7 +52,7 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
                 MgmCommandType::List => list_objects(&self.ui, &AsymmetricOperations, session),
                 MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &AsymmetricOperations, session),
                 MgmCommandType::Generate => generate_object(&self.ui, recorder, &AsymmetricOperations, session, authkey, ObjectType::AsymmetricKey),
-                MgmCommandType::Import => self.import(session, authkey),
+                MgmCommandType::Import => self.import(session, recorder, authkey),
                 MgmCommandType::Delete => delete_objects(&self.ui, recorder, &AsymmetricOperations, session, &AsymmetricOperations.get_all_objects(session)?),
                 MgmCommandType::GetPublicKey => self.get_public_key(session, ObjectType::AsymmetricKey),
                 MgmCommandType::GetCertificate => self.get_cert(session),
@@ -73,7 +73,7 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
         }
     }
 
-    pub fn import(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    pub fn import(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let filepath = self.ui.get_asymmetric_import_filepath(
             "Enter path to PEM file containing private key or X509Certificate:",
             None)?;
@@ -88,7 +88,7 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
             return Err(MgmError::InvalidInput("File does not contain a private key nor an X509 certificate".to_string()));
         }
 
-        import_object(&self.ui, &AsymmetricOperations, session, authkey, _type, _algo, [_bytes].to_vec())
+        import_object(&self.ui, recorder, &AsymmetricOperations, session, authkey, _type, _algo, [_bytes].to_vec())
     }
 
     pub fn get_public_key(&self, session: &Session, object_type: ObjectType) -> Result<(), MgmError> {

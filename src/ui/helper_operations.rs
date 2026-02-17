@@ -22,7 +22,7 @@ use crate::traits::ui_traits::YubihsmUi;
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::types::{MgmCommand, NewObjectSpec};
 use crate::hsm_operations::common::get_delegated_capabilities;
-use crate::script::script_recorder::SessionRecorder;
+use crate::script::script_recorder::{SessionRecorder, RedactMode};
 use crate::script::types::{RecordableObjectSpec, RecordedOperation};
 
 static ESC_HELP_TEXT: &str = "Pressing 'Esc' will always cancel current operation and return to previous menu";
@@ -173,7 +173,7 @@ pub fn generate_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, 
     Ok(())
 }
 
-pub fn import_object(ui: &impl YubihsmUi,yh_operation: &dyn YubihsmOperations,
+pub fn import_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh_operation: &dyn YubihsmOperations,
               session: &Session,
               authkey: &ObjectDescriptor, object_type: ObjectType, object_algorithm: ObjectAlgorithm, data: Vec<Vec<u8>>) -> Result<(), MgmError> {
     let mut new_key = NewObjectSpec::empty();
@@ -196,10 +196,22 @@ pub fn import_object(ui: &impl YubihsmUi,yh_operation: &dyn YubihsmOperations,
         return Ok(());
     }
 
-    let progress = ui.start_progress(Some("Generating key..."));
+    let progress = ui.start_progress(Some("Importing key..."));
     new_key.id = yh_operation.import(session, &new_key)?;
     ui.stop_progress(progress, None);
     ui.display_success_message(
         format!("Imported {} object with ID 0x{:04x} into the YubiHSM", new_key.object_type, new_key.id).as_str());
+
+    if let Some(rec) = recorder {
+
+        let rec_data = if rec.mode == RedactMode::AllValue || rec.mode == RedactMode::AllInput {
+            vec!["<REDACTED>".to_string(); new_key.data.len()]
+        } else {
+            new_key.data.iter().map(hex::encode).collect()
+        };
+
+        rec.record(RecordedOperation::ImportObject { spec: RecordableObjectSpec::from(&new_key), data: rec_data });
+    }
+
     Ok(())
 }

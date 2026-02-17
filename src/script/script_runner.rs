@@ -2,8 +2,8 @@ use std::fmt::Display;
 use std::{fmt, fs};
 use std::path::Path;
 use yubihsmrs::Session;
-use yubihsmrs::object::ObjectType;
-use crate::hsm_operations::asym::AsymmetricOperations;
+use yubihsmrs::object::{ObjectAlgorithm, ObjectType};
+use crate::hsm_operations::asym::{AsymmetricOperations, JavaOps};
 use crate::hsm_operations::auth::AuthenticationOperations;
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::ksp::KspOperations;
@@ -13,35 +13,7 @@ use crate::hsm_operations::wrap::WrapOperations;
 use crate::script::types::{RecordedOperation, RecordableObjectSpec, SessionScript};
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
-
-#[derive(Clone, Debug, Default, clap::ValueEnum)]
-pub enum ScriptMode {
-    #[default]
-    ExitOnError,
-    ContinueOnError,
-}
-
-impl From<&String> for ScriptMode {
-    fn from(s: &String) -> Self {
-        match s.to_lowercase().as_str() {
-            "exit_on_error" => ScriptMode::ExitOnError,
-            "continue_on_error" => ScriptMode::ContinueOnError,
-            other => {
-                eprintln!("Unknown mode '{}', defaulting to 'exit_on_error'", other);
-                ScriptMode::ExitOnError
-            }
-        }
-    }
-}
-
-impl Display for ScriptMode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ScriptMode::ExitOnError => write!(f, "exit_on_error"),
-            ScriptMode::ContinueOnError => write!(f, "continue_on_error"),
-        }
-    }
-}
+use crate::ui::helper_io::get_pem_from_file;
 
 pub struct ScriptRunner;
 
@@ -69,7 +41,7 @@ impl ScriptRunner {
         ui: &impl YubihsmUi,
         session: &Session,
         script: &SessionScript,
-        mode: &ScriptMode,
+        continue_on_error: bool,
     ) -> Result<(), MgmError> {
         let total = script.operations.len();
         let mut errors: Vec<(usize, String)> = Vec::new();
@@ -82,28 +54,21 @@ impl ScriptRunner {
             // ui.display_info_message(&format!("{} {}", step, op_summary(op)));
             ui.display_info_message(&step);
 
-            let progress = ui.start_progress(Some(&step));
-
             match Self::execute(ui, session, op, &step) {
                 Ok(()) => {
                     ui.display_success_message(&format!("{} Done", step));
                 },
                 Err(e) => {
                     let msg = format!("{} Failed: {}", step, e);
-                    match mode {
-                        ScriptMode::ExitOnError => {
-                            ui.display_error_message(&msg);
-                            return Err(e);
-                        },
-                        ScriptMode::ContinueOnError => {
-                            ui.display_warning(&msg);
-                            errors.push((i + 1, e.to_string()));
-                        },
+                    if !continue_on_error {
+                        ui.display_error_message(&msg);
+                        return Err(e);
                     }
+                    ui.display_warning(&msg);
+                    errors.push((i + 1, e.to_string()));
                 },
             }
 
-            ui.stop_progress(progress, None);
         }
 
         if errors.is_empty() {
@@ -127,68 +92,132 @@ impl ScriptRunner {
     ) -> Result<(), MgmError> {
         match op {
             RecordedOperation::GenerateObject(spec) => {
+                ui.display_info_message(&format!("Generate {:?} 0x{:04x} ({:?})", spec.object_type, spec.id, spec.algorithm));
                 let new_spec: NewObjectSpec = spec.into();
+                let progress = ui.start_progress(Some(&step));
                 match spec.object_type {
                     ObjectType::AsymmetricKey => { AsymmetricOperations.generate(session, &new_spec)?; },
                     ObjectType::SymmetricKey  => { SymmetricOperations.generate(session, &new_spec)?; },
                     ObjectType::WrapKey       => { WrapOperations.generate(session, &new_spec)?; },
                     other => return Err(MgmError::Error(format!("Cannot generate {:?}", other))),
                 }
+                ui.stop_progress(progress, None);
                 Ok(())
             },
 
-            // RecordedOperation::ImportObject { spec, data_b64 } => {
-            //     if data_b64.iter().any(|d| d == "<REDACTED>") {
-            //         return Err(MgmError::Error(format!(
-            //             "Cannot replay import of {:?} 0x{:04x}: key data was redacted. Import manually.",
-            //             spec.object_type, spec.id)));
-            //     }
-            //     let data: Vec<Vec<u8>> = data_b64.iter()
-            //                                      .map(|b64| openssl::base64::decode_block(b64)
-            //                                          .map_err(|e| MgmError::Error(format!("Invalid base64: {}", e))))
-            //                                      .collect::<Result<Vec<_>, _>>()?;
-            //     let mut new_spec: NewObjectSpec = spec.into();
-            //     new_spec.data = data;
-            //     match spec.object_type {
-            //         ObjectType::AsymmetricKey     => { AsymmetricOperations.import(session, &new_spec)?; },
-            //         ObjectType::SymmetricKey      => { SymmetricOperations.import(session, &new_spec)?; },
-            //         ObjectType::WrapKey
-            //         | ObjectType::PublicWrapKey    => { WrapOperations.import(session, &new_spec)?; },
-            //         ObjectType::AuthenticationKey => { AuthenticationOperations.import(session, &new_spec)?; },
-            //         other => return Err(MgmError::Error(format!("Cannot import {:?}", other))),
-            //     }
-            //     Ok(())
-            // },
+            RecordedOperation::ImportObject { spec, data } => {
+                ui.display_info_message(&format!("Import {:?} 0x{:04x} ({:?})", spec.object_type, spec.id, spec.algorithm));
+                let mut value = Vec::new();
+                if data[0] == "<REDACTED>" {
+                    if AsymmetricOperations::is_rsa_key_algorithm(&spec.algorithm) ||
+                        AsymmetricOperations::is_ec_key_algorithm(&spec.algorithm) ||
+                        spec.algorithm == ObjectAlgorithm::Ed25519 ||
+                        spec.algorithm == ObjectAlgorithm::OpaqueX509Certificate {
+                        let filepath = if spec.algorithm == ObjectAlgorithm::OpaqueX509Certificate {
+                            ui.get_asymmetric_import_filepath("Enter path to PEM file containing X509Certificate:",
+                                None)?
+                        } else {
+                            ui.get_asymmetric_import_filepath("Enter path to PEM file containing asymmetric key:",
+                                                              None)?
+                        };
+                        let pem = get_pem_from_file(&filepath)?;
+                        let pem = pem[0].to_owned();
+                        let (_, _, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
+                        // TODO Validate algo and type of the read pem key against spec
+                        value.push(_bytes);
+                    } else if spec.object_type == ObjectType::SymmetricKey || spec.object_type == ObjectType::WrapKey {
+                        let key = ui.get_aes_key_hex("Enter AES key in HEX format:")?;
+                        // let _algo = SymmetricOperations::get_symkey_algorithm_from_keylen(key.len())?;
+                        // TODO Validate algo against spec
+                        value.push(key);
+                    } else if spec.algorithm == ObjectAlgorithm::Aes128YubicoAuthentication {
+                        let pwd = ui.get_password("Enter user password:", true)?;
+                        value.push(pwd.as_bytes().to_vec());
+
+                    } else {
+                        return Err(MgmError::Error(format!(
+                            "Cannot execute import of {:?} 0x{:04x}: unknown properties of redacted data. Import manually.",
+                            spec.object_type, spec.id)));
+                    }
+
+                    if data.len() > 1 && spec.object_type == ObjectType::AsymmetricKey {
+                        // Must be a java key, which means we need to read a certificate too
+                        let filepath = ui.get_asymmetric_import_filepath("Enter path to PEM file containing X509Certificate:",
+                                                              None)?;
+                        let pem = get_pem_from_file(&filepath)?;
+                        let pem = pem[0].to_owned();
+                        let (_, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
+                        if _algo != ObjectAlgorithm::OpaqueX509Certificate {
+                            return Err(MgmError::Error(format!("File does not contain X509Certificate.")));
+                        }
+                        value.push(_bytes);
+                    }
+                } else {
+                     value = data.iter()
+                                 .map(|d| hex::decode(d)
+                                     .map_err(|e| MgmError::Error(format!("Invalid hex data: {}", e))))
+                                 .collect::<Result<Vec<_>, _>>()?;
+                }
+
+                let mut new_spec: NewObjectSpec = spec.into();
+                new_spec.data = value;
+                match spec.object_type {
+                    ObjectType::AsymmetricKey     => {
+                        if new_spec.data.len() > 1 {
+                            JavaOps.import(session, &new_spec)?;
+                        } else {
+                            AsymmetricOperations.import(session, &new_spec)?;
+                        }
+                    },
+                    ObjectType::SymmetricKey      => { SymmetricOperations.import(session, &new_spec)?; },
+                    ObjectType::WrapKey
+                    | ObjectType::PublicWrapKey    => { WrapOperations.import(session, &new_spec)?; },
+                    ObjectType::AuthenticationKey => { AuthenticationOperations.import(session, &new_spec)?; },
+                    other => return Err(MgmError::Error(format!("Unknown object type {:?}", other))),
+                }
+                Ok(())
+            },
 
             RecordedOperation::DeleteObject { object_id, object_type } => {
+                ui.display_info_message(&format!("Delete {:?} 0x{:04x}", object_type, object_id));
                 session.delete_object(*object_id, *object_type)?;
                 Ok(())
             },
 
-        //     RecordedOperation::CreateAuthKey { spec, auth_type, credential } => {
-        //         let key_data: Vec<u8> = match auth_type.as_str() {
-        //             "PasswordDerived" => {
-        //                 let password = if credential == "<PASSWORD>" {
-        //                     ui.get_password(
-        //                         &format!("Enter password for auth key 0x{:04x} ('{}'):", spec.id, spec.label),
-        //                         false)?
-        //                 } else {
-        //                     credential.to_string()
-        //                 };
-        //                 password.into_bytes()
-        //             },
-        //             "Ecp256" => {
-        //                 let pems = crate::ui::helper_io::get_pem_from_file(credential)?;
-        //                 let (_, _, value) = AsymmetricOperations::parse_asym_pem(pems[0].clone())?;
-        //                 value
-        //             },
-        //             other => return Err(MgmError::Error(format!("Unknown auth type: '{}'", other))),
-        //         };
-        //         let mut new_spec: NewObjectSpec = spec.into();
-        //         new_spec.data = vec![key_data];
-        //         AuthenticationOperations.import(session, &new_spec)?;
-        //         Ok(())
-        //     },
+            RecordedOperation::CreateAuthKey { spec, credential } => {
+                ui.display_info_message(&format!("Create auth key 0x{:04x} ({})",
+                                                 spec.id,
+                                                 if spec.algorithm == ObjectAlgorithm::Aes128YubicoAuthentication {"Derived password"} else {"ECP256 public key"}));
+                let value =
+                if credential == "<REDACTED>" {
+                    if spec.algorithm == ObjectAlgorithm::Aes128YubicoAuthentication {
+                        let pwd = ui.get_password("Enter user password:", true)?;
+                        pwd.as_bytes().to_vec()
+                    } else if spec.algorithm == ObjectAlgorithm::Ecp256YubicoAuthentication {
+                        let pubkey = ui.get_public_ecp256_filepath("Enter path to ECP256 public key PEM file: ")?;
+                        let pubkey = get_pem_from_file(&pubkey)?;
+                        if pubkey.len() > 1 {
+                            ui.display_warning("Warning!! More than one PEM object found in file. Only the first object is read");
+                        }
+                        let pubkey = pubkey[0].clone();
+
+                        let (_type, _algo, _value) = AsymmetricOperations::parse_asym_pem(pubkey)?;
+                        if _type != ObjectType::PublicKey && _algo != ObjectAlgorithm::EcP256 {
+                            return Err(MgmError::InvalidInput(
+                                "Invalid public key. Found object is either not a public key or not of curve secp256r1.".to_string()));
+                        }
+                        _value
+                    } else {
+                        return Err(MgmError::Error("Cannot execute Authentication Key creation: Unknown properties of redacted credential.".to_string()));
+                    }
+                } else {
+                    hex::decode(credential).map_err(|e| MgmError::Error(format!("Invalid hex data: {}", e)))?
+                };
+                let mut new_spec: NewObjectSpec = spec.into();
+                new_spec.data = vec![value];
+                AuthenticationOperations.import(session, &new_spec)?;
+                Ok(())
+            },
         //
         //     RecordedOperation::Sign { key_id, algorithm, input, output_file } => {
         //         let data = resolve_input_data(input)?;

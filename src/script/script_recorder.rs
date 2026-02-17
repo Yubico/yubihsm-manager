@@ -1,22 +1,45 @@
 use std::cell::RefCell;
-use std::fs;
+use std::fmt::Display;
+use std::{fmt, fs};
 use std::path::Path;
 use chrono::Local;
 use crate::script::types::{RecordedOperation, SessionScript};
 
+#[derive(Clone, Debug, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum RedactMode {
+    #[default]
+    AuthOnly,
+    AllValue,
+    AllInput,
+    None,
+}
+
+impl Display for RedactMode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RedactMode::AuthOnly => write!(f, "auth-only"),
+            RedactMode::AllValue => write!(f, "all-value"),
+            RedactMode::AllInput => write!(f, "all"),
+            RedactMode::None => write!(f, "none"),
+        }
+    }
+}
+
 /// Accumulates recorded operations and writes them to a JSON file on flush.
 pub struct SessionRecorder {
-    operations: RefCell<Vec<RecordedOperation>>,
     connector: String,
     auth_key_id: u16,
+    operations: RefCell<Vec<RecordedOperation>>,
+    pub mode: RedactMode,
 }
 
 impl SessionRecorder {
-    pub fn new(connector: String, auth_key_id: u16) -> Self {
+    pub fn new(connector: String, auth_key_id: u16, mode: RedactMode) -> Self {
         Self {
-            operations: RefCell::new(Vec::new()),
             connector,
             auth_key_id,
+            operations: RefCell::new(Vec::new()),
+            mode,
         }
     }
 

@@ -81,7 +81,7 @@ impl<T: YubihsmUi> JavaMenu<T> {
         let (_, cert) = Self::get_first_object_from_pem(pems.clone(), ObjectType::Opaque)?;
         self.ui.display_info_message("X509Certificate loaded from PEM file");
 
-        import_object(&self.ui, &JavaOps, session, authkey, ObjectType::AsymmetricKey, algo, [key, cert].to_vec())
+        import_object(&self.ui, &None, &JavaOps, session, authkey, ObjectType::AsymmetricKey, algo, [key, cert].to_vec())
     }
 
     fn get_first_object_from_pem(pems: Vec<Pem>, object_type: ObjectType) -> Result<(ObjectAlgorithm, Vec<u8>), MgmError> {

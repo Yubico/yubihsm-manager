@@ -27,9 +27,9 @@ use hsm_operations::validators::pem_private_ecp256_file_validator;
 use traits::ui_traits::YubihsmUi;
 use ui::helper_io::get_pem_from_file;
 use cli::cmdline::Cmdline;
-use script::script_recorder::SessionRecorder;
-use script::script_runner::{ScriptMode, ScriptRunner};
-use script::types::SessionScript;
+use script::script_recorder::{RedactMode, SessionRecorder};
+use script::script_runner::{ScriptRunner};
+use script::types::{SessionScript};
 use ui::asym_menu::AsymmetricMenu;
 use ui::auth_menu::AuthenticationMenu;
 use ui::device_menu::DeviceMenu;
@@ -99,25 +99,6 @@ fn main() -> Result<(), MgmError>{
             .help("Connector URL")
             .default_value("http://127.0.0.1:12345")
             .hide_default_value(false))
-        .arg(Arg::new("record")
-            .long("record")
-            .short('r')
-            .help("Record session operations in a script for later execution")
-            .num_args(0)
-            .default_value("false")
-            .action(clap::ArgAction::SetTrue))
-        .arg(Arg::new("exec")
-            .long("exec")
-            .help("Execute operations from a recorded JSON script file")
-            .value_name("FILE")
-            .num_args(1)
-            .conflicts_with("record"))
-        .arg(Arg::new("exec-mode")
-            .long("exec-mode")
-            .help("Execution mode when executing a script")
-            .value_parser(clap::builder::EnumValueParser::<ScriptMode>::new())
-            .default_value("exit-on-error")
-            .requires("exec"))
         .arg(Arg::new("verbose")
             .long("verbose")
             .short('v')
@@ -125,6 +106,37 @@ fn main() -> Result<(), MgmError>{
             .num_args(0)
             .default_value("false")
             .action(clap::ArgAction::SetTrue))
+
+        .arg(Arg::new("record")
+            .long("record")
+            .short('r')
+            .help("Record session operations in a script for later execution")
+            .num_args(0)
+            .default_value("false")
+            .action(clap::ArgAction::SetTrue)
+            .help_heading("Scripting"))
+        .arg(Arg::new("exec")
+            .long("exec")
+            .short('e')
+            .help("Execute operations from a recorded script file")
+            .value_name("file")
+            .num_args(1)
+            .conflicts_with("record")
+            .help_heading("Scripting"))
+        .arg(Arg::new("continue-on-error")
+            .long("continue-on-error")
+            .help("If an error occurs during script execution, print out a warning and continue executing the next operation. Default is to exit on error.")
+            .num_args(0)
+            .default_value("false")
+            .action(clap::ArgAction::SetTrue)
+            .help_heading("Scripting"))
+        .arg(Arg::new("redact")
+            .long("redact")
+            .help("Redact sensitive values when recording a script. Default is only new Authentication Key value (password and private ECP256 key) are redacted. Redacted data will be prompted for when executing a script")
+            .value_parser(clap::builder::EnumValueParser::<RedactMode>::new())
+            .default_value("auth-only")
+            .requires("record")
+            .help_heading("Scripting"))
         .get_matches();
 
     // Check if we are executing a script or entering into command line mode
@@ -220,9 +232,8 @@ fn main() -> Result<(), MgmError>{
 
     // If a script was loaded, execute it and exit — skip interactive menu.
     if let Some(s) = &script {
-        let mode = matches.get_one::<ScriptMode>("exec-mode").cloned().unwrap_or_default();  // defaults to ReplayMode::Exit
-        YubihsmUi::display_info_message(&ui, format!("Executing script in {} mode...", mode).as_str());
-        if let Err(e) = ScriptRunner::run(&ui, &session, s, &mode) {
+        YubihsmUi::display_info_message(&ui, "Executing script...");
+        if let Err(e) = ScriptRunner::run(&ui, &session, s, matches.get_flag("continue-on-error")) {
             YubihsmUi::display_error_message(&ui,e.to_string().as_str());
         }
         return Ok(())
@@ -230,9 +241,11 @@ fn main() -> Result<(), MgmError>{
 
     let recorder: Option<SessionRecorder> = if matches.get_flag("record") {
         YubihsmUi::display_info_message(&ui, "Starting session recording...");
+        let mode = matches.get_one::<RedactMode>("redact").cloned().unwrap_or_default();  // defaults to RedactMode::AuthOnly
         Some(SessionRecorder::new(
             connector.clone(),
             authkey,
+            mode,
         ))
     } else {
         None
@@ -244,9 +257,9 @@ fn main() -> Result<(), MgmError>{
     match matches.subcommand() {
         Some(subcommand) => {
             match subcommand.0 {
-                "asym" => AsymmetricMenu::new(ui).exec_command(&session, &authkey, &recorder),
+                "asym" => AsymmetricMenu::new(ui).exec_command(&session, &recorder, &authkey),
                 "sym" => SymmetricMenu::new(ui).exec_command(&session, &authkey),
-                "auth" => AuthenticationMenu::new(ui).exec_command(&session, &authkey),
+                "auth" => AuthenticationMenu::new(ui).exec_command(&session, &recorder, &authkey),
                 "wrap" => WrapMenu::new(ui).exec_command(&session, &authkey),
                 "ksp" => Ksp::new(ui).guided_setup(&session, &authkey),
                 "sunpkcs11" => JavaMenu::new(ui).exec_command(&session, &authkey),
