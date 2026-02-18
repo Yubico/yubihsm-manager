@@ -26,6 +26,7 @@ use crate::hsm_operations::wrap::WrapOperations;
 use crate::hsm_operations::asym::{AsymmetricOperations, AttestationType};
 use crate::ui::helper_io::{get_hex_or_bytes_from_file, get_pem_from_file, get_string_or_bytes_from_file, write_bytes_to_file, get_path};
 use crate::script::script_recorder::SessionRecorder;
+use crate::script::types::RecordedOperation;
 
 static ASYM_HEADER: &str = "Asymmetric keys";
 
@@ -59,7 +60,7 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
                 MgmCommandType::Sign => self.sign(session, authkey),
                 MgmCommandType::Decrypt => self.decrypt(session, authkey),
                 MgmCommandType::DeriveEcdh => self.derive_ecdh(session, authkey),
-                MgmCommandType::SignAttestationCert => self.sign_attestation(session, authkey),
+                MgmCommandType::SignAttestationCert => self.sign_attestation(session, recorder, authkey),
                 MgmCommandType::Exit => {
                     exit_manager(&self.ui, recorder);
                     Ok(())
@@ -219,7 +220,7 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
         Ok(())
     }
 
-    fn sign_attestation(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    fn sign_attestation(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         if !authkey.capabilities.contains(&ObjectCapability::SignAttestationCertificate) {
             return Err(MgmError::Error("User does not have signing attestation certificates capabilities".to_string()));
         }
@@ -284,8 +285,21 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
             }
         };
 
-        let cert = AsymmetricOperations::get_attestation_cert(session, attested_key, attesting_key, template_cert)?;
+        let cert = AsymmetricOperations::get_attestation_cert(session, attested_key, attesting_key, template_cert.clone())?;
         self.ui.display_success_message(cert.to_string().as_str());
+
+        if let Some(rec) = recorder {
+            let template = if template_cert.is_some() {
+                Some(template_cert.unwrap().to_string())
+            } else {
+                None
+            };
+            rec.record(RecordedOperation::SignAttestationCert {
+                attested_key_id: attested_key,
+                attesting_key_id: attesting_key,
+                template_cert: template,
+            });
+        }
 
         if self.ui.get_confirmation("Write to file?")? {
             let filename = get_path(&self.ui,

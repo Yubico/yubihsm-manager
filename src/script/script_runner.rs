@@ -13,7 +13,7 @@ use crate::hsm_operations::wrap::WrapOperations;
 use crate::script::types::{RecordedOperation, RecordableObjectSpec, SessionScript};
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
-use crate::ui::helper_io::get_pem_from_file;
+use crate::ui::helper_io::{get_pem_from_file, write_bytes_to_file};
 
 pub struct ScriptRunner;
 
@@ -272,21 +272,21 @@ impl ScriptRunner {
         //         Ok(())
         //     },
         //
-        //     RecordedOperation::SignAttestationCert {
-        //         attested_key_id, attesting_key_id, template_cert_file, output_file
-        //     } => {
-        //         let template = if let Some(path) = template_cert_file {
-        //             let pems = crate::ui::helper_io::get_pem_from_file(path)?;
-        //             Some(pems[0].clone())
-        //         } else { None };
-        //         let cert = AsymmetricOperations::get_attestation_cert(
-        //             session, *attested_key_id, *attesting_key_id, template)?;
-        //         if let Some(path) = output_file {
-        //             fs::write(path, cert.to_string().as_bytes())
-        //                 .map_err(|e| MgmError::Error(format!("Write failed: {}", e)))?;
-        //         }
-        //         Ok(())
-        //     },
+            RecordedOperation::SignAttestationCert {
+                attested_key_id, attesting_key_id, template_cert
+            } => {
+                ui.display_info_message(format!("Sign attestation for 0x{:04x}", attested_key_id).as_str());
+                let template = if let Some(cert) = template_cert {
+                    Some(pem::parse(cert)?)
+                } else {
+                    None
+                };
+                let cert = AsymmetricOperations::get_attestation_cert(
+                    session, *attested_key_id, *attesting_key_id, template)?;
+                let filename = get_filename(format!("./0x{:04x}by0x{:04x}_attestation_cert.pem", attested_key_id, attesting_key_id).as_str())?;
+                write_bytes_to_file(ui, &cert.to_string().into_bytes(), filename.as_str())?;
+                Ok(())
+            },
         //
         //     RecordedOperation::GetRandom { num_bytes } => {
         //         let _ = session.get_random(*num_bytes)?;
@@ -384,3 +384,28 @@ fn resolve_input_data(input: &str) -> Result<Vec<u8>, MgmError> {
 //         RecordedOperation::ImportWrapped { .. } => "Import wrapped".to_string(),
 //     }
 // }
+
+fn get_filename(
+    filepath: &str) -> Result<String, MgmError> {
+
+    let mut filename = filepath.to_string();
+
+    let file = Path::new(&filename);
+
+    if file.exists() {
+        let stem = file.file_stem().and_then(|s| s.to_str()).ok_or_else(|| MgmError::Error("Invalid file name".to_string()))?.to_string();
+
+        let extension = file.extension().and_then(|e| e.to_str()).ok_or_else(|| MgmError::Error("Invalid file name".to_string()))?.to_string();
+
+        // Try appending numbers: filename_1.txt, filename_2.txt, ...
+        let mut counter = 1u32;
+        loop {
+            filename = format!("./{stem}_{counter}.{extension}");
+            if !Path::new(&filename).exists() {
+                break;
+            }
+            counter += 1;
+        }
+    }
+    Ok(filename)
+}

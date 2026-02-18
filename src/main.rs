@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-extern crate yubihsmrs;
-extern crate chrono;
-
 use clap::Arg;
 use yubihsmrs::YubiHsm;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectType};

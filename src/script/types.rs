@@ -117,14 +117,12 @@ pub enum RecordedOperation {
     //     peer_pubkey_file: String,
     // },
     //
-    // SignAttestationCert {
-    //     attested_key_id: u16,
-    //     attesting_key_id: u16,
-    //     #[serde(skip_serializing_if = "Option::is_none")]
-    //     template_cert_file: Option<String>,
-    //     #[serde(skip_serializing_if = "Option::is_none")]
-    //     output_file: Option<String>,
-    // },
+    SignAttestationCert {
+        attested_key_id: u16,
+        attesting_key_id: u16,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        template_cert: Option<String>,
+    },
     //
     // // ── Symmetric operations ──
     //
