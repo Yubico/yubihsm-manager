@@ -20,7 +20,7 @@ use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::cli::cmdline::Cmdline;
 use crate::ui::helper_operations::{delete_objects, display_menu_headers, generate_object, list_objects};
-use crate::ui::helper_operations::{display_object_properties, get_new_spec_table, exit_manager};
+use crate::ui::helper_operations::{display_object_properties, get_new_spec_table, exit_manager, record_import_key_operation};
 use crate::ui::device_menu::DeviceMenu;
 use crate::ui::asym_menu::AsymmetricMenu;
 use crate::traits::operation_traits::YubihsmOperations;
@@ -59,7 +59,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                 MgmCommandType::List => list_objects(&self.ui, &WrapOperations, session),
                 MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &WrapOperations, session),
                 MgmCommandType::Generate => generate_object(&self.ui, recorder, &WrapOperations, session, authkey, ObjectType::WrapKey),
-                MgmCommandType::Import => self.import(session, authkey),
+                MgmCommandType::Import => self.import(session, recorder, authkey),
                 MgmCommandType::Delete => delete_objects(&self.ui, &None, &WrapOperations, session, &WrapOperations.get_all_objects(session)?),
                 MgmCommandType::GetPublicKey => AsymmetricMenu::new(Cmdline).get_public_key(session, ObjectType::WrapKey),
                 MgmCommandType::ExportWrapped => self.export_wrapped(session, authkey),
@@ -78,15 +78,15 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         }
     }
 
-    pub fn import(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    pub fn import(&self, session: &Session, recorder: &Option<SessionRecorder>,  authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         if self.ui.get_confirmation("Re-create from shares?")? {
-            self.import_from_shares(session)
+            self.import_from_shares(session, recorder)
         } else {
-            self.import_full_key(session, authkey)
+            self.import_full_key(session, recorder, authkey)
         }
     }
 
-    fn import_full_key(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    fn import_full_key(&self, session: &Session, recorder: &Option<SessionRecorder>,  authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let mut new_key = NewObjectSpec::empty();
 
 
@@ -150,6 +150,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         self.ui.stop_progress(progress, None);
         self.ui.display_success_message(format!("Imported {} object with ID 0x{:04x} into the YubiHSM", new_key.object_type, new_key.id).as_str());
 
+        record_import_key_operation(recorder, &new_key);
 
         if key_type != WrapKeyType::Aes {
             return Ok(());
@@ -166,7 +167,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         Ok(())
     }
 
-    fn import_from_shares(&self, session: &Session) -> Result<(), MgmError> {
+    pub fn import_from_shares(&self, session: &Session, recorder: &Option<SessionRecorder>) -> Result<(), MgmError> {
         let shares = self.recover_wrapkey_shares()?;
         let mut new_key = WrapOperations::get_wrapkey_from_shares(shares)?;
         new_key.label = self.ui.get_object_label("")?;
@@ -179,8 +180,9 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         let progress = self.ui.start_progress(Some("Importing key..."));
         new_key.id = WrapOperations.import(session, &new_key)?;
         self.ui.stop_progress(progress, None);
-
         self.ui.display_success_message(format!("Imported wrap key with ID 0x{:04x} on the device", new_key.id).as_str());
+
+        record_import_key_operation(recorder, &new_key);
         Ok(())
     }
 

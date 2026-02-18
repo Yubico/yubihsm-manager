@@ -14,7 +14,6 @@ use crate::script::types::{RecordedOperation, RecordableObjectSpec, SessionScrip
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::helper_io::{get_pem_from_file, write_bytes_to_file};
-
 pub struct ScriptRunner;
 
 impl ScriptRunner {
@@ -51,8 +50,6 @@ impl ScriptRunner {
 
         for (i, op) in script.operations.iter().enumerate() {
             let step = format!("[{}/{}]", i + 1, total);
-            // ui.display_info_message(&format!("{} {}", step, op_summary(op)));
-            ui.display_info_message(&step);
 
             match Self::execute(ui, session, op, &step) {
                 Ok(()) => {
@@ -92,7 +89,7 @@ impl ScriptRunner {
     ) -> Result<(), MgmError> {
         match op {
             RecordedOperation::GenerateObject {spec, context} => {
-                ui.display_info_message(&format!("Generate {:?} 0x{:04x} ({:?})", spec.object_type, spec.id, spec.algorithm));
+                ui.display_info_message(&format!("{} Generate {:?} 0x{:04x} ({:?})", step, spec.object_type, spec.id, spec.algorithm));
                 let new_spec: NewObjectSpec = spec.into();
                 let progress = ui.start_progress(Some(&step));
                 match context.as_str() {
@@ -107,7 +104,7 @@ impl ScriptRunner {
             },
 
             RecordedOperation::ImportObject { spec, data } => {
-                ui.display_info_message(&format!("Import {:?} 0x{:04x} ({:?})", spec.object_type, spec.id, spec.algorithm));
+                ui.display_info_message(&format!("{} Import {:?} 0x{:04x} ({:?})", step, spec.object_type, spec.id, spec.algorithm));
                 let mut value = Vec::new();
                 if data[0] == "<REDACTED>" {
                     if AsymmetricOperations::is_rsa_key_algorithm(&spec.algorithm) ||
@@ -163,7 +160,7 @@ impl ScriptRunner {
                 let mut new_spec: NewObjectSpec = spec.into();
                 new_spec.data = value;
                 match spec.object_type {
-                    ObjectType::AsymmetricKey     => {
+                    ObjectType::AsymmetricKey | ObjectType::Opaque    => {
                         if new_spec.data.len() > 1 {
                             JavaOps.import(session, &new_spec)?;
                         } else {
@@ -180,7 +177,7 @@ impl ScriptRunner {
             },
 
             RecordedOperation::DeleteObject { object_id, object_type, context} => {
-                ui.display_info_message(&format!("Delete {:?} 0x{:04x}", object_type, object_id));
+                ui.display_info_message(&format!("{} Delete {:?} 0x{:04x}", step, object_type, object_id));
                 if context == "sunpkcs11" {
                     JavaOps.delete(session, *object_id, *object_type)?;
                 } else {
@@ -190,9 +187,10 @@ impl ScriptRunner {
             },
 
             RecordedOperation::CreateAuthKey { spec, credential } => {
-                ui.display_info_message(&format!("Create auth key 0x{:04x} ({})",
+                ui.display_info_message(&format!("{} Create auth key 0x{:04x} ({})",
+                                                 step,
                                                  spec.id,
-                                                 if spec.algorithm == ObjectAlgorithm::Aes128YubicoAuthentication {"Derived password"} else {"ECP256 public key"}));
+                                                 if spec.algorithm == ObjectAlgorithm::Aes128YubicoAuthentication { "Derived password" } else { "ECP256 public key" }));
                 let value =
                 if credential == "<REDACTED>" {
                     if spec.algorithm == ObjectAlgorithm::Aes128YubicoAuthentication {
@@ -275,7 +273,7 @@ impl ScriptRunner {
             RecordedOperation::SignAttestationCert {
                 attested_key_id, attesting_key_id, template_cert
             } => {
-                ui.display_info_message(format!("Sign attestation for 0x{:04x}", attested_key_id).as_str());
+                ui.display_info_message(format!("{} Sign attestation for 0x{:04x}", step, attested_key_id).as_str());
                 let template = if let Some(cert) = template_cert {
                     Some(pem::parse(cert)?)
                 } else {
@@ -327,6 +325,18 @@ impl ScriptRunner {
         //         }
         //         Ok(())
         //     },
+
+            // RecordedOperation::SplitWrapKey (shares) => {
+            //     WrapMenu::new(ui).display_wrapkey_shares(shares.clone())?;
+            //
+            //     Ok(())
+            // },
+            //
+            // RecordedOperation::ImportWrapKeyFromShares => {
+            //     let w = WrapMenu::new(ui);
+            //     w.import_from_shares(session, &None)?;
+            //     Ok(())
+            // },
         //
         //     // Operations requiring live HSM state — skip with warning
         //     RecordedOperation::BackupDevice { .. }

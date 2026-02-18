@@ -51,7 +51,7 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
                 MgmCommandType::List => list_objects(&self.ui, &SymmetricOperations, session),
                 MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &SymmetricOperations, session),
                 MgmCommandType::Generate => generate_object(&self.ui, recorder, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey),
-                MgmCommandType::Import => self.import(session, authkey),
+                MgmCommandType::Import => self.import(session, recorder, authkey),
                 MgmCommandType::Delete => delete_objects(&self.ui, &None, &SymmetricOperations, session, &SymmetricOperations.get_all_objects(session)?),
                 MgmCommandType::Encrypt => self.operate(session, authkey, EncryptionMode::Encrypt),
                 MgmCommandType::Decrypt => self.operate(session, authkey, EncryptionMode::Decrypt),
@@ -69,12 +69,12 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
         }
     }
 
-    pub fn import(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    pub fn import(&self, session: &Session, recorder: &Option<SessionRecorder>,  authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let mut key_data = vec![];
         key_data.push(self.ui.get_aes_key_hex("Enter AES key in HEX format:")?);
         let key_algo = SymmetricOperations::get_symkey_algorithm_from_keylen(key_data[0].len())?;
 
-        import_object(&self.ui, &None, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey, key_algo, key_data)
+        import_object(&self.ui, recorder, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey, key_algo, key_data)
     }
 
     fn operate(&self, session: &Session, authkey: &ObjectDescriptor, enc_mode: EncryptionMode) -> Result<(), MgmError> {

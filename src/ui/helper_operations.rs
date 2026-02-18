@@ -206,6 +206,12 @@ pub fn import_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh
     ui.display_success_message(
         format!("Imported {} object with ID 0x{:04x} into the YubiHSM", new_key.object_type, new_key.id).as_str());
 
+    record_import_key_operation(recorder, &new_key);
+
+    Ok(())
+}
+
+pub fn record_import_key_operation(recorder: &Option<SessionRecorder>, new_key: &NewObjectSpec) {
     if let Some(rec) = recorder {
 
         let rec_data = if rec.mode == RedactMode::AllValue || rec.mode == RedactMode::AllInput {
@@ -214,8 +220,6 @@ pub fn import_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh
             new_key.data.iter().map(hex::encode).collect()
         };
 
-        rec.record(RecordedOperation::ImportObject { spec: RecordableObjectSpec::from(&new_key), data: rec_data });
+        rec.record(RecordedOperation::ImportObject { spec: RecordableObjectSpec::from(new_key), data: rec_data });
     }
-
-    Ok(())
 }
