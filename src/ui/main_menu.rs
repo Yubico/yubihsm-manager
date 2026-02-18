@@ -149,8 +149,8 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
         )?;
         match _type {
             MgmObjectType::Asymmetric | MgmObjectType::Certificate => AsymmetricMenu::new(Cmdline).exec_command(session, recorder, authkey),
-            MgmObjectType::Symmetric => SymmetricMenu::new(Cmdline).exec_command(session, authkey),
-            MgmObjectType::Wrap => WrapMenu::new(Cmdline).exec_command(session, authkey),
+            MgmObjectType::Symmetric => SymmetricMenu::new(Cmdline).exec_command(session, recorder, authkey),
+            MgmObjectType::Wrap => WrapMenu::new(Cmdline).exec_command(session, recorder, authkey),
             MgmObjectType::Authentication => AuthenticationMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
             MgmObjectType::Java => JavaMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
             MgmObjectType::Ksp => Ksp::new(self.ui.clone()).guided_setup(session, authkey),

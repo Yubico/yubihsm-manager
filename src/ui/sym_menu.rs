@@ -25,6 +25,7 @@ use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::types::{MgmCommandType, SelectionItem};
 use crate::hsm_operations::sym::{AesMode, AesOperationSpec, EncryptionMode, SymmetricOperations};
 use crate::ui::helper_io::{get_hex_or_bytes_from_file, write_bytes_to_file, get_path};
+use crate::script::script_recorder::SessionRecorder;
 
 static SYM_HEADER: &str = "Symmetric keys";
 
@@ -38,7 +39,7 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
         SymmetricMenu { ui: interface  }
     }
     
-    pub fn exec_command(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    pub fn exec_command(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         loop {
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, SYM_HEADER],
                                  "Symmetric key operations allow you to manage and use symmetric keys stored on the YubiHSM")?;
@@ -49,14 +50,14 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
             let res = match cmd.command {
                 MgmCommandType::List => list_objects(&self.ui, &SymmetricOperations, session),
                 MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &SymmetricOperations, session),
-                MgmCommandType::Generate => generate_object(&self.ui, &None, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey),
+                MgmCommandType::Generate => generate_object(&self.ui, recorder, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey),
                 MgmCommandType::Import => self.import(session, authkey),
                 MgmCommandType::Delete => delete_objects(&self.ui, &None, &SymmetricOperations, session, &SymmetricOperations.get_all_objects(session)?),
                 MgmCommandType::Encrypt => self.operate(session, authkey, EncryptionMode::Encrypt),
                 MgmCommandType::Decrypt => self.operate(session, authkey, EncryptionMode::Decrypt),
                 MgmCommandType::GetRandom => DeviceMenu::new(self.ui.clone()).get_random(session),
                 MgmCommandType::Exit => {
-                    exit_manager(&self.ui, &None);
+                    exit_manager(&self.ui, recorder);
                     Ok(())
                 },
                 _ => unreachable!()

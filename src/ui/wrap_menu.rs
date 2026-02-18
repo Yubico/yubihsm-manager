@@ -33,6 +33,7 @@ use crate::hsm_operations::sym::SymmetricOperations;
 use crate::hsm_operations::wrap::{WrapKeyType, WrapOperations, WrapOpSpec, WrapType};
 use crate::hsm_operations::common::get_delegated_capabilities;
 use crate::ui::helper_io::{get_pem_from_file, write_bytes_to_file, get_path};
+use crate::script::script_recorder::SessionRecorder;
 
 static WRAP_HEADER: &str = "Wrap keys";
 
@@ -46,7 +47,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         WrapMenu { ui: interface  }
     }
     
-    pub fn exec_command(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    pub fn exec_command(&self, session: &Session, recorder: &Option<SessionRecorder>,  authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         loop {
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, WRAP_HEADER],
                                  "Wrap key operations allow you to manage and use wrap keys keys stored on the YubiHSM")?;
@@ -57,7 +58,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             let result = match cmd.command {
                 MgmCommandType::List => list_objects(&self.ui, &WrapOperations, session),
                 MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &WrapOperations, session),
-                MgmCommandType::Generate => generate_object(&self.ui, &None, &WrapOperations, session, authkey, ObjectType::WrapKey),
+                MgmCommandType::Generate => generate_object(&self.ui, recorder, &WrapOperations, session, authkey, ObjectType::WrapKey),
                 MgmCommandType::Import => self.import(session, authkey),
                 MgmCommandType::Delete => delete_objects(&self.ui, &None, &WrapOperations, session, &WrapOperations.get_all_objects(session)?),
                 MgmCommandType::GetPublicKey => AsymmetricMenu::new(Cmdline).get_public_key(session, ObjectType::WrapKey),
@@ -65,7 +66,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                 MgmCommandType::ImportWrapped => self.import_wrapped(session, authkey),
                 MgmCommandType::GetRandom => DeviceMenu::new(self.ui.clone()).get_random(session),
                 MgmCommandType::Exit => {
-                    exit_manager(&self.ui, &None);
+                    exit_manager(&self.ui, recorder);
                     Ok(())
                 },
                 _ => unreachable!()

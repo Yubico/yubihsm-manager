@@ -255,9 +255,9 @@ fn main() -> Result<(), MgmError>{
         Some(subcommand) => {
             match subcommand.0 {
                 "asym" => AsymmetricMenu::new(ui).exec_command(&session, &recorder, &authkey),
-                "sym" => SymmetricMenu::new(ui).exec_command(&session, &authkey),
+                "sym" => SymmetricMenu::new(ui).exec_command(&session, &recorder, &authkey),
                 "auth" => AuthenticationMenu::new(ui).exec_command(&session, &recorder, &authkey),
-                "wrap" => WrapMenu::new(ui).exec_command(&session, &authkey),
+                "wrap" => WrapMenu::new(ui).exec_command(&session, &recorder, &authkey),
                 "ksp" => Ksp::new(ui).guided_setup(&session, &authkey),
                 "sunpkcs11" => JavaMenu::new(ui).exec_command(&session, &recorder, &authkey),
                 "reset" => DeviceMenu::new(ui).reset(&session),
