@@ -91,15 +91,16 @@ impl ScriptRunner {
         step: &str,
     ) -> Result<(), MgmError> {
         match op {
-            RecordedOperation::GenerateObject(spec) => {
+            RecordedOperation::GenerateObject {spec, context} => {
                 ui.display_info_message(&format!("Generate {:?} 0x{:04x} ({:?})", spec.object_type, spec.id, spec.algorithm));
                 let new_spec: NewObjectSpec = spec.into();
                 let progress = ui.start_progress(Some(&step));
-                match spec.object_type {
-                    ObjectType::AsymmetricKey => { AsymmetricOperations.generate(session, &new_spec)?; },
-                    ObjectType::SymmetricKey  => { SymmetricOperations.generate(session, &new_spec)?; },
-                    ObjectType::WrapKey       => { WrapOperations.generate(session, &new_spec)?; },
-                    other => return Err(MgmError::Error(format!("Cannot generate {:?}", other))),
+                match context.as_str() {
+                    "asym" => { AsymmetricOperations.generate(session, &new_spec)?; },
+                    "sunpkcs11" => { JavaOps.generate(session, &new_spec)?; },
+                    "sym"  => { SymmetricOperations.generate(session, &new_spec)?; },
+                    "wrap" => { WrapOperations.generate(session, &new_spec)?; },
+                    other => return Err(MgmError::Error(format!("Cannot generate in {:?} context", other))),
                 }
                 ui.stop_progress(progress, None);
                 Ok(())
@@ -178,9 +179,13 @@ impl ScriptRunner {
                 Ok(())
             },
 
-            RecordedOperation::DeleteObject { object_id, object_type } => {
+            RecordedOperation::DeleteObject { object_id, object_type, context} => {
                 ui.display_info_message(&format!("Delete {:?} 0x{:04x}", object_type, object_id));
-                session.delete_object(*object_id, *object_type)?;
+                if context == "sunpkcs11" {
+                    JavaOps.delete(session, *object_id, *object_type)?;
+                } else {
+                    session.delete_object(*object_id, *object_type)?;
+                }
                 Ok(())
             },
 

@@ -110,7 +110,7 @@ fn main() -> Result<(), MgmError>{
         .arg(Arg::new("record")
             .long("record")
             .short('r')
-            .help("Record session operations in a script for later execution")
+            .help("Record session operations in a script for later execution. Use the --redact option to redact sensitive values in the recorded script. Script is only recorded to file when the manager is exited through the menu.")
             .num_args(0)
             .default_value("false")
             .action(clap::ArgAction::SetTrue)
@@ -262,13 +262,13 @@ fn main() -> Result<(), MgmError>{
                 "auth" => AuthenticationMenu::new(ui).exec_command(&session, &recorder, &authkey),
                 "wrap" => WrapMenu::new(ui).exec_command(&session, &authkey),
                 "ksp" => Ksp::new(ui).guided_setup(&session, &authkey),
-                "sunpkcs11" => JavaMenu::new(ui).exec_command(&session, &authkey),
+                "sunpkcs11" => JavaMenu::new(ui).exec_command(&session, &recorder, &authkey),
                 "reset" => DeviceMenu::new(ui).reset(&session),
                 _ => unreachable!(),
             }
         },
         None => {
-            MainMenu::new(ui).exec_command(&session, &authkey)
+            MainMenu::new(ui).exec_command(&session, &recorder, &authkey)
         }
     }
 }

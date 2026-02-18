@@ -67,7 +67,10 @@ pub enum RecordedOperation {
 
     // Key management (generate / import / delete)
 
-    GenerateObject(RecordableObjectSpec),
+    GenerateObject {
+        spec: RecordableObjectSpec,
+        context: String,
+    },
 
     ImportObject {
         spec: RecordableObjectSpec,
@@ -78,6 +81,7 @@ pub enum RecordedOperation {
     DeleteObject {
         object_id: u16,
         object_type: ObjectType,
+        context: String,
     },
 
     // ── Authentication key management ──

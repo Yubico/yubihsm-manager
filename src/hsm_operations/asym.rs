@@ -55,6 +55,11 @@ impl Display for AttestationType {
 pub struct AsymmetricOperations;
 
 impl YubihsmOperations for AsymmetricOperations {
+
+    fn context_name(&self) -> &'static str {
+        "asym"
+    }
+
     fn get_commands(&self) -> Vec<MgmCommand> {
         [
             MgmCommand {
@@ -665,6 +670,11 @@ impl AsymmetricOperations {
 pub struct JavaOps;
 
 impl YubihsmOperations for JavaOps {
+
+    fn context_name(&self) -> &'static str {
+        "sunpkcs11"
+    }
+
     fn get_commands(&self) -> Vec<MgmCommand> {
         Self::JAVA_COMMANDS.to_vec()
     }

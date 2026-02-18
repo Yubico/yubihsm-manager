@@ -119,6 +119,7 @@ pub fn delete_objects(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, y
                     rec.record(RecordedOperation::DeleteObject {
                         object_id: object.id,
                         object_type: object.object_type,
+                        context: yh_operation.context_name().to_string(),
                     });
                 }
             },
@@ -167,7 +168,10 @@ pub fn generate_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, 
         format!("Generated asymmetric keypair with ID 0x{:04x} on the YubiHSM", new_key.id).as_str());
 
     if let Some(rec) = recorder {
-        rec.record(RecordedOperation::GenerateObject(RecordableObjectSpec::from(&new_key)));
+        rec.record(RecordedOperation::GenerateObject {
+            spec: RecordableObjectSpec::from(&new_key),
+            context: yh_operation.context_name().to_string()
+        });
     }
 
     Ok(())

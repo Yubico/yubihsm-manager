@@ -97,6 +97,11 @@ const PUBLIC_WRAP_KEY_CAPABILITIES: [ObjectCapability; 2] = [
 pub struct WrapOperations;
 
 impl YubihsmOperations for WrapOperations {
+
+    fn context_name(&self) -> &'static str {
+        "wrap"
+    }
+
     fn get_commands(&self) -> Vec<MgmCommand> {
         [
             MgmCommand {

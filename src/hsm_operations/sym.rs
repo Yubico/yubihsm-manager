@@ -49,6 +49,10 @@ pub struct SymmetricOperations;
 
 impl YubihsmOperations for SymmetricOperations {
 
+    fn context_name(&self) -> &'static str {
+        "sym"
+    }
+
     fn get_commands(&self) -> Vec<MgmCommand> {
         [
             MgmCommand {

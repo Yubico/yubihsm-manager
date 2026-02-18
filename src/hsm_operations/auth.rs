@@ -43,6 +43,10 @@ pub struct AuthenticationOperations;
 
 impl YubihsmOperations for AuthenticationOperations {
 
+    fn context_name(&self) -> &'static str {
+        "auth"
+    }
+
     fn get_commands(&self) -> Vec<MgmCommand> {
         [
             MgmCommand {

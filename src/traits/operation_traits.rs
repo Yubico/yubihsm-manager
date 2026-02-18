@@ -24,6 +24,8 @@ use crate::hsm_operations::types::NewObjectSpec;
 
 pub trait YubihsmOperations {
 
+    fn context_name(&self) -> &'static str;
+
     fn get_commands(&self) -> Vec<MgmCommand>;
     fn get_authorized_commands(&self, authkey: &ObjectDescriptor) -> Vec<MgmCommand> {
         let commands = self.get_commands();
