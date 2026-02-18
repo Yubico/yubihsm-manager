@@ -283,8 +283,8 @@ impl ScriptRunner {
                 };
                 let cert = AsymmetricOperations::get_attestation_cert(
                     session, *attested_key_id, *attesting_key_id, template)?;
-                let filename = get_filename(format!("./0x{:04x}by0x{:04x}_attestation_cert.pem", attested_key_id, attesting_key_id).as_str())?;
-                write_bytes_to_file(ui, &cert.to_string().into_bytes(), filename.as_str())?;
+                let filename = format!("0x{:04x}by0x{:04x}_attestation_cert.pem", attested_key_id, attesting_key_id);
+                write_bytes_to_file(ui, &cert.to_string().into_bytes(), &filename)?;
                 Ok(())
             },
         //
@@ -384,28 +384,3 @@ fn resolve_input_data(input: &str) -> Result<Vec<u8>, MgmError> {
 //         RecordedOperation::ImportWrapped { .. } => "Import wrapped".to_string(),
 //     }
 // }
-
-fn get_filename(
-    filepath: &str) -> Result<String, MgmError> {
-
-    let mut filename = filepath.to_string();
-
-    let file = Path::new(&filename);
-
-    if file.exists() {
-        let stem = file.file_stem().and_then(|s| s.to_str()).ok_or_else(|| MgmError::Error("Invalid file name".to_string()))?.to_string();
-
-        let extension = file.extension().and_then(|e| e.to_str()).ok_or_else(|| MgmError::Error("Invalid file name".to_string()))?.to_string();
-
-        // Try appending numbers: filename_1.txt, filename_2.txt, ...
-        let mut counter = 1u32;
-        loop {
-            filename = format!("./{stem}_{counter}.{extension}");
-            if !Path::new(&filename).exists() {
-                break;
-            }
-            counter += 1;
-        }
-    }
-    Ok(filename)
-}

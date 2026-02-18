@@ -289,11 +289,7 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
         self.ui.display_success_message(cert.to_string().as_str());
 
         if let Some(rec) = recorder {
-            let template = if template_cert.is_some() {
-                Some(template_cert.unwrap().to_string())
-            } else {
-                None
-            };
+            let template = template_cert.map(|item| item.to_string());
             rec.record(RecordedOperation::SignAttestationCert {
                 attested_key_id: attested_key,
                 attesting_key_id: attesting_key,

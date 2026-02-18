@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs;
 use std::fs::File;
 use pem::Pem;
@@ -112,30 +112,33 @@ pub fn write_bytes_to_file(
     ui: &impl YubihsmUi,
     content: &[u8],
     filepath: &str) -> Result<(), MgmError> {
-
-    let mut file = match File::options().create_new(true).write(true).open(filepath) {
-        Ok(f) => f,
-        Err(error) => {
-            if error.kind() == std::io::ErrorKind::AlreadyExists {
-                if ui.get_confirmation(format!("File {} already exist. Overwrite it?", filepath).as_str())? {
-                    fs::remove_file(filepath)?;
-                    File::options().create_new(true).write(true).open(filepath)?
-                } else {
-                    let filename = Path::new(filepath).file_name().unwrap().to_str().unwrap();
-                    let filename = get_path(
-                        ui,
-                        "Enter new output file path:",
-                        false,
-                        format!("./{}", filename).as_str())?;
-                    return write_bytes_to_file(ui, content, filename.as_str())
-                }
-            } else {
-                return Err(MgmError::StdIoError(error))
-            }
-        }
-    };
+    let filename = get_filename(filepath)?;
+    let mut file = File::options().create_new(true).write(true).open(filename.as_str())?;
     file.write_all(content)?;
-    ui.display_success_message(format!("Wrote file {}", filepath).as_str());
+    ui.display_success_message(format!("Wrote file {}", filename).as_str());
     Ok(())
 }
 
+fn get_filename(filepath: &str) -> Result<String, MgmError> {
+
+    let mut filename = filepath.to_string();
+
+    let file = Path::new(&filename);
+
+    if file.exists() {
+        let stem = file.file_stem().and_then(|s| s.to_str()).ok_or_else(|| MgmError::Error("Invalid file name".to_string()))?.to_string();
+        let extension = file.extension().and_then(|e| e.to_str()).ok_or_else(|| MgmError::Error("Invalid file name".to_string()))?.to_string();
+        let parent = file.parent().unwrap_or(Path::new("")).to_str().unwrap_or(".").to_string();
+
+        // Try appending numbers: filename_1.txt, filename_2.txt, ...
+        let mut counter = 1u32;
+        loop {
+            filename = format!("{parent}/{stem}_{counter}.{extension}");
+            if !Path::new(&filename).exists() {
+                break;
+            }
+            counter += 1;
+        }
+    }
+    Ok(filename)
+}
