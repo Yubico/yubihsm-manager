@@ -15,7 +15,7 @@
  */
 
 use openssl::base64;
-use yubihsmrs::object::{ObjectDescriptor, ObjectType};
+use yubihsmrs::object::{ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::wrap_menu::WrapMenu;
@@ -110,6 +110,7 @@ impl<T: YubihsmUi + Clone> Ksp<T> {
         if let Some(key) = auditkey {
             export_objects.push(key);
         }
+        let export_objects = export_objects.iter().map(|obj| ObjectHandle { object_id: obj.id, object_type: obj.object_type }).collect();
 
         let wrap_op_spec = WrapOpSpec {
             wrapkey_id,

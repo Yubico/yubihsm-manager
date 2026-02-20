@@ -15,7 +15,7 @@
  */
 
 use std::fs;
-use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::cli::cmdline::Cmdline;
@@ -33,7 +33,8 @@ use crate::hsm_operations::sym::SymmetricOperations;
 use crate::hsm_operations::wrap::{WrapKeyType, WrapOperations, WrapOpSpec, WrapType};
 use crate::hsm_operations::common::get_delegated_capabilities;
 use crate::ui::helper_io::{get_pem_from_file, write_bytes_to_file, get_path};
-use crate::script::script_recorder::SessionRecorder;
+use crate::script::script_recorder::{SessionRecorder, RedactMode};
+use crate::script::types::{RecordedOperation, RecordableObjectSpec};
 
 static WRAP_HEADER: &str = "Wrap keys";
 
@@ -62,8 +63,8 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                 MgmCommandType::Import => self.import(session, recorder, authkey),
                 MgmCommandType::Delete => delete_objects(&self.ui, &None, &WrapOperations, session, &WrapOperations.get_all_objects(session)?),
                 MgmCommandType::GetPublicKey => AsymmetricMenu::new(Cmdline).get_public_key(session, ObjectType::WrapKey),
-                MgmCommandType::ExportWrapped => self.export_wrapped(session, authkey),
-                MgmCommandType::ImportWrapped => self.import_wrapped(session, authkey),
+                MgmCommandType::ExportWrapped => self.export_wrapped(session, recorder, authkey),
+                MgmCommandType::ImportWrapped => self.import_wrapped(session, recorder, authkey),
                 MgmCommandType::GetRandom => DeviceMenu::new(self.ui.clone()).get_random(session),
                 MgmCommandType::Exit => {
                     exit_manager(&self.ui, recorder);
@@ -186,7 +187,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         Ok(())
     }
 
-    fn export_wrapped(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    fn export_wrapped(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let wrapkeys = WrapOperations::get_wrapping_keys(session, authkey)?;
         let wrapkey = self.ui.select_one_object(
             &wrapkeys,
@@ -221,6 +222,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         if exportable_objects.iter().any(|x| x.algorithm == ObjectAlgorithm::Ed25519) {
             wrap_op.include_ed_seed = self.ui.get_confirmation("Include Ed25519 seed in the wrapped export? (required for importing Ed25519 keys)")?;
         };
+        let export_objects = export_objects.iter().map(|obj| ObjectHandle { object_id: obj.id, object_type: obj.object_type }).collect();
 
         if wrapkey_type == WrapKeyType::RsaPublic {
             wrap_op.aes_algorithm = Some(self.ui.select_algorithm(
@@ -253,10 +255,18 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             write_bytes_to_file(&self.ui,&object.wrapped_data, filename.as_str())?;
         }
 
+        if let Some(rec) = recorder {
+            rec.record(RecordedOperation::ExportWrapped {
+                wrap_spec: wrap_op,
+                objects: export_objects,
+                destination_directory: dir,
+            });
+        }
+
         Ok(())
     }
 
-    fn import_wrapped(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    fn import_wrapped(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let filepath = self.ui.get_path_input(
             "Enter absolute path to wrapped object file:",
             true,
@@ -293,7 +303,23 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
 
         let res = WrapOperations::import_wrapped(session, &wrap_op, &wrapped, None);
         let handle = match res {
-            Ok(h) => h,
+            Ok(h) => {
+                self.record_import_wrapped(recorder, &wrap_op, &filepath, None);
+                // if let Some(rec) = recorder {
+                //     let fp = if rec.mode == RedactMode::AllInput {
+                //         "<REDACTED>"
+                //     } else {
+                //         filepath.as_str()
+                //     };
+                //
+                //     rec.record(RecordedOperation::ImportWrapped {
+                //         wrap_spec: wrap_op,
+                //         wrapped_filepath: fp.to_string(),
+                //         new_key_spec: None,
+                //     });
+                // }
+                h
+            },
             Err(e) => {
                 if wrapkey_type == WrapKeyType::Rsa {
                     self.ui.display_info_message(format!("Failed to unwrap as object: {}. Trying as key data...", e).as_str());
@@ -324,7 +350,23 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                         &[],
                         Some("Select object capabilities"))?;
 
-                    WrapOperations::import_wrapped(session, &wrap_op, &wrapped, Some(new_key))?
+                    let handle = WrapOperations::import_wrapped(session, &wrap_op, &wrapped, Some(new_key.clone()))?;
+                    self.record_import_wrapped(recorder, &wrap_op, &filepath, Some(&new_key));
+                    // if let Some(rec) = recorder {
+                    //     let fp = if rec.mode == RedactMode::AllInput {
+                    //         "<REDACTED>"
+                    //     } else {
+                    //         filepath.as_str()
+                    //     };
+                    //
+                    //     rec.record(RecordedOperation::ImportWrapped {
+                    //         wrap_spec: wrap_op,
+                    //         wrapped_filepath: fp.to_string(),
+                    //         new_key_spec: Some(RecordableObjectSpec::from(&new_key)),
+                    //     });
+                    // }
+                    handle
+
                 } else {
                     return Err(e)
                 }
@@ -384,5 +426,21 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         self.ui.display_info_message(format!("{} shares have been registered", n_shares).as_str());
 
         Ok(shares_vec)
+    }
+
+    fn record_import_wrapped(&self, recorder: &Option<SessionRecorder>, wrapping_spec: &WrapOpSpec, filepath: &str, new_key_spec: Option<&NewObjectSpec>) {
+        if let Some(rec) = recorder {
+            let fp = if rec.mode == RedactMode::AllInput {
+                "<REDACTED>"
+            } else {
+                filepath
+            };
+
+            rec.record(RecordedOperation::ImportWrapped {
+                wrap_spec: wrapping_spec.clone(),
+                wrapped_filepath: fp.to_string(),
+                new_key_spec: new_key_spec.map(RecordableObjectSpec::from),
+            });
+        }
     }
 }

@@ -337,6 +337,41 @@ impl ScriptRunner {
             //     w.import_from_shares(session, &None)?;
             //     Ok(())
             // },
+
+            RecordedOperation::ExportWrapped { wrap_spec, objects, destination_directory} => {
+                ui.display_info_message(&format!("{} Export wrapped with wrap key 0x{:04x}", step, wrap_spec.wrapkey_id));
+                let wrapped_objects = WrapOperations::export_wrapped(session, wrap_spec, objects)?;
+                for object in wrapped_objects {
+                    if object.error.is_some() {
+                        ui.display_warning(format!("Failed to wrap {} with ID 0x{:04x}: {}. Skipping...", object.object_type, object.object_id, object.error.as_ref().unwrap()).as_str());
+                        continue;
+                    }
+                    let filename = format!("{}/0x{:04x}-{}.yhw", destination_directory, object.object_id, object.object_type);
+                    write_bytes_to_file(ui,&object.wrapped_data, filename.as_str())?;
+                }
+                Ok(())
+            },
+
+            RecordedOperation::ImportWrapped { wrap_spec, wrapped_filepath, new_key_spec } => {
+                ui.display_info_message(&format!("{} Import wrapped with wrap key 0x{:04x}", step, wrap_spec.wrapkey_id));
+                let wrapped = if wrapped_filepath == "<REDACTED>" {
+                    ui.get_path_input(
+                        "Enter absolute path to wrapped object file:",
+                        true,
+                        None,
+                        Some("Files containing wrapped YubiHSM objects usually have the file extension .yhw"))?
+                } else {
+                    wrapped_filepath.clone()
+                };
+                let wrapped = fs::read(&wrapped)?;
+                let new_spec: Option<NewObjectSpec> = if new_key_spec.is_some() {
+                    Some(new_key_spec.as_ref().unwrap().into())
+                } else {
+                    None
+                };
+                WrapOperations::import_wrapped(session, wrap_spec, &wrapped, new_spec)?;
+                Ok(())
+            },
         //
         //     // Operations requiring live HSM state — skip with warning
         //     RecordedOperation::BackupDevice { .. }

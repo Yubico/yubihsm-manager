@@ -16,6 +16,7 @@
 
 use std::fmt;
 use std::fmt::Display;
+use serde::{Deserialize, Serialize};
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
@@ -30,7 +31,7 @@ use crate::hsm_operations::sym::SymmetricOperations;
 // 2 object ID bytes + 2 domains bytes + 8 capabilities bytes + 8 delegated capabilities = 20 bytes
 static WRAP_SPLIT_PREFIX_LEN: usize = 20;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum WrapKeyType {
     #[default]
     Aes,
@@ -44,7 +45,7 @@ pub struct WrapKeyShares {
     pub shares_data: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum WrapType {
     #[default]
     Object,
@@ -60,6 +61,7 @@ impl Display for WrapType {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WrapOpSpec {
     pub wrapkey_id: u16,
     pub wrapkey_type: WrapKeyType,
@@ -407,11 +409,11 @@ impl WrapOperations {
         Ok(wrapkey_spec)
     }
 
-    pub fn export_wrapped(session: &Session, wrap_op_spec: &WrapOpSpec, export_objects: &Vec<ObjectDescriptor>) -> Result<Vec<WrappedData>, MgmError> {
+    pub fn export_wrapped(session: &Session, wrap_op_spec: &WrapOpSpec, export_objects: &Vec<ObjectHandle>) -> Result<Vec<WrappedData>, MgmError> {
         let mut wrapped = Vec::new();
         for object in export_objects {
             let mut w = WrappedData {
-                object_id: object.id,
+                object_id: object.object_id,
                 object_type: object.object_type,
                 wrapkey_id: wrap_op_spec.wrapkey_id,
                 wrapped_data: Vec::new(),
@@ -421,7 +423,7 @@ impl WrapOperations {
             let res = match wrap_op_spec.wrapkey_type {
                 WrapKeyType::Aes => {
                     let format: u8 = if wrap_op_spec.include_ed_seed { 1 } else { 0 };
-                    session.export_wrapped_ex(wrap_op_spec.wrapkey_id, object.object_type, object.id, format)
+                    session.export_wrapped_ex(wrap_op_spec.wrapkey_id, object.object_type, object.object_id, format)
                 },
                 WrapKeyType::RsaPublic => {
                     let aes_algo = match wrap_op_spec.aes_algorithm {
@@ -444,7 +446,7 @@ impl WrapOperations {
                         WrapType::Object => session.export_rsa_wrapped_object(
                             wrap_op_spec.wrapkey_id,
                             object.object_type,
-                            object.id,
+                            object.object_id,
                             aes_algo,
                             oaep_algo,
                             mgf1_algo,
@@ -453,7 +455,7 @@ impl WrapOperations {
                         WrapType::Key => session.export_rsa_wrapped_key(
                             wrap_op_spec.wrapkey_id,
                             object.object_type,
-                            object.id,
+                            object.object_id,
                             aes_algo,
                             oaep_algo,
                             mgf1_algo,

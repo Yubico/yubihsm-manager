@@ -15,7 +15,7 @@
  */
 
 use std::fs;
-use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectHandle};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
@@ -101,6 +101,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
         if export_objects.iter().any(|x| x.algorithm == ObjectAlgorithm::Ed25519) {
             wrap_op.include_ed_seed = self.ui.get_confirmation("Include Ed25519 seed in the wrapped export? (required for importing Ed25519 keys)")?
         };
+        let export_objects = export_objects.iter().map(|obj| ObjectHandle { object_id: obj.id, object_type: obj.object_type }).collect();
 
         if wrapkey_type == WrapKeyType::RsaPublic {
             wrap_op.aes_algorithm = Some(self.ui.select_algorithm(

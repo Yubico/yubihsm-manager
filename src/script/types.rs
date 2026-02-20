@@ -1,6 +1,25 @@
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectType};
-use crate::hsm_operations::types::NewObjectSpec;
+use std::fmt;
+use std::fmt::Display;
 use serde::{Deserialize, Serialize};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
+use crate::hsm_operations::types::NewObjectSpec;
+use crate::hsm_operations::wrap::WrapOpSpec;
+
+// #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+// pub enum ScriptInputFormat {
+//     #[default]
+//     Raw,
+//     FilePath,
+// }
+//
+// impl Display for ScriptInputFormat {
+//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//         match self {
+//             ScriptInputFormat::Raw => write!(f, "Raw data in HEX format"),
+//             ScriptInputFormat::FilePath => write!(f, "Path to input file"),
+//         }
+//     }
+// }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SessionScript {
@@ -76,6 +95,7 @@ pub enum RecordedOperation {
         spec: RecordableObjectSpec,
         #[serde(skip_serializing_if = "Vec::is_empty", default)]
         data: Vec<String>,
+        // data_format: ScriptInputFormat,
     },
 
     DeleteObject {
@@ -149,6 +169,22 @@ pub enum RecordedOperation {
     //
     // // ── Wrap operations ──
     //
+    // SplitWrapKey ( Vec<String> ),
+    //
+    // ImportWrapKeyFromShares,
+
+    ExportWrapped {
+        wrap_spec: WrapOpSpec,
+        objects: Vec<ObjectHandle>,
+        destination_directory: String,
+    },
+
+    ImportWrapped {
+        wrap_spec: WrapOpSpec,
+        wrapped_filepath: String,
+        new_key_spec: Option<RecordableObjectSpec>,
+    },
+
     // ExportWrapped {
     //     wrapkey_id: u16,
     //     wrapkey_type: String,
