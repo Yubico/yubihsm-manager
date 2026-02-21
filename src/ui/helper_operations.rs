@@ -223,3 +223,29 @@ pub fn record_import_key_operation(recorder: &Option<SessionRecorder>, new_key: 
         rec.record(RecordedOperation::ImportObject { spec: RecordableObjectSpec::from(new_key), data: rec_data });
     }
 }
+
+pub fn display_wrapkey_shares(ui: &impl YubihsmUi, shares: Vec<String>) -> Result<(), MgmError> {
+    ui.display_warning(
+        "*************************************************************\n\
+        * WARNING! The following shares will NOT be stored anywhere *\n\
+        * Save them and store them safely if you wish to re-use     *\n\
+        * the wrap key for this device in the future                *\n\
+        *************************************************************");
+
+    ui.get_string_input("Press any key to start saving key shares", false, None, None)?;
+
+    for share in shares {
+        loop {
+            ui.clear_screen();
+            println!("{}", share);
+            if ui.get_confirmation("Have you saved the key share?")? {
+                break;
+            }
+        }
+        ui.clear_screen();
+        ui.get_string_input("Press any key to display next key share or to return to menu", false, None, None)?;
+    }
+
+    ui.clear_screen();
+    Ok(())
+}

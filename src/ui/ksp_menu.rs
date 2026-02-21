@@ -18,8 +18,7 @@ use openssl::base64;
 use yubihsmrs::object::{ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
-use crate::ui::wrap_menu::WrapMenu;
-use crate::ui::helper_operations::display_menu_headers;
+use crate::ui::helper_operations::{display_menu_headers, display_wrapkey_shares};
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::ksp::KspOperations;
 use crate::hsm_operations::wrap::{WrapKeyType, WrapOperations, WrapOpSpec, WrapType};
@@ -63,7 +62,7 @@ impl<T: YubihsmUi + Clone> Ksp<T> {
         self.ui.display_success_message(format!("Successfully imported wrap key with ID  0x{:04x}", wrapkey_id).as_str());
         self.ui.get_string_input("Press any key to start recording wrap key shares", true, None, None)?;
 
-        WrapMenu::new(self.ui.clone()).display_wrapkey_shares(wrapkey_shares.shares_data)?;
+        display_wrapkey_shares(&self.ui, wrapkey_shares.shares_data)?;
         self.ui.display_info_message("All key shares have been recorded and cannot be displayed again\n");
 
         self.ui.display_info_message("Importing application authentication key...");

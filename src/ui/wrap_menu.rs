@@ -19,7 +19,7 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectHandle, ObjectT
 use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::cli::cmdline::Cmdline;
-use crate::ui::helper_operations::{delete_objects, display_menu_headers, generate_object, list_objects};
+use crate::ui::helper_operations::{delete_objects, display_menu_headers, generate_object, list_objects, display_wrapkey_shares};
 use crate::ui::helper_operations::{display_object_properties, get_new_spec_table, exit_manager, record_import_key_operation};
 use crate::ui::device_menu::DeviceMenu;
 use crate::ui::asym_menu::AsymmetricMenu;
@@ -151,19 +151,18 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         self.ui.stop_progress(progress, None);
         self.ui.display_success_message(format!("Imported {} object with ID 0x{:04x} into the YubiHSM", new_key.object_type, new_key.id).as_str());
 
-        record_import_key_operation(recorder, &new_key);
-
-        if key_type != WrapKeyType::Aes {
-            return Ok(());
+        let mut n_shares = 0;
+        let mut n_threshold = 0;
+        if key_type == WrapKeyType::Aes {
+            self.ui.display_info_message("Split wrap key? Note that the wrap key is already imported into the YubiHSM2. Key split is done outside the device");
+            if self.ui.get_confirmation("Split wrap key?")? {
+                n_shares = self.ui.get_split_aes_n_shares("Enter the number of shares to create:")?;
+                n_threshold = self.ui.get_split_aes_m_threshold("Enter the number of shares necessary to re-create the key:", n_shares)?;
+                let split_key = WrapOperations::split_wrap_key(&new_key, n_threshold, n_shares)?;
+                display_wrapkey_shares(&self.ui, split_key.shares_data)?;
+            }
         }
-
-        self.ui.display_info_message("Split wrap key? Note that the wrap key is already imported into the YubiHSM2. Key split is done outside the device");
-        if self.ui.get_confirmation("Split wrap key?")? {
-            let n_shares = self.ui.get_split_aes_n_shares("Enter the number of shares to create:")?;
-            let n_threshold = self.ui.get_split_aes_m_threshold("Enter the number of shares necessary to re-create the key:", n_shares)?;
-            let split_key = WrapOperations::split_wrap_key(&new_key, n_threshold, n_shares)?;
-            self.display_wrapkey_shares(split_key.shares_data)?;
-        }
+        self.record_import_wrapkey(recorder, &new_key, n_threshold, n_shares);
 
         Ok(())
     }
@@ -183,7 +182,8 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         self.ui.stop_progress(progress, None);
         self.ui.display_success_message(format!("Imported wrap key with ID 0x{:04x} on the device", new_key.id).as_str());
 
-        record_import_key_operation(recorder, &new_key);
+        self.record_import_wrapkey(recorder, &new_key, 0, 0);
+
         Ok(())
     }
 
@@ -305,19 +305,6 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         let handle = match res {
             Ok(h) => {
                 self.record_import_wrapped(recorder, &wrap_op, &filepath, None);
-                // if let Some(rec) = recorder {
-                //     let fp = if rec.mode == RedactMode::AllInput {
-                //         "<REDACTED>"
-                //     } else {
-                //         filepath.as_str()
-                //     };
-                //
-                //     rec.record(RecordedOperation::ImportWrapped {
-                //         wrap_spec: wrap_op,
-                //         wrapped_filepath: fp.to_string(),
-                //         new_key_spec: None,
-                //     });
-                // }
                 h
             },
             Err(e) => {
@@ -352,19 +339,6 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
 
                     let handle = WrapOperations::import_wrapped(session, &wrap_op, &wrapped, Some(new_key.clone()))?;
                     self.record_import_wrapped(recorder, &wrap_op, &filepath, Some(&new_key));
-                    // if let Some(rec) = recorder {
-                    //     let fp = if rec.mode == RedactMode::AllInput {
-                    //         "<REDACTED>"
-                    //     } else {
-                    //         filepath.as_str()
-                    //     };
-                    //
-                    //     rec.record(RecordedOperation::ImportWrapped {
-                    //         wrap_spec: wrap_op,
-                    //         wrapped_filepath: fp.to_string(),
-                    //         new_key_spec: Some(RecordableObjectSpec::from(&new_key)),
-                    //     });
-                    // }
                     handle
 
                 } else {
@@ -375,32 +349,6 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
 
         self.ui.display_success_message(format!("Successfully imported object {}, with ID 0x{:04x}", handle.object_type, handle.object_id).as_str());
 
-        Ok(())
-    }
-
-    pub fn display_wrapkey_shares(&self, shares: Vec<String>) -> Result<(), MgmError> {
-        self.ui.display_warning(
-            "*************************************************************\n\
-        * WARNING! The following shares will NOT be stored anywhere *\n\
-        * Save them and store them safely if you wish to re-use     *\n\
-        * the wrap key for this device in the future                *\n\
-        *************************************************************");
-
-        self.ui.get_string_input("Press any key to start saving key shares", false, None, None)?;
-
-        for share in shares {
-            loop {
-                self.ui.clear_screen();
-                println!("{}", share);
-                if self.ui.get_confirmation("Have you saved the key share?")? {
-                    break;
-                }
-            }
-            self.ui.clear_screen();
-            self.ui.get_string_input("Press any key to display next key share or to return to menu", false, None, None)?;
-        }
-
-        self.ui.clear_screen();
         Ok(())
     }
 
@@ -426,6 +374,19 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         self.ui.display_info_message(format!("{} shares have been registered", n_shares).as_str());
 
         Ok(shares_vec)
+    }
+
+    fn record_import_wrapkey(&self, recorder: &Option<SessionRecorder>, spec: &NewObjectSpec, n_threshold: u8, n_shares: u8) {
+        if let Some(rec) = recorder {
+
+            let rec_data = if rec.mode == RedactMode::AllValue || rec.mode == RedactMode::AllInput {
+                "<REDACTED>".to_string()
+            } else {
+                hex::encode(spec.data[0].clone())
+            };
+
+            rec.record(RecordedOperation::ImportWrapKey { spec: RecordableObjectSpec::from(spec), key: rec_data, n_threshold, n_shares });
+        }
     }
 
     fn record_import_wrapped(&self, recorder: &Option<SessionRecorder>, wrapping_spec: &WrapOpSpec, filepath: &str, new_key_spec: Option<&NewObjectSpec>) {

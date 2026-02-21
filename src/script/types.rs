@@ -3,7 +3,7 @@ use std::fmt::Display;
 use serde::{Deserialize, Serialize};
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use crate::hsm_operations::types::NewObjectSpec;
-use crate::hsm_operations::wrap::WrapOpSpec;
+use crate::hsm_operations::wrap::{WrapOpSpec, WrapKeyShares};
 
 // #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 // pub enum ScriptInputFormat {
@@ -95,7 +95,13 @@ pub enum RecordedOperation {
         spec: RecordableObjectSpec,
         #[serde(skip_serializing_if = "Vec::is_empty", default)]
         data: Vec<String>,
-        // data_format: ScriptInputFormat,
+    },
+
+    ImportWrapKey {
+        spec: RecordableObjectSpec,
+        key: String,
+        n_threshold: u8,
+        n_shares: u8,
     },
 
     DeleteObject {
@@ -169,9 +175,6 @@ pub enum RecordedOperation {
     //
     // // ── Wrap operations ──
     //
-    // SplitWrapKey ( Vec<String> ),
-    //
-    // ImportWrapKeyFromShares,
 
     ExportWrapped {
         wrap_spec: WrapOpSpec,

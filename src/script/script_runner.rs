@@ -9,10 +9,12 @@ use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::ksp::KspOperations;
 use crate::hsm_operations::sym::SymmetricOperations;
 use crate::hsm_operations::types::NewObjectSpec;
-use crate::hsm_operations::wrap::WrapOperations;
+use crate::hsm_operations::wrap::{WrapOperations, WrapKeyType};
+use crate::hsm_operations::validators::{aes_key_validator, pem_private_rsa_file_validator, pem_public_rsa_file_validator};
 use crate::script::types::{RecordedOperation, RecordableObjectSpec, SessionScript};
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
+use crate::ui::helper_operations::display_wrapkey_shares;
 use crate::ui::helper_io::{get_pem_from_file, write_bytes_to_file};
 pub struct ScriptRunner;
 
@@ -167,11 +169,70 @@ impl ScriptRunner {
                             AsymmetricOperations.import(session, &new_spec)?;
                         }
                     },
-                    ObjectType::SymmetricKey      => { SymmetricOperations.import(session, &new_spec)?; },
-                    ObjectType::WrapKey
-                    | ObjectType::PublicWrapKey    => { WrapOperations.import(session, &new_spec)?; },
+                    ObjectType::SymmetricKey => { SymmetricOperations.import(session, &new_spec)?; },
                     ObjectType::AuthenticationKey => { AuthenticationOperations.import(session, &new_spec)?; },
                     other => return Err(MgmError::Error(format!("Unknown object type {:?}", other))),
+                }
+                Ok(())
+            },
+
+            RecordedOperation::ImportWrapKey { spec, key, n_threshold, n_shares } => {
+                ui.display_info_message(&format!("{} Import WrapKey 0x{:04x}", step, spec.id));
+
+                let mut new_spec: NewObjectSpec = spec.into();
+                if key == "<REDACTED>" {
+                    match WrapOperations::get_wrapkey_type(new_spec.object_type, new_spec.algorithm)? {
+                        WrapKeyType::Aes => {
+                            loop {
+                                let k = ui.get_aes_key_hex("Enter wrap key in HEX format :")?;
+                                if WrapOperations::get_algorithm_from_keylen(k.len())? == new_spec.algorithm {
+                                    new_spec.data.push(k);
+                                    break;
+                                }
+                                ui.display_error_message(&format!("Wrong length of Wrap Key. Expected algorithm is {:?}", new_spec.algorithm));
+                                if ui.get_confirmation("Skip this step? ")? {
+                                    return Ok(());
+                                }
+                            }
+                        },
+                        WrapKeyType::Rsa => {
+                            loop {
+                                let filepath = ui.get_private_rsa_filepath("Enter path to PEM file containing private RSA key:")?;
+                                let pem = get_pem_from_file(&filepath)?[0].to_owned();
+                                let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
+                                if _algo == new_spec.algorithm {
+                                    new_spec.data.push(_bytes);
+                                    break;
+                                }
+                                ui.display_error_message(&format!("Wrong algorithm of RSA Wrap Key. Expected algorithm is {:?}", new_spec.algorithm));
+                                if ui.get_confirmation("Skip this step? ")? {
+                                    return Ok(());
+                                }
+                            }
+                        },
+                        WrapKeyType::RsaPublic => {
+                            loop {
+                                let filepath = ui.get_public_rsa_filepath("Enter path to PEM file containing public RSA key:")?;
+                                let pem = get_pem_from_file(&filepath)?[0].to_owned();
+                                let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
+                                if _algo == new_spec.algorithm {
+                                    new_spec.data.push(_bytes);
+                                    break;
+                                }
+                                ui.display_error_message(&format!("Wrong algorithm of RSA Wrap Key. Expected algorithm is {:?}", new_spec.algorithm));
+                                if ui.get_confirmation("Skip this step? ")? {
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    new_spec.data = [hex::decode(key)?].to_vec();
+                }
+                WrapOperations.import(session, &new_spec)?;
+                if *n_threshold != 0 && *n_shares != 0 {
+                    let split_key = WrapOperations::split_wrap_key(&new_spec, *n_threshold, *n_shares)?;
+                    display_wrapkey_shares(ui, split_key.shares_data)?;
                 }
                 Ok(())
             },
@@ -326,8 +387,16 @@ impl ScriptRunner {
         //         Ok(())
         //     },
 
-            // RecordedOperation::SplitWrapKey (shares) => {
-            //     WrapMenu::new(ui).display_wrapkey_shares(shares.clone())?;
+            // RecordedOperation::SplitWrapKey { wrapkey_object, wrapkey_value, n_threshold, n_shares } => {
+            //     if wrapkey_value == "<REDACTED>" {
+            //
+            //     } else {
+            //         ui.display_info_message(&format!("{} Split wrap key 0x{:04x} with value {}", step, wrapkey_object.id, wrapkey_value));
+            //     }
+            //
+            //
+            //     let split_key = WrapOperations::split_wrap_key(wrapkey, *n_threshold, *n_shares)?;
+            //     display_wrapkey_shares(ui, split_key.shares_data)?;
             //
             //     Ok(())
             // },
