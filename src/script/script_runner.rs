@@ -95,89 +95,158 @@ impl ScriptRunner {
                 let new_spec: NewObjectSpec = spec.into();
                 let progress = ui.start_progress(Some(&step));
                 match context.as_str() {
-                    "asym" => { AsymmetricOperations.generate(session, &new_spec)?; },
-                    "sunpkcs11" => { JavaOps.generate(session, &new_spec)?; },
-                    "sym"  => { SymmetricOperations.generate(session, &new_spec)?; },
-                    "wrap" => { WrapOperations.generate(session, &new_spec)?; },
-                    other => return Err(MgmError::Error(format!("Cannot generate in {:?} context", other))),
+                    "asym" => {
+                        if !is_asym_privkey_spec(spec) && !is_cert_spec(spec) {
+                            return Err(MgmError::Error(format!(
+                                "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of an asymmetric object.",
+                                new_spec.object_type, new_spec.id)));
+                        }
+                        AsymmetricOperations.generate(session, &new_spec)?;
+                    },
+                    "sunpkcs11" => {
+                        if !is_asym_privkey_spec(spec) {
+                            return Err(MgmError::Error(format!(
+                                "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of an asymmetric object.",
+                                new_spec.object_type, new_spec.id)));
+                        }
+                        JavaOps.generate(session, &new_spec)?;
+                    },
+                    "sym"  => {
+                            if !is_sym_spec(spec) {
+                                return Err(MgmError::Error(format!(
+                                    "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of a symmetric key.",
+                                    new_spec.object_type, new_spec.id)));
+                            }
+                        SymmetricOperations.generate(session, &new_spec)?;
+                    },
+                    "wrap" => {
+                        if !is_wrap_spec(spec) {
+                            return Err(MgmError::Error(format!(
+                                "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of a wrap key.",
+                                new_spec.object_type, new_spec.id)));
+                        }
+                        WrapOperations.generate(session, &new_spec)?;
+                    },
+                    other => return Err(MgmError::Error(format!("Generation operation not supported in '{:?}' context", other))),
                 }
                 ui.stop_progress(progress, None);
                 Ok(())
             },
 
-            RecordedOperation::ImportObject { spec, data } => {
+            RecordedOperation::ImportObject { spec, data, context } => {
                 ui.display_info_message(&format!("{} Import {:?} 0x{:04x} ({:?})", step, spec.object_type, spec.id, spec.algorithm));
-                let mut value = Vec::new();
-                if data[0] == "<REDACTED>" {
-                    if AsymmetricOperations::is_rsa_key_algorithm(&spec.algorithm) ||
-                        AsymmetricOperations::is_ec_key_algorithm(&spec.algorithm) ||
-                        spec.algorithm == ObjectAlgorithm::Ed25519 ||
-                        spec.algorithm == ObjectAlgorithm::OpaqueX509Certificate {
-                        let filepath = if spec.algorithm == ObjectAlgorithm::OpaqueX509Certificate {
-                            ui.get_asymmetric_import_filepath("Enter path to PEM file containing X509Certificate:",
-                                None)?
-                        } else {
-                            ui.get_asymmetric_import_filepath("Enter path to PEM file containing asymmetric key:",
-                                                              None)?
-                        };
-                        let pem = get_pem_from_file(&filepath)?;
-                        let pem = pem[0].to_owned();
-                        let (_, _, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
-                        // TODO Validate algo and type of the read pem key against spec
-                        value.push(_bytes);
-                    } else if spec.object_type == ObjectType::SymmetricKey || spec.object_type == ObjectType::WrapKey {
-                        let key = ui.get_aes_key_hex("Enter AES key in HEX format:")?;
-                        // let _algo = SymmetricOperations::get_symkey_algorithm_from_keylen(key.len())?;
-                        // TODO Validate algo against spec
-                        value.push(key);
-                    } else if spec.algorithm == ObjectAlgorithm::Aes128YubicoAuthentication {
-                        let pwd = ui.get_password("Enter user password:", true)?;
-                        value.push(pwd.as_bytes().to_vec());
 
-                    } else {
-                        return Err(MgmError::Error(format!(
-                            "Cannot execute import of {:?} 0x{:04x}: unknown properties of redacted data. Import manually.",
-                            spec.object_type, spec.id)));
-                    }
-
-                    if data.len() > 1 && spec.object_type == ObjectType::AsymmetricKey {
-                        // Must be a java key, which means we need to read a certificate too
-                        let filepath = ui.get_asymmetric_import_filepath("Enter path to PEM file containing X509Certificate:",
-                                                              None)?;
-                        let pem = get_pem_from_file(&filepath)?;
-                        let pem = pem[0].to_owned();
-                        let (_, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
-                        if _algo != ObjectAlgorithm::OpaqueX509Certificate {
-                            return Err(MgmError::Error(format!("File does not contain X509Certificate.")));
+                match context.as_str() {
+                    "asym" => {
+                        if !is_asym_privkey_spec(spec) && !is_cert_spec(spec) {
+                            return Err(MgmError::Error(format!(
+                                "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of an asymmetric object.",
+                                spec.object_type, spec.id)));
                         }
-                        value.push(_bytes);
+                    },
+                    "sunpkcs11" => {
+                        if !is_asym_privkey_spec(spec) && data.len() == 2 {
+                            return Err(MgmError::Error(format!(
+                                "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of an SunPKCS11 special case object.",
+                                spec.object_type, spec.id)));
+                        }
+                    },
+                    "sym" => {
+                        if !is_sym_spec(spec) {
+                            return Err(MgmError::Error(format!(
+                                "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of a symmetric object.",
+                                spec.object_type, spec.id)));
+                        }
                     }
-                } else {
-                     value = data.iter()
-                                 .map(|d| hex::decode(d)
-                                     .map_err(|e| MgmError::Error(format!("Invalid hex data: {}", e))))
-                                 .collect::<Result<Vec<_>, _>>()?;
+                    other => return Err(MgmError::Error(format!("Import operation not supported in '{:?}' context: unknown properties of redacted data.", other))),
                 }
 
                 let mut new_spec: NewObjectSpec = spec.into();
-                new_spec.data = value;
-                match spec.object_type {
-                    ObjectType::AsymmetricKey | ObjectType::Opaque    => {
-                        if new_spec.data.len() > 1 {
-                            JavaOps.import(session, &new_spec)?;
-                        } else {
-                            AsymmetricOperations.import(session, &new_spec)?;
-                        }
-                    },
-                    ObjectType::SymmetricKey => { SymmetricOperations.import(session, &new_spec)?; },
-                    ObjectType::AuthenticationKey => { AuthenticationOperations.import(session, &new_spec)?; },
-                    other => return Err(MgmError::Error(format!("Unknown object type {:?}", other))),
+                if data[0] == "<REDACTED>" {
+                    match context.as_str() {
+                        "asym" => {
+                            if spec.algorithm == ObjectAlgorithm::OpaqueX509Certificate {
+                                let fp = ui.get_certificate_filepath("Enter path to PEM file containing X509Certificate:", true, None)?;
+                                let pem = get_pem_from_file(&fp)?[0].to_owned();
+                                let (_, _, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
+                                new_spec.data.push(_bytes);
+                            } else {
+                                loop {
+                                    let fp = ui.get_asymmetric_import_filepath("Enter path to PEM file containing asymmetric private key:",
+                                                                               None)?;
+                                    let pem = get_pem_from_file(&fp)?[0].to_owned();
+                                    let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
+                                    if _algo == spec.algorithm && _type == spec.object_type {
+                                        new_spec.data.push(_bytes);
+                                        break;
+                                    }
+                                    ui.display_error_message(&format!("Wrong algorithm or type of asymmetric object. Expected private key and algorithm {:?}", new_spec.algorithm));
+                                    if ui.get_confirmation("Skip this step? ")? {
+                                        return Ok(());
+                                    }
+                                }
+                            }
+                        },
+                        "sunpkcs11" => {
+                            let fp = ui.get_sunpkcs11_import_filepath(
+                                "Enter absolute path to PEM file containing private key and X509Certificate (Only the first object of its type will be imported):",
+                                None)?;
+                            let pems = get_pem_from_file(&fp)?;
+                            for pem in pems.clone() {
+                                let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
+                                if _type == ObjectType::AsymmetricKey && _algo == spec.algorithm {
+                                    new_spec.data.push(_bytes);
+                                    break;
+                                }
+                            }
+                            for pem in pems {
+                                let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
+                                if _algo == ObjectAlgorithm::OpaqueX509Certificate && _type == ObjectType::Opaque {
+                                    new_spec.data.push(_bytes);
+                                    break;
+                                }
+                            }
+                        },
+                        "sym" => {
+                            loop {
+                                let k = ui.get_aes_key_hex("Enter AES key in HEX format:")?;
+                                let algo = SymmetricOperations::get_symkey_algorithm_from_keylen(k.len())?;
+                                if algo == spec.algorithm {
+                                    new_spec.data.push(k);
+                                    break;
+                                }
+                                ui.display_error_message(&format!("Wrong algorithm or type of symmetric key. Expected algorithm is {:?}", new_spec.algorithm));
+                                if ui.get_confirmation("Skip this step? ")? {
+                                    return Ok(());
+                                }
+                            }
+                        },
+                        _ => unreachable!(),
+                    }
+                } else {
+                     new_spec.data.extend(data.iter()
+                                 .map(|d| hex::decode(d)
+                                     .map_err(|e| MgmError::Error(format!("Invalid hex data: {}", e))))
+                                 .collect::<Result<Vec<_>, _>>()?);
+                }
+
+                match context.as_str() {
+                    "asym" =>  { AsymmetricOperations.import(session, &new_spec)?; },
+                    "sunpkcs11" => { JavaOps.import(session, &new_spec)?; },
+                    "sym" => { SymmetricOperations.import(session, &new_spec)?; },
+                    _ => unreachable!()
                 }
                 Ok(())
             },
 
             RecordedOperation::ImportWrapKey { spec, key, n_threshold, n_shares } => {
                 ui.display_info_message(&format!("{} Import WrapKey 0x{:04x}", step, spec.id));
+
+                if !is_wrap_spec(spec) && !is_publicwrap_spec(spec) {
+                    return Err(MgmError::Error(format!(
+                        "Cannot execute import of {:?} 0x{:04x}: Object type and/or algorithm are not of a wrap object.",
+                        spec.object_type, spec.id)));
+                }
 
                 let mut new_spec: NewObjectSpec = spec.into();
                 if key == "<REDACTED>" {
@@ -282,55 +351,7 @@ impl ScriptRunner {
                 AuthenticationOperations.import(session, &new_spec)?;
                 Ok(())
             },
-        //
-        //     RecordedOperation::Sign { key_id, algorithm, input, output_file } => {
-        //         let data = resolve_input_data(input)?;
-        //         let sig = AsymmetricOperations::sign(session, *key_id, algorithm, &data)?;
-        //         if let Some(path) = output_file {
-        //             fs::write(path, &sig)
-        //                 .map_err(|e| MgmError::Error(format!("Write failed: {}", e)))?;
-        //         }
-        //         Ok(())
-        //     },
-        //
-        //     RecordedOperation::Decrypt { key_id, algorithm, input, output_file } => {
-        //         let data = resolve_input_data(input)?;
-        //         let plain = AsymmetricOperations::decrypt(session, *key_id, algorithm, &data)?;
-        //         if let Some(path) = output_file {
-        //             fs::write(path, &plain)
-        //                 .map_err(|e| MgmError::Error(format!("Write failed: {}", e)))?;
-        //         }
-        //         Ok(())
-        //     },
-        //
-        //     RecordedOperation::AesEncrypt { key_id, aes_mode, iv_hex, input, output_file } |
-        //     RecordedOperation::AesDecrypt { key_id, aes_mode, iv_hex, input, output_file } => {
-        //         let encrypt = matches!(op, RecordedOperation::AesEncrypt { .. });
-        //         let data = resolve_input_data(input)?;
-        //         let iv = iv_hex.as_ref()
-        //                        .map(|h| hex::decode(h).map_err(|e| MgmError::InvalidInput(format!("Invalid IV: {}", e))))
-        //                        .transpose()?
-        //             .unwrap_or_default();
-        //         let result = match (encrypt, aes_mode.as_str()) {
-        //             (true,  "Ecb") => session.encrypt_aes_ecb(*key_id, &data)?,
-        //             (true,  "Cbc") => session.encrypt_aes_cbc(*key_id, &iv, &data)?,
-        //             (false, "Ecb") => session.decrypt_aes_ecb(*key_id, &data)?,
-        //             (false, "Cbc") => session.decrypt_aes_cbc(*key_id, &iv, &data)?,
-        //             (_, mode) => return Err(MgmError::InvalidInput(format!("Unknown AES mode: '{}'", mode))),
-        //         };
-        //         if let Some(path) = output_file {
-        //             fs::write(path, &result).map_err(|e| MgmError::Error(format!("Write failed: {}", e)))?;
-        //         }
-        //         Ok(())
-        //     },
-        //
-        //     RecordedOperation::DeriveEcdh { key_id, peer_pubkey_file } => {
-        //         let pems = crate::ui::helper_io::get_pem_from_file(peer_pubkey_file)?;
-        //         let hsm_key = session.get_object_info(*key_id, ObjectType::AsymmetricKey)?;
-        //         let _ = AsymmetricOperations::derive_ecdh(session, &hsm_key, pems[0].clone())?;
-        //         Ok(())
-        //     },
-        //
+
             RecordedOperation::SignAttestationCert {
                 attested_key_id, attesting_key_id, template_cert
             } => {
@@ -352,10 +373,6 @@ impl ScriptRunner {
         //         Ok(())
         //     },
         //
-        //     RecordedOperation::ResetDevice => {
-        //         session.reset()?;
-        //         Ok(())
-        //     },
         //
         //     RecordedOperation::KspSetup {
         //         rsa_decrypt, wrapkey_id, domains, shares, threshold,
@@ -387,25 +404,6 @@ impl ScriptRunner {
         //         Ok(())
         //     },
 
-            // RecordedOperation::SplitWrapKey { wrapkey_object, wrapkey_value, n_threshold, n_shares } => {
-            //     if wrapkey_value == "<REDACTED>" {
-            //
-            //     } else {
-            //         ui.display_info_message(&format!("{} Split wrap key 0x{:04x} with value {}", step, wrapkey_object.id, wrapkey_value));
-            //     }
-            //
-            //
-            //     let split_key = WrapOperations::split_wrap_key(wrapkey, *n_threshold, *n_shares)?;
-            //     display_wrapkey_shares(ui, split_key.shares_data)?;
-            //
-            //     Ok(())
-            // },
-            //
-            // RecordedOperation::ImportWrapKeyFromShares => {
-            //     let w = WrapMenu::new(ui);
-            //     w.import_from_shares(session, &None)?;
-            //     Ok(())
-            // },
 
             RecordedOperation::ExportWrapped { wrap_spec, objects, destination_directory} => {
                 ui.display_info_message(&format!("{} Export wrapped with wrap key 0x{:04x}", step, wrap_spec.wrapkey_id));
@@ -465,6 +463,31 @@ fn resolve_input_data(input: &str) -> Result<Vec<u8>, MgmError> {
         Ok(input.as_bytes().to_vec())
     }
 }
+
+fn is_asym_privkey_spec(spec: &RecordableObjectSpec) -> bool {
+    matches!(spec.object_type, ObjectType::AsymmetricKey)
+        && (AsymmetricOperations::is_rsa_key_algorithm(&spec.algorithm)
+            || AsymmetricOperations::is_ec_key_algorithm(&spec.algorithm)
+            || spec.algorithm == ObjectAlgorithm::Ed25519)
+}
+
+fn is_cert_spec(spec: &RecordableObjectSpec) -> bool {
+    spec.algorithm == ObjectAlgorithm::OpaqueX509Certificate
+        && spec.object_type == ObjectType::Opaque
+}
+
+fn is_sym_spec(spec: &RecordableObjectSpec) -> bool {
+    spec.object_type == ObjectType::SymmetricKey && SymmetricOperations::is_aes_algorithm(&spec.algorithm)
+}
+
+fn is_wrap_spec(spec: &RecordableObjectSpec) -> bool {
+    spec.object_type == ObjectType::WrapKey && WrapOperations.get_generation_algorithms().contains(&spec.algorithm.into())
+}
+
+fn is_publicwrap_spec(spec: &RecordableObjectSpec) -> bool {
+    spec.object_type == ObjectType::PublicWrapKey && AsymmetricOperations::is_rsa_key_algorithm(&spec.algorithm)
+}
+
 
 // fn op_summary(op: &RecordedOperation) -> String {
 //     match op {

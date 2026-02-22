@@ -95,6 +95,7 @@ pub enum RecordedOperation {
         spec: RecordableObjectSpec,
         #[serde(skip_serializing_if = "Vec::is_empty", default)]
         data: Vec<String>,
+        context: String,
     },
 
     ImportWrapKey {
@@ -117,64 +118,12 @@ pub enum RecordedOperation {
         credential: String,
     },
 
-    // // ── Asymmetric operations ──
-    //
-    // Sign {
-    //     key_id: u16,
-    //     algorithm: String,
-    //     /// Path to input file or hex-encoded inline data
-    //     input: String,
-    //     /// Path where signature was written (if any)
-    //     #[serde(skip_serializing_if = "Option::is_none")]
-    //     output_file: Option<String>,
-    // },
-    //
-    // Decrypt {
-    //     key_id: u16,
-    //     algorithm: String,
-    //     /// Path to input file or hex-encoded inline data
-    //     input: String,
-    //     #[serde(skip_serializing_if = "Option::is_none")]
-    //     output_file: Option<String>,
-    // },
-    //
-    // DeriveEcdh {
-    //     key_id: u16,
-    //     peer_pubkey_file: String,
-    // },
-    //
     SignAttestationCert {
         attested_key_id: u16,
         attesting_key_id: u16,
         #[serde(skip_serializing_if = "Option::is_none")]
         template_cert: Option<String>,
     },
-    //
-    // // ── Symmetric operations ──
-    //
-    // AesEncrypt {
-    //     key_id: u16,
-    //     aes_mode: String,     // "Ecb" or "Cbc"
-    //     #[serde(skip_serializing_if = "Option::is_none")]
-    //     iv_hex: Option<String>,
-    //     /// Path to input file or hex-encoded inline data
-    //     input: String,
-    //     #[serde(skip_serializing_if = "Option::is_none")]
-    //     output_file: Option<String>,
-    // },
-    //
-    // AesDecrypt {
-    //     key_id: u16,
-    //     aes_mode: String,
-    //     #[serde(skip_serializing_if = "Option::is_none")]
-    //     iv_hex: Option<String>,
-    //     input: String,
-    //     #[serde(skip_serializing_if = "Option::is_none")]
-    //     output_file: Option<String>,
-    // },
-    //
-    // // ── Wrap operations ──
-    //
 
     ExportWrapped {
         wrap_spec: WrapOpSpec,
@@ -188,31 +137,6 @@ pub enum RecordedOperation {
         new_key_spec: Option<RecordableObjectSpec>,
     },
 
-    // ExportWrapped {
-    //     wrapkey_id: u16,
-    //     wrapkey_type: String,
-    //     wrap_type: String,
-    //     object_ids: Vec<u16>,
-    //     output_directory: String,
-    //     #[serde(skip_serializing_if = "Option::is_none")]
-    //     oaep_algorithm: Option<String>,
-    //     #[serde(skip_serializing_if = "Option::is_none")]
-    //     mgf1_algorithm: Option<String>,
-    // },
-    //
-    // ImportWrapped {
-    //     wrapkey_id: u16,
-    //     wrapkey_type: String,
-    //     wrap_type: String,
-    //     input_file: String,
-    //     #[serde(skip_serializing_if = "Option::is_none")]
-    //     oaep_algorithm: Option<String>,
-    //     #[serde(skip_serializing_if = "Option::is_none")]
-    //     mgf1_algorithm: Option<String>,
-    //     /// Only for RSA key-only wrap imports
-    //     #[serde(skip_serializing_if = "Option::is_none")]
-    //     new_key_spec: Option<SerializableObjectSpec>,
-    // },
     //
     // // ── Device operations ──
     //
@@ -230,7 +154,6 @@ pub enum RecordedOperation {
     //     input_directory: String,
     // },
     //
-    // ResetDevice,
     //
     // // ── KSP guided setup (recorded as one composite operation) ──
     //
