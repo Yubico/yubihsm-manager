@@ -65,7 +65,7 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
                 MgmCommandType::Generate => self.generate(session, recorder, authkey),
                 MgmCommandType::Import => self.import(session, recorder, authkey),
                 MgmCommandType::GotoKey => self.goto_key(session, recorder, authkey),
-                MgmCommandType::GotoDevice => DeviceMenu::new(self.ui.clone()).exec_command(session, authkey),
+                MgmCommandType::GotoDevice => DeviceMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
                 MgmCommandType::Exit => {
                     exit_manager(&self.ui, recorder);
                     Ok(())

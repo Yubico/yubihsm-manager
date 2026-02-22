@@ -352,27 +352,6 @@ impl ScriptRunner {
                 Ok(())
             },
 
-            RecordedOperation::SignAttestationCert {
-                attested_key_id, attesting_key_id, template_cert
-            } => {
-                ui.display_info_message(format!("{} Sign attestation for 0x{:04x}", step, attested_key_id).as_str());
-                let template = if let Some(cert) = template_cert {
-                    Some(pem::parse(cert)?)
-                } else {
-                    None
-                };
-                let cert = AsymmetricOperations::get_attestation_cert(
-                    session, *attested_key_id, *attesting_key_id, template)?;
-                let filename = format!("0x{:04x}by0x{:04x}_attestation_cert.pem", attested_key_id, attesting_key_id);
-                write_bytes_to_file(ui, &cert.to_string().into_bytes(), &filename)?;
-                Ok(())
-            },
-        //
-        //     RecordedOperation::GetRandom { num_bytes } => {
-        //         let _ = session.get_random(*num_bytes)?;
-        //         Ok(())
-        //     },
-        //
         //
         //     RecordedOperation::KspSetup {
         //         rsa_decrypt, wrapkey_id, domains, shares, threshold,
@@ -405,22 +384,34 @@ impl ScriptRunner {
         //     },
 
 
-            RecordedOperation::ExportWrapped { wrap_spec, objects, destination_directory} => {
-                ui.display_info_message(&format!("{} Export wrapped with wrap key 0x{:04x}", step, wrap_spec.wrapkey_id));
+            RecordedOperation::ExportWrapped { wrap_spec, objects, destination_directory} |
+            RecordedOperation::BackupDevice { wrap_spec, objects, destination_directory} => {
+                ui.display_info_message(&format!("{} Export wrapped objects using WrapKey 0x{:04x}", step, wrap_spec.wrapkey_id));
+
+                let dir = if destination_directory == "<REDACTED>" {
+                    ui.get_path_input(
+                        "Enter path to backup directory:",
+                        false,
+                        Some("."),
+                        Some("Default is current directory"))?
+                } else {
+                    destination_directory.clone()
+                };
+
                 let wrapped_objects = WrapOperations::export_wrapped(session, wrap_spec, objects)?;
                 for object in wrapped_objects {
                     if object.error.is_some() {
                         ui.display_warning(format!("Failed to wrap {} with ID 0x{:04x}: {}. Skipping...", object.object_type, object.object_id, object.error.as_ref().unwrap()).as_str());
                         continue;
                     }
-                    let filename = format!("{}/0x{:04x}-{}.yhw", destination_directory, object.object_id, object.object_type);
+                    let filename = format!("{}/0x{:04x}-{}.yhw", dir, object.object_id, object.object_type);
                     write_bytes_to_file(ui,&object.wrapped_data, filename.as_str())?;
                 }
                 Ok(())
             },
 
             RecordedOperation::ImportWrapped { wrap_spec, wrapped_filepath, new_key_spec } => {
-                ui.display_info_message(&format!("{} Import wrapped with wrap key 0x{:04x}", step, wrap_spec.wrapkey_id));
+                ui.display_info_message(&format!("{} Import wrapped object using WrapKey 0x{:04x}", step, wrap_spec.wrapkey_id));
                 let wrapped = if wrapped_filepath == "<REDACTED>" {
                     ui.get_path_input(
                         "Enter absolute path to wrapped object file:",
@@ -439,15 +430,50 @@ impl ScriptRunner {
                 WrapOperations::import_wrapped(session, wrap_spec, &wrapped, new_spec)?;
                 Ok(())
             },
-        //
-        //     // Operations requiring live HSM state — skip with warning
-        //     RecordedOperation::BackupDevice { .. }
-        //     | RecordedOperation::RestoreDevice { .. }
-        //     | RecordedOperation::ExportWrapped { .. }
-        //     | RecordedOperation::ImportWrapped { .. } => {
-        //         ui.display_warning(&format!("{} Skipping — requires interactive HSM state", step));
-        //         Ok(())
-        //     },
+
+            RecordedOperation::RestoreDevice { wrap_spec, source_directory } => {
+                ui.display_info_message(&format!("{} Restore device using WrapKey 0x{:04x}", step, wrap_spec.wrapkey_id));
+                let dir = if source_directory == "<REDACTED>" {
+                    ui.get_path_input(
+                        "Enter path to backup directory:",
+                        false,
+                        Some("."),
+                        Some("Default is current directory"))?
+                } else {
+                    source_directory.clone()
+                };
+
+                let files: Vec<_> = match scan_dir::ScanDir::files().read(dir.clone(), |iter| {
+                    iter.filter(|(_, name)| name.ends_with(".yhw")).map(|(entry, _)| entry.path()).collect()
+                }) {
+                    Ok(f) => f,
+                    Err(err) => {
+                        ui.display_error_message(err.to_string().as_str());
+                        return Err(MgmError::Error("Failed to read files".to_string()))
+                    }
+                };
+
+                if files.is_empty() {
+                    ui.display_info_message(format!("No backup files were found in {}", dir).as_str());
+                    return Ok(())
+                }
+
+                for f in files {
+                    let wrapped = fs::read(&f)?;
+
+                    let res = WrapOperations::import_wrapped(session, wrap_spec, &wrapped, None);
+                    match res {
+                        Ok(handle) => {
+                            ui.display_success_message(format!("Successfully imported object {}, with ID 0x{:04x}", handle.object_type, handle.object_id).as_str());
+                        },
+                        Err(e) => {
+                            ui.display_error_message(format!("Failed to import wrapped object from file {}: {}. Skipping...", f.display(), e).as_str());
+                        }
+                    }
+                }
+
+                Ok(())
+            },
         }
     }
 }

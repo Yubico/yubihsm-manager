@@ -118,13 +118,6 @@ pub enum RecordedOperation {
         credential: String,
     },
 
-    SignAttestationCert {
-        attested_key_id: u16,
-        attesting_key_id: u16,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        template_cert: Option<String>,
-    },
-
     ExportWrapped {
         wrap_spec: WrapOpSpec,
         objects: Vec<ObjectHandle>,
@@ -137,22 +130,16 @@ pub enum RecordedOperation {
         new_key_spec: Option<RecordableObjectSpec>,
     },
 
-    //
-    // // ── Device operations ──
-    //
-    // GetRandom {
-    //     num_bytes: usize,
-    // },
-    //
-    // BackupDevice {
-    //     wrapkey_id: u16,
-    //     output_directory: String,
-    // },
-    //
-    // RestoreDevice {
-    //     wrapkey_id: u16,
-    //     input_directory: String,
-    // },
+    BackupDevice {
+        wrap_spec: WrapOpSpec,
+        objects: Vec<ObjectHandle>,
+        destination_directory: String,
+    },
+
+    RestoreDevice {
+        wrap_spec: WrapOpSpec,
+        source_directory: String,
+    },
     //
     //
     // // ── KSP guided setup (recorded as one composite operation) ──

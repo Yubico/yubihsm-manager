@@ -15,7 +15,7 @@
  */
 
 use std::fs;
-use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectHandle};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
@@ -27,6 +27,8 @@ use crate::hsm_operations::sym::SymmetricOperations;
 use crate::hsm_operations::types::MgmCommandType;
 use crate::hsm_operations::wrap::{WrapKeyType, WrapOperations, WrapOpSpec, WrapType};
 use crate::ui::helper_io::{write_bytes_to_file, get_path};
+use crate::script::script_recorder::{SessionRecorder, RedactMode};
+use crate::script::types::RecordedOperation;
 
 static DEVICE_HEADER: &str = "YubiHSM Device Operations";
 
@@ -40,7 +42,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
         DeviceMenu { ui: interface  }
     }
     
-    pub fn exec_command(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    pub fn exec_command(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         loop {
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, DEVICE_HEADER],
                                  "Device operations allow you to do device wide operations such as backup, restore, reset, and getting random bytes.")?;
@@ -50,11 +52,11 @@ impl<T: YubihsmUi> DeviceMenu<T> {
 
             let res = match cmd.command {
                 MgmCommandType::GetRandom => self.get_random(session),
-                MgmCommandType::BackupDevice => self.backup(session, authkey),
-                MgmCommandType::RestoreDevice => self.restore(session, authkey),
+                MgmCommandType::BackupDevice => self.backup(session, recorder, authkey),
+                MgmCommandType::RestoreDevice => self.restore(session, recorder, authkey),
                 MgmCommandType::Reset => self.reset(session),
                 MgmCommandType::Exit => {
-                    exit_manager(&self.ui, &None);
+                    exit_manager(&self.ui, recorder);
                     Ok(())
                 },
                 _ => unreachable!()
@@ -80,7 +82,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
     }
 
 
-    fn backup(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    fn backup(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let wrapkeys = WrapOperations::get_wrapping_keys(session, authkey)?;
         let wrapkey = self.ui.select_one_object(
             &wrapkeys,
@@ -101,7 +103,8 @@ impl<T: YubihsmUi> DeviceMenu<T> {
         if export_objects.iter().any(|x| x.algorithm == ObjectAlgorithm::Ed25519) {
             wrap_op.include_ed_seed = self.ui.get_confirmation("Include Ed25519 seed in the wrapped export? (required for importing Ed25519 keys)")?
         };
-        let export_objects = export_objects.iter().map(|obj| ObjectHandle { object_id: obj.id, object_type: obj.object_type }).collect();
+        let mut export_objects: Vec<ObjectHandle> = export_objects.iter().map(|obj| ObjectHandle { object_id: obj.id, object_type: obj.object_type }).collect();
+        export_objects.retain(|obj| { obj.object_type != ObjectType::WrapKey && obj.object_id != wrapkey.id });
 
         if wrapkey_type == WrapKeyType::RsaPublic {
             wrap_op.aes_algorithm = Some(self.ui.select_algorithm(
@@ -131,10 +134,24 @@ impl<T: YubihsmUi> DeviceMenu<T> {
             write_bytes_to_file(&self.ui, &object.wrapped_data, filename.as_str())?;
         }
 
+        if let Some(rec) = recorder {
+            let d = if rec.mode == RedactMode::AllInput {
+                "<REDACTED>".to_string()
+            } else {
+                dir
+            };
+
+            rec.record(RecordedOperation::BackupDevice {
+                wrap_spec: wrap_op,
+                objects: export_objects,
+                destination_directory: d,
+            });
+        }
+
         Ok(())
     }
 
-    fn restore(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    fn restore(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let wrapkeys = WrapOperations::get_unwrapping_keys(session, authkey)?;
         let wrapkey = self.ui.select_one_object(
             &wrapkeys,
@@ -196,6 +213,18 @@ impl<T: YubihsmUi> DeviceMenu<T> {
                     self.ui.display_error_message(format!("Failed to import wrapped object from file {}: {}. Skipping...", f.display(), e).as_str());
                 }
             }
+        }
+
+        if let Some(rec) = recorder {
+            let d = if rec.mode == RedactMode::AllInput {
+                "<REDACTED>".to_string()
+            } else {
+                dir
+            };
+            rec.record(RecordedOperation::RestoreDevice {
+                wrap_spec: wrap_op,
+                source_directory: d,
+            });
         }
         Ok(())
     }

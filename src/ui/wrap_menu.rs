@@ -256,10 +256,16 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         }
 
         if let Some(rec) = recorder {
+            let d = if rec.mode == RedactMode::AllInput {
+                "<REDACTED>".to_string()
+            } else {
+                dir
+            };
+
             rec.record(RecordedOperation::ExportWrapped {
                 wrap_spec: wrap_op,
                 objects: export_objects,
-                destination_directory: dir,
+                destination_directory: d,
             });
         }
 
