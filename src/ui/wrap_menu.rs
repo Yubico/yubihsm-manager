@@ -20,7 +20,7 @@ use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::cli::cmdline::Cmdline;
 use crate::ui::helper_operations::{delete_objects, display_menu_headers, generate_object, list_objects, display_wrapkey_shares};
-use crate::ui::helper_operations::{display_object_properties, get_new_spec_table, exit_manager, record_import_key_operation};
+use crate::ui::helper_operations::{display_object_properties, get_new_spec_table};
 use crate::ui::device_menu::DeviceMenu;
 use crate::ui::asym_menu::AsymmetricMenu;
 use crate::traits::operation_traits::YubihsmOperations;
@@ -61,15 +61,12 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                 MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &WrapOperations, session),
                 MgmCommandType::Generate => generate_object(&self.ui, recorder, &WrapOperations, session, authkey, ObjectType::WrapKey),
                 MgmCommandType::Import => self.import(session, recorder, authkey),
-                MgmCommandType::Delete => delete_objects(&self.ui, &None, &WrapOperations, session, &WrapOperations.get_all_objects(session)?),
+                MgmCommandType::Delete => delete_objects(&self.ui, recorder, &WrapOperations, session, &WrapOperations.get_all_objects(session)?),
                 MgmCommandType::GetPublicKey => AsymmetricMenu::new(Cmdline).get_public_key(session, ObjectType::WrapKey),
                 MgmCommandType::ExportWrapped => self.export_wrapped(session, recorder, authkey),
                 MgmCommandType::ImportWrapped => self.import_wrapped(session, recorder, authkey),
                 MgmCommandType::GetRandom => DeviceMenu::new(self.ui.clone()).get_random(session),
-                MgmCommandType::Exit => {
-                    exit_manager(&self.ui, recorder);
-                    Ok(())
-                },
+                MgmCommandType::Exit => std::process::exit(0),
                 _ => unreachable!()
             };
 
@@ -162,7 +159,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                 display_wrapkey_shares(&self.ui, split_key.shares_data)?;
             }
         }
-        self.record_import_wrapkey(recorder, &new_key, n_threshold, n_shares);
+        self.record_import_wrapkey(recorder, &new_key, n_threshold, n_shares)?;
 
         Ok(())
     }
@@ -182,7 +179,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         self.ui.stop_progress(progress, None);
         self.ui.display_success_message(format!("Imported wrap key with ID 0x{:04x} on the device", new_key.id).as_str());
 
-        self.record_import_wrapkey(recorder, &new_key, 0, 0);
+        self.record_import_wrapkey(recorder, &new_key, 0, 0)?;
 
         Ok(())
     }
@@ -266,7 +263,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                 wrap_spec: wrap_op,
                 objects: export_objects,
                 destination_directory: d,
-            });
+            })?;
         }
 
         Ok(())
@@ -310,7 +307,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         let res = WrapOperations::import_wrapped(session, &wrap_op, &wrapped, None);
         let handle = match res {
             Ok(h) => {
-                self.record_import_wrapped(recorder, &wrap_op, &filepath, None);
+                self.record_import_wrapped(recorder, &wrap_op, &filepath, None)?;
                 h
             },
             Err(e) => {
@@ -344,7 +341,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                         Some("Select object capabilities"))?;
 
                     let handle = WrapOperations::import_wrapped(session, &wrap_op, &wrapped, Some(new_key.clone()))?;
-                    self.record_import_wrapped(recorder, &wrap_op, &filepath, Some(&new_key));
+                    self.record_import_wrapped(recorder, &wrap_op, &filepath, Some(&new_key))?;
                     handle
 
                 } else {
@@ -382,7 +379,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         Ok(shares_vec)
     }
 
-    fn record_import_wrapkey(&self, recorder: &Option<SessionRecorder>, spec: &NewObjectSpec, n_threshold: u8, n_shares: u8) {
+    fn record_import_wrapkey(&self, recorder: &Option<SessionRecorder>, spec: &NewObjectSpec, n_threshold: u8, n_shares: u8) -> Result<(), MgmError> {
         if let Some(rec) = recorder {
 
             let rec_data = if rec.mode == RedactMode::AllValue || rec.mode == RedactMode::AllInput {
@@ -391,11 +388,12 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                 hex::encode(spec.data[0].clone())
             };
 
-            rec.record(RecordedOperation::ImportWrapKey { spec: RecordableObjectSpec::from(spec), key: rec_data, n_threshold, n_shares });
+            rec.record(RecordedOperation::ImportWrapKey { spec: RecordableObjectSpec::from(spec), key: rec_data, n_threshold, n_shares })?;
         }
+        Ok(())
     }
 
-    fn record_import_wrapped(&self, recorder: &Option<SessionRecorder>, wrapping_spec: &WrapOpSpec, filepath: &str, new_key_spec: Option<&NewObjectSpec>) {
+    fn record_import_wrapped(&self, recorder: &Option<SessionRecorder>, wrapping_spec: &WrapOpSpec, filepath: &str, new_key_spec: Option<&NewObjectSpec>) -> Result<(), MgmError> {
         if let Some(rec) = recorder {
             let fp = if rec.mode == RedactMode::AllInput {
                 "<REDACTED>"
@@ -407,7 +405,8 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                 wrap_spec: wrapping_spec.clone(),
                 wrapped_filepath: fp.to_string(),
                 new_key_spec: new_key_spec.map(RecordableObjectSpec::from),
-            });
+            })?;
         }
+        Ok(())
     }
 }

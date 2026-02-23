@@ -18,7 +18,7 @@ use yubihsmrs::object::{ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::helper_operations::{generate_object, import_object, list_objects};
-use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_object_properties, exit_manager};
+use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_object_properties};
 use crate::ui::device_menu::DeviceMenu;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::hsm_operations::error::MgmError;
@@ -52,14 +52,11 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
                 MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &SymmetricOperations, session),
                 MgmCommandType::Generate => generate_object(&self.ui, recorder, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey),
                 MgmCommandType::Import => self.import(session, recorder, authkey),
-                MgmCommandType::Delete => delete_objects(&self.ui, &None, &SymmetricOperations, session, &SymmetricOperations.get_all_objects(session)?),
+                MgmCommandType::Delete => delete_objects(&self.ui, recorder, &SymmetricOperations, session, &SymmetricOperations.get_all_objects(session)?),
                 MgmCommandType::Encrypt => self.operate(session, authkey, EncryptionMode::Encrypt),
                 MgmCommandType::Decrypt => self.operate(session, authkey, EncryptionMode::Decrypt),
                 MgmCommandType::GetRandom => DeviceMenu::new(self.ui.clone()).get_random(session),
-                MgmCommandType::Exit => {
-                    exit_manager(&self.ui, recorder);
-                    Ok(())
-                },
+                MgmCommandType::Exit => std::process::exit(0),
                 _ => unreachable!()
             };
 
@@ -70,8 +67,8 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
     }
 
     pub fn import(&self, session: &Session, recorder: &Option<SessionRecorder>,  authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        let mut key_data = vec![];
-        key_data.push(self.ui.get_aes_key_hex("Enter AES key in HEX format:")?);
+        let key_data = vec![self.ui.get_aes_key_hex("Enter AES key in HEX format:")?];
+        // key_data.push(self.ui.get_aes_key_hex("Enter AES key in HEX format:")?);
         let key_algo = SymmetricOperations::get_symkey_algorithm_from_keylen(key_data[0].len())?;
 
         import_object(&self.ui, recorder, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey, key_algo, key_data)

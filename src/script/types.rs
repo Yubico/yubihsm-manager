@@ -33,7 +33,6 @@ pub struct SessionScript {
 pub struct SessionInfo {
     pub connector: String,
     pub auth_key_id: u16,
-    pub password: String,  // "<PASSWORD>" placeholder during recording
 }
 
 /// Serde-friendly mirror of NewObjectSpec using real yubihsmrs types.
@@ -140,24 +139,4 @@ pub enum RecordedOperation {
         wrap_spec: WrapOpSpec,
         source_directory: String,
     },
-    //
-    //
-    // // ── KSP guided setup (recorded as one composite operation) ──
-    //
-    // KspSetup {
-    //     rsa_decrypt: bool,
-    //     wrapkey_id: u16,
-    //     domains: Vec<String>,
-    //     shares: u8,
-    //     threshold: u8,
-    //     app_authkey_id: u16,
-    //     app_authkey_password: String,     // "<PASSWORD>"
-    //     #[serde(skip_serializing_if = "Option::is_none")]
-    //     audit_authkey_id: Option<u16>,
-    //     #[serde(skip_serializing_if = "Option::is_none")]
-    //     audit_authkey_password: Option<String>,  // "<PASSWORD>"
-    //     #[serde(skip_serializing_if = "Option::is_none")]
-    //     export_directory: Option<String>,
-    //     delete_current_authkey: bool,
-    // },
 }

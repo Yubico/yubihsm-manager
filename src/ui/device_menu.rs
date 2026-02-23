@@ -19,7 +19,7 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectHandle, ObjectT
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
-use crate::ui::helper_operations::{display_menu_headers, exit_manager};
+use crate::ui::helper_operations::{display_menu_headers};
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::algorithms::MgmAlgorithm;
 use crate::hsm_operations::device::DeviceOperations;
@@ -55,10 +55,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
                 MgmCommandType::BackupDevice => self.backup(session, recorder, authkey),
                 MgmCommandType::RestoreDevice => self.restore(session, recorder, authkey),
                 MgmCommandType::Reset => self.reset(session),
-                MgmCommandType::Exit => {
-                    exit_manager(&self.ui, recorder);
-                    Ok(())
-                },
+                MgmCommandType::Exit => std::process::exit(0),
                 _ => unreachable!()
             };
 
@@ -145,7 +142,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
                 wrap_spec: wrap_op,
                 objects: export_objects,
                 destination_directory: d,
-            });
+            })?;
         }
 
         Ok(())
@@ -224,7 +221,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
             rec.record(RecordedOperation::RestoreDevice {
                 wrap_spec: wrap_op,
                 source_directory: d,
-            });
+            })?;
         }
         Ok(())
     }

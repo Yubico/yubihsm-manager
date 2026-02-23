@@ -37,20 +37,6 @@ pub fn display_menu_headers(ui: &impl YubihsmUi, menu_headers:&[&str], descripti
     Ok(())
 }
 
-pub fn exit_manager(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>) {
-    if let Some(rec) = recorder {
-        if rec.operation_count() > 0 {
-            match rec.flush() {
-                Ok(filename) => YubihsmUi::display_success_message(ui, format!("Session recorded to {}", filename).as_str()),
-                Err(e) => YubihsmUi::display_error_message(ui, format!("Failed to write recording: {}", e).as_str())
-            }
-        } else {
-            YubihsmUi::display_info_message(ui, "No recordable operations were performed. Script is not created");
-        }
-    }
-    std::process::exit(0);
-}
-
 pub fn list_objects(ui: &impl YubihsmUi, yh_operation: &dyn YubihsmOperations, session: &Session) -> Result<(), MgmError> {
     ui.display_objects_list(&yh_operation.get_all_objects(session)?);
     Ok(())
@@ -120,7 +106,7 @@ pub fn delete_objects(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, y
                         object_id: object.id,
                         object_type: object.object_type,
                         context: yh_operation.context_name().to_string(),
-                    });
+                    })?;
                 }
             },
             Err(err) => {
@@ -171,7 +157,7 @@ pub fn generate_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, 
         rec.record(RecordedOperation::GenerateObject {
             spec: RecordableObjectSpec::from(&new_key),
             context: yh_operation.context_name().to_string()
-        });
+        })?;
     }
 
     Ok(())
@@ -206,12 +192,12 @@ pub fn import_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh
     ui.display_success_message(
         format!("Imported {} object with ID 0x{:04x} into the YubiHSM", new_key.object_type, new_key.id).as_str());
 
-    record_import_key_operation(recorder, &new_key, yh_operation.context_name().to_string());
+    record_import_object_operation(recorder, &new_key, yh_operation.context_name().to_string())?;
 
     Ok(())
 }
 
-pub fn record_import_key_operation(recorder: &Option<SessionRecorder>, new_key: &NewObjectSpec, context: String) {
+pub fn record_import_object_operation(recorder: &Option<SessionRecorder>, new_key: &NewObjectSpec, context: String) -> Result<(), MgmError> {
     if let Some(rec) = recorder {
 
         let rec_data = if rec.mode == RedactMode::AllValue || rec.mode == RedactMode::AllInput {
@@ -220,8 +206,9 @@ pub fn record_import_key_operation(recorder: &Option<SessionRecorder>, new_key: 
             new_key.data.iter().map(hex::encode).collect()
         };
 
-        rec.record(RecordedOperation::ImportObject { spec: RecordableObjectSpec::from(new_key), data: rec_data, context });
+        rec.record(RecordedOperation::ImportObject { spec: RecordableObjectSpec::from(new_key), data: rec_data, context })?;
     }
+    Ok(())
 }
 
 pub fn display_wrapkey_shares(ui: &impl YubihsmUi, shares: Vec<String>) -> Result<(), MgmError> {

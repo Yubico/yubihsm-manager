@@ -6,7 +6,6 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectType};
 use crate::hsm_operations::asym::{AsymmetricOperations, JavaOps};
 use crate::hsm_operations::auth::AuthenticationOperations;
 use crate::hsm_operations::error::MgmError;
-use crate::hsm_operations::ksp::KspOperations;
 use crate::hsm_operations::sym::SymmetricOperations;
 use crate::hsm_operations::types::NewObjectSpec;
 use crate::hsm_operations::wrap::{WrapOperations, WrapKeyType};
@@ -351,38 +350,6 @@ impl ScriptRunner {
                 AuthenticationOperations.import(session, &new_spec)?;
                 Ok(())
             },
-
-        //
-        //     RecordedOperation::KspSetup {
-        //         rsa_decrypt, wrapkey_id, domains, shares, threshold,
-        //         app_authkey_id, audit_authkey_id, export_directory,
-        //         delete_current_authkey, ..
-        //     } => {
-        //         let (actual_id, _) = KspOperations::import_ksp_wrapkey(
-        //             session, *wrapkey_id, domains, *rsa_decrypt, *shares, *threshold)?;
-        //         ui.display_success_message(&format!("Imported KSP wrap key 0x{:04x}", actual_id));
-        //         ui.display_warning("New wrap key shares differ from original. Keep the original shares.");
-        //
-        //         let app_pwd = ui.get_password(
-        //             &format!("Enter password for app auth key 0x{:04x}:", app_authkey_id), true)?;
-        //         KspOperations::import_app_authkey(
-        //             session, *app_authkey_id, domains, *rsa_decrypt, app_pwd)?;
-        //
-        //         if let Some(audit_id) = audit_authkey_id {
-        //             let audit_pwd = ui.get_password(
-        //                 &format!("Enter password for audit auth key 0x{:04x}:", audit_id), true)?;
-        //             KspOperations::import_audit_authkey(session, *audit_id, domains, audit_pwd)?;
-        //         }
-        //
-        //         if export_directory.is_some() {
-        //             ui.display_warning("Key export skipped during replay");
-        //         }
-        //         if *delete_current_authkey {
-        //             ui.display_warning("Auth key deletion skipped during replay — would terminate session");
-        //         }
-        //         Ok(())
-        //     },
-
 
             RecordedOperation::ExportWrapped { wrap_spec, objects, destination_directory} |
             RecordedOperation::BackupDevice { wrap_spec, objects, destination_directory} => {

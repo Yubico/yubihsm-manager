@@ -17,7 +17,7 @@
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectOrigin, ObjectType};
 use yubihsmrs::Session;
 use crate::ui::helper_operations::{delete_objects, display_object_properties, generate_object, import_object, list_objects};
-use crate::ui::helper_operations::{display_menu_headers, exit_manager};
+use crate::ui::helper_operations::{display_menu_headers};
 use crate::traits::ui_traits::YubihsmUi;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::hsm_operations::error::MgmError;
@@ -60,10 +60,7 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
                 MgmCommandType::Decrypt => self.decrypt(session, authkey),
                 MgmCommandType::DeriveEcdh => self.derive_ecdh(session, authkey),
                 MgmCommandType::SignAttestationCert => self.sign_attestation(session, authkey),
-                MgmCommandType::Exit => {
-                    exit_manager(&self.ui, recorder);
-                    Ok(())
-                },
+                MgmCommandType::Exit => std::process::exit(0),
                 _ => unreachable!()
             };
 

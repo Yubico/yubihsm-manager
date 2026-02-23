@@ -107,10 +107,10 @@ fn main() -> Result<(), MgmError>{
         .arg(Arg::new("record")
             .long("record")
             .short('r')
-            .help("Record session operations in a script for later execution. Use the --redact option to redact sensitive values in the recorded script. Script is only recorded to file when the manager is exited through the menu.")
-            .num_args(0)
-            .default_value("false")
-            .action(clap::ArgAction::SetTrue)
+            .help("Record session operations in a script for later execution. Use the --redact option to redact sensitive values in the recorded script")
+            .num_args(1)
+            .value_name("file-suffix")
+            // .default_value("")
             .help_heading("Scripting"))
         .arg(Arg::new("exec")
             .long("exec")
@@ -188,7 +188,7 @@ fn main() -> Result<(), MgmError>{
         };
     YubihsmUi::display_info_message(&ui, format!("Using authentication key 0x{:04x}", authkey).as_str());
 
-    // Open a sessoin authenticated either by a password or a private ECP256 key
+    // Open a session authenticated either by a password or a private ECP256 key
     let session =
     if matches.contains_id("privkey") {
         let filename = if let Some(f) = matches.get_one::<String>("privkey") {
@@ -236,12 +236,14 @@ fn main() -> Result<(), MgmError>{
         return Ok(())
     }
 
-    let recorder: Option<SessionRecorder> = if matches.get_flag("record") {
+    let recorder: Option<SessionRecorder> =
+    if let Some(script_suffix) = matches.get_one::<String>("record") {
         YubihsmUi::display_info_message(&ui, "Starting session recording...");
         let mode = matches.get_one::<RedactMode>("redact").cloned().unwrap_or_default();  // defaults to RedactMode::AuthOnly
         Some(SessionRecorder::new(
             connector.clone(),
             authkey,
+            script_suffix.to_owned(),
             mode,
         ))
     } else {

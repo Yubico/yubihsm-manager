@@ -24,7 +24,7 @@ use crate::ui::java_menu::JavaMenu;
 use crate::ui::device_menu::DeviceMenu;
 use crate::ui::auth_menu::AuthenticationMenu;
 use crate::ui::asym_menu::AsymmetricMenu;
-use crate::ui::helper_operations::{list_objects, delete_objects, display_menu_headers, generate_object, exit_manager};
+use crate::ui::helper_operations::{list_objects, delete_objects, display_menu_headers, generate_object};
 use crate::cli::cmdline::Cmdline;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::hsm_operations::error::MgmError;
@@ -66,10 +66,7 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
                 MgmCommandType::Import => self.import(session, recorder, authkey),
                 MgmCommandType::GotoKey => self.goto_key(session, recorder, authkey),
                 MgmCommandType::GotoDevice => DeviceMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
-                MgmCommandType::Exit => {
-                    exit_manager(&self.ui, recorder);
-                    Ok(())
-                },
+                MgmCommandType::Exit => std::process::exit(0),
                 _ => unreachable!()
             };
 
