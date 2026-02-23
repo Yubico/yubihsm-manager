@@ -45,12 +45,14 @@ pub struct AesOperationSpec {
     pub data: Vec<u8>,
 }
 
+pub const SYM_CONTEXT: &str = "sym";
+
 pub struct SymmetricOperations;
 
 impl YubihsmOperations for SymmetricOperations {
 
     fn context_name(&self) -> &'static str {
-        "sym"
+        SYM_CONTEXT
     }
 
     fn get_commands(&self) -> Vec<MgmCommand> {

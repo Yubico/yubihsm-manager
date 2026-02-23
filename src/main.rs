@@ -131,7 +131,7 @@ fn main() -> Result<(), MgmError>{
             .long("redact")
             .help("Redact sensitive values when recording a script. Default is only new Authentication Key value (password and private ECP256 key) are redacted. Redacted data will be prompted for when executing a script")
             .value_parser(clap::builder::EnumValueParser::<RedactMode>::new())
-            .default_value("auth-only")
+            .default_value("sensitive")
             .requires("record")
             .help_heading("Scripting"))
         .get_matches();

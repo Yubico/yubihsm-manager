@@ -200,7 +200,7 @@ pub fn import_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh
 pub fn record_import_object_operation(recorder: &Option<SessionRecorder>, new_key: &NewObjectSpec, context: String) -> Result<(), MgmError> {
     if let Some(rec) = recorder {
 
-        let rec_data = if rec.mode == RedactMode::AllValue || rec.mode == RedactMode::AllInput {
+        let rec_data = if rec.mode == RedactMode::Sensitive || rec.mode == RedactMode::AllInput {
             vec!["<REDACTED>".to_string(); new_key.data.len()]
         } else {
             new_key.data.iter().map(hex::encode).collect()

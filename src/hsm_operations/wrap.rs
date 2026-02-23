@@ -96,12 +96,14 @@ const PUBLIC_WRAP_KEY_CAPABILITIES: [ObjectCapability; 2] = [
     ObjectCapability::ExportableUnderWrap,
 ];
 
+pub const WRAP_CONTEXT: &str = "wrap";
+
 pub struct WrapOperations;
 
 impl YubihsmOperations for WrapOperations {
 
     fn context_name(&self) -> &'static str {
-        "wrap"
+        WRAP_CONTEXT
     }
 
     fn get_commands(&self) -> Vec<MgmCommand> {

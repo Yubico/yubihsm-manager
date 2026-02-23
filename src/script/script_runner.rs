@@ -3,6 +3,7 @@ use std::{fmt, fs};
 use std::path::Path;
 use yubihsmrs::Session;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectType};
+use crate::hsm_operations::{asym, sym, wrap};
 use crate::hsm_operations::asym::{AsymmetricOperations, JavaOps};
 use crate::hsm_operations::auth::AuthenticationOperations;
 use crate::hsm_operations::error::MgmError;
@@ -94,7 +95,7 @@ impl ScriptRunner {
                 let new_spec: NewObjectSpec = spec.into();
                 let progress = ui.start_progress(Some(&step));
                 match context.as_str() {
-                    "asym" => {
+                    asym::ASYM_CONTEXT => {
                         if !is_asym_privkey_spec(spec) && !is_cert_spec(spec) {
                             return Err(MgmError::Error(format!(
                                 "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of an asymmetric object.",
@@ -102,7 +103,7 @@ impl ScriptRunner {
                         }
                         AsymmetricOperations.generate(session, &new_spec)?;
                     },
-                    "sunpkcs11" => {
+                    asym::SUNPKCS11_CONTEXT => {
                         if !is_asym_privkey_spec(spec) {
                             return Err(MgmError::Error(format!(
                                 "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of an asymmetric object.",
@@ -110,7 +111,7 @@ impl ScriptRunner {
                         }
                         JavaOps.generate(session, &new_spec)?;
                     },
-                    "sym"  => {
+                    sym::SYM_CONTEXT  => {
                             if !is_sym_spec(spec) {
                                 return Err(MgmError::Error(format!(
                                     "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of a symmetric key.",
@@ -118,7 +119,7 @@ impl ScriptRunner {
                             }
                         SymmetricOperations.generate(session, &new_spec)?;
                     },
-                    "wrap" => {
+                    wrap::WRAP_CONTEXT => {
                         if !is_wrap_spec(spec) {
                             return Err(MgmError::Error(format!(
                                 "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of a wrap key.",
@@ -136,21 +137,21 @@ impl ScriptRunner {
                 ui.display_info_message(&format!("{} Import {:?} 0x{:04x} ({:?})", step, spec.object_type, spec.id, spec.algorithm));
 
                 match context.as_str() {
-                    "asym" => {
+                    asym::ASYM_CONTEXT => {
                         if !is_asym_privkey_spec(spec) && !is_cert_spec(spec) {
                             return Err(MgmError::Error(format!(
                                 "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of an asymmetric object.",
                                 spec.object_type, spec.id)));
                         }
                     },
-                    "sunpkcs11" => {
+                    asym::SUNPKCS11_CONTEXT => {
                         if !is_asym_privkey_spec(spec) && data.len() == 2 {
                             return Err(MgmError::Error(format!(
                                 "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of an SunPKCS11 special case object.",
                                 spec.object_type, spec.id)));
                         }
                     },
-                    "sym" => {
+                    sym::SYM_CONTEXT => {
                         if !is_sym_spec(spec) {
                             return Err(MgmError::Error(format!(
                                 "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of a symmetric object.",
@@ -163,7 +164,7 @@ impl ScriptRunner {
                 let mut new_spec: NewObjectSpec = spec.into();
                 if data[0] == "<REDACTED>" {
                     match context.as_str() {
-                        "asym" => {
+                        asym::ASYM_CONTEXT => {
                             if spec.algorithm == ObjectAlgorithm::OpaqueX509Certificate {
                                 let fp = ui.get_certificate_filepath("Enter path to PEM file containing X509Certificate:", true, None)?;
                                 let pem = get_pem_from_file(&fp)?[0].to_owned();
@@ -186,7 +187,7 @@ impl ScriptRunner {
                                 }
                             }
                         },
-                        "sunpkcs11" => {
+                        asym::SUNPKCS11_CONTEXT => {
                             let fp = ui.get_sunpkcs11_import_filepath(
                                 "Enter absolute path to PEM file containing private key and X509Certificate (Only the first object of its type will be imported):",
                                 None)?;
@@ -206,7 +207,7 @@ impl ScriptRunner {
                                 }
                             }
                         },
-                        "sym" => {
+                        sym::SYM_CONTEXT => {
                             loop {
                                 let k = ui.get_aes_key_hex("Enter AES key in HEX format:")?;
                                 let algo = SymmetricOperations::get_symkey_algorithm_from_keylen(k.len())?;
@@ -230,9 +231,9 @@ impl ScriptRunner {
                 }
 
                 match context.as_str() {
-                    "asym" =>  { AsymmetricOperations.import(session, &new_spec)?; },
-                    "sunpkcs11" => { JavaOps.import(session, &new_spec)?; },
-                    "sym" => { SymmetricOperations.import(session, &new_spec)?; },
+                    asym::ASYM_CONTEXT =>  { AsymmetricOperations.import(session, &new_spec)?; },
+                    asym::SUNPKCS11_CONTEXT => { JavaOps.import(session, &new_spec)?; },
+                    sym::SYM_CONTEXT => { SymmetricOperations.import(session, &new_spec)?; },
                     _ => unreachable!()
                 }
                 Ok(())
@@ -307,7 +308,7 @@ impl ScriptRunner {
 
             RecordedOperation::DeleteObject { object_id, object_type, context} => {
                 ui.display_info_message(&format!("{} Delete {:?} 0x{:04x}", step, object_type, object_id));
-                if context == "sunpkcs11" {
+                if context == asym::SUNPKCS11_CONTEXT {
                     JavaOps.delete(session, *object_id, *object_type)?;
                 } else {
                     session.delete_object(*object_id, *object_type)?;

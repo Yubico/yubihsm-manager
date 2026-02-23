@@ -382,7 +382,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
     fn record_import_wrapkey(&self, recorder: &Option<SessionRecorder>, spec: &NewObjectSpec, n_threshold: u8, n_shares: u8) -> Result<(), MgmError> {
         if let Some(rec) = recorder {
 
-            let rec_data = if rec.mode == RedactMode::AllValue || rec.mode == RedactMode::AllInput {
+            let rec_data = if rec.mode == RedactMode::Sensitive || rec.mode == RedactMode::AllInput {
                 "<REDACTED>".to_string()
             } else {
                 hex::encode(spec.data[0].clone())

@@ -8,8 +8,7 @@ use crate::script::types::{RecordedOperation, SessionScript, SessionInfo};
 #[derive(Clone, Debug, PartialEq, Eq, Default, clap::ValueEnum)]
 pub enum RedactMode {
     #[default]
-    AuthOnly,
-    AllValue,
+    Sensitive,
     AllInput,
     None,
 }
@@ -17,8 +16,7 @@ pub enum RedactMode {
 impl Display for RedactMode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            RedactMode::AuthOnly => write!(f, "auth-only"),
-            RedactMode::AllValue => write!(f, "all-value"),
+            RedactMode::Sensitive => write!(f, "sensitive"),
             RedactMode::AllInput => write!(f, "all"),
             RedactMode::None => write!(f, "none"),
         }
