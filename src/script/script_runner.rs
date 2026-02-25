@@ -1,5 +1,23 @@
+/*
+ * Copyright 2026 Yubico AB
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 use std::fs;
 use std::path::Path;
+use crate::script::backend_json::JsonBackend;
+use crate::traits::script_backend::ScriptBackend;
 use yubihsmrs::Session;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectType};
 use crate::hsm_operations::{asym, sym, wrap};
@@ -20,17 +38,17 @@ pub struct ScriptRunner;
 impl ScriptRunner {
     /// Load a script from script file.
     pub fn load(path: &Path) -> Result<SessionScript, MgmError> {
-        let content = fs::read_to_string(path)?;
 
-        let script: SessionScript = serde_json::from_str(&content)
-            .map_err(|e| MgmError::Error(format!("Failed to parse script: {}", e)))?;
+        let backend: Box<dyn ScriptBackend> = match path.extension().and_then(|e| e.to_str()) {
+            Some("json") => Box::new(JsonBackend),
+            _ => return Err(MgmError::Error("Unable to load script. Script file has no extension".to_string())),
+        };
+
+        let script = backend.read(path)?;
 
         if script.version != "1.0" {
             return Err(MgmError::Error(format!(
                 "Unsupported script version '{}'. Expected '1.0'", script.version)));
-        }
-        if script.operations.is_empty() {
-            return Err(MgmError::Error("Script contains no operations".to_string()));
         }
 
         Ok(script)

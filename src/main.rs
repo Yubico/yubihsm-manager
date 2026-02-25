@@ -27,6 +27,7 @@ use cli::cmdline::Cmdline;
 use script::script_recorder::SessionRecorder;
 use script::script_runner::ScriptRunner;
 use script::script_common::{RedactMode, SessionScript};
+use traits::script_backend::ScriptBackend;
 use ui::asym_menu::AsymmetricMenu;
 use ui::auth_menu::AuthenticationMenu;
 use ui::device_menu::DeviceMenu;
@@ -249,6 +250,15 @@ fn main() -> Result<(), MgmError>{
         } else {
             format!("yubihsm-manager-{}.json", chrono::Local::now().format("%Y%m%d-%H:%M:%S"))
         };
+
+        // Currently, only JSON script is supported. If this changes in the future, just add an arm for a new file extension
+        let backend: Box<dyn ScriptBackend> = if script_path.ends_with(".json") {
+            Box::new(script::backend_json::JsonBackend)
+        } else {
+            YubihsmUi::display_error_message(&ui, "Unsupported script file extension. Only .json is currently supported");
+            std::process::exit(1);
+        };
+
         YubihsmUi::display_info_message(&ui, "Starting session recording...");
         let mode = matches.get_one::<RedactMode>("redact").cloned().unwrap_or_default();  // defaults to RedactMode::Sensitive
         Some(SessionRecorder::new(
@@ -256,6 +266,7 @@ fn main() -> Result<(), MgmError>{
             authkey,
             script_path.to_owned(),
             mode,
+            backend,
         ))
     } else {
         None
