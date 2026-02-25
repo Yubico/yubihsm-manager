@@ -19,16 +19,17 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectHandle, ObjectT
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
-use crate::ui::helper_operations::{display_menu_headers};
+use crate::ui::helper_operations::display_menu_headers;
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::algorithms::MgmAlgorithm;
 use crate::hsm_operations::device::DeviceOperations;
 use crate::hsm_operations::sym::SymmetricOperations;
 use crate::hsm_operations::types::MgmCommandType;
 use crate::hsm_operations::wrap::{WrapKeyType, WrapOperations, WrapOpSpec, WrapType};
-use crate::ui::helper_io::{write_bytes_to_file, get_path};
-use crate::script::script_recorder::{SessionRecorder, RedactMode};
-use crate::script::types::RecordedOperation;
+use crate::ui::helper_io::{get_path, write_bytes_to_file};
+use crate::script::script_recorder::SessionRecorder;
+use crate::script::script_common;
+use crate::script::script_common::{RecordedOperation, RedactMode};
 
 static DEVICE_HEADER: &str = "YubiHSM Device Operations";
 
@@ -132,8 +133,8 @@ impl<T: YubihsmUi> DeviceMenu<T> {
         }
 
         if let Some(rec) = recorder {
-            let d = if rec.mode == RedactMode::AllInput {
-                "<REDACTED>".to_string()
+            let d = if rec.mode == RedactMode::All {
+                script_common::REDACTED.to_string()
             } else {
                 dir
             };
@@ -213,8 +214,8 @@ impl<T: YubihsmUi> DeviceMenu<T> {
         }
 
         if let Some(rec) = recorder {
-            let d = if rec.mode == RedactMode::AllInput {
-                "<REDACTED>".to_string()
+            let d = if rec.mode == RedactMode::All {
+                script_common::REDACTED.to_string()
             } else {
                 dir
             };

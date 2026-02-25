@@ -24,9 +24,9 @@ use hsm_operations::validators::pem_private_ecp256_file_validator;
 use traits::ui_traits::YubihsmUi;
 use ui::helper_io::get_pem_from_file;
 use cli::cmdline::Cmdline;
-use script::script_recorder::{RedactMode, SessionRecorder};
-use script::script_runner::{ScriptRunner};
-use script::types::{SessionScript};
+use script::script_recorder::SessionRecorder;
+use script::script_runner::ScriptRunner;
+use script::script_common::{RedactMode, SessionScript};
 use ui::asym_menu::AsymmetricMenu;
 use ui::auth_menu::AuthenticationMenu;
 use ui::device_menu::DeviceMenu;
@@ -84,7 +84,7 @@ fn main() -> Result<(), MgmError>{
             .hide_default_value(false))
         .arg(Arg::new("privkey")
             .long("privkey")
-            .short('d')
+            // .short('d')
             .help("Path to PEM file containing ECP256 private key used to open an asymmetric session"))
         .arg(Arg::new("password")
             .long("password")
@@ -108,9 +108,9 @@ fn main() -> Result<(), MgmError>{
             .long("record")
             .short('r')
             .help("Record session operations in a script for later execution. Use the --redact option to redact sensitive values in the recorded script")
-            .num_args(1)
-            .value_name("file-suffix")
-            // .default_value("")
+            .num_args(0)
+            .default_value("false")
+            .action(clap::ArgAction::SetTrue)
             .help_heading("Scripting"))
         .arg(Arg::new("exec")
             .long("exec")
@@ -120,12 +120,12 @@ fn main() -> Result<(), MgmError>{
             .num_args(1)
             .conflicts_with("record")
             .help_heading("Scripting"))
-        .arg(Arg::new("continue-on-error")
-            .long("continue-on-error")
-            .help("If an error occurs during script execution, print out a warning and continue executing the next operation. Default is to exit on error.")
-            .num_args(0)
-            .default_value("false")
-            .action(clap::ArgAction::SetTrue)
+        .arg(Arg::new("script-path")
+            .long("script-path")
+            .short('s')
+            .help("Path the the new script file. Default is './yubihsm-manager_<timestamp>.json' where <timestamp> is the current date and time. This option is used when recording a session to specify the name of the recorded script file, and is ignored when executing a script")
+            .value_name("script_name")
+            .num_args(1)
             .help_heading("Scripting"))
         .arg(Arg::new("redact")
             .long("redact")
@@ -133,6 +133,13 @@ fn main() -> Result<(), MgmError>{
             .value_parser(clap::builder::EnumValueParser::<RedactMode>::new())
             .default_value("sensitive")
             .requires("record")
+            .help_heading("Scripting"))
+        .arg(Arg::new("continue-on-error")
+            .long("continue-on-error")
+            .help("If an error occurs during script execution, print out a warning and continue executing the next operation. Default is to exit on error.")
+            .num_args(0)
+            .default_value("false")
+            .action(clap::ArgAction::SetTrue)
             .help_heading("Scripting"))
         .get_matches();
 
@@ -236,14 +243,18 @@ fn main() -> Result<(), MgmError>{
         return Ok(())
     }
 
-    let recorder: Option<SessionRecorder> =
-    if let Some(script_suffix) = matches.get_one::<String>("record") {
+    let recorder: Option<SessionRecorder> = if matches.get_flag("record") {
+        let script_path = if let Some(sn) = matches.get_one::<String>("script-path") {
+            format!("{}.json", sn)
+        } else {
+            format!("yubihsm-manager-{}.json", chrono::Local::now().format("%Y%m%d-%H:%M:%S"))
+        };
         YubihsmUi::display_info_message(&ui, "Starting session recording...");
-        let mode = matches.get_one::<RedactMode>("redact").cloned().unwrap_or_default();  // defaults to RedactMode::AuthOnly
+        let mode = matches.get_one::<RedactMode>("redact").cloned().unwrap_or_default();  // defaults to RedactMode::Sensitive
         Some(SessionRecorder::new(
             connector.clone(),
             authkey,
-            script_suffix.to_owned(),
+            script_path.to_owned(),
             mode,
         ))
     } else {

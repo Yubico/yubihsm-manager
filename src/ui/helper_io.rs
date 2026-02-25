@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::fs;
 use std::fs::File;
 use pem::Pem;

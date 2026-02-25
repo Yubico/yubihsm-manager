@@ -17,7 +17,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::str::FromStr;
 use tabled::{Table, builder::Builder, settings::{Width, Modify, Style, object::Columns}};
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
 use crate::traits::ui_traits::YubihsmUi;
 use crate::traits::ui_traits::ProgressBarHandler;
 use crate::hsm_operations::error::MgmError;
@@ -157,7 +157,7 @@ impl YubihsmUi for Cmdline {
     fn select_command(&self, available_commands: &[MgmCommand]) -> Result<MgmCommand, MgmError> {
         let mut cmd_select = cliclack::select("");
         for cmd in available_commands {
-            cmd_select = cmd_select.item(cmd.clone(), cmd.label, cmd.description);
+            cmd_select = cmd_select.item(*cmd, cmd.label, cmd.description);
         }
         let cmd_select = return_or_exit!(cmd_select.interact());
 
@@ -340,7 +340,7 @@ impl YubihsmUi for Cmdline {
     fn get_certificate_filepath(&self, prompt: &str, required: bool, placeholder: Option<&str>) -> Result<String, MgmError> {
         let mut file_path = cliclack::input(prompt)
             .required(required)
-            .placeholder(placeholder.unwrap_or("Absolute path to PEM file"))
+            .placeholder(placeholder.unwrap_or("Path to PEM file"))
             .validate(move |input: &String| {
                 let f = if shellexpand::full(input.as_str()).is_ok() {
                     shellexpand::full(input.as_str()).unwrap().to_string()
@@ -358,7 +358,7 @@ impl YubihsmUi for Cmdline {
 
     fn get_asymmetric_import_filepath(&self, prompt: &str, placeholder: Option<&str>) -> Result<String, MgmError> {
         let mut file_path = cliclack::input(prompt)
-            .placeholder(placeholder.unwrap_or("Absolute path to PEM file containing asymmetric private key or X509 certificate"))
+            .placeholder(placeholder.unwrap_or("Path to PEM file containing asymmetric private key or X509 certificate"))
             .validate(move |input: &String| {
                 let f = if shellexpand::full(input.as_str()).is_ok() {
                     shellexpand::full(input.as_str()).unwrap().to_string()
@@ -379,6 +379,28 @@ impl YubihsmUi for Cmdline {
         }
         Ok(file_path)
     }
+
+    fn get_asymmetric_import_params_filepath(&self, prompt: &str, placeholder: Option<&str>, object_type: ObjectType, object_algorithm: ObjectAlgorithm) -> Result<String, MgmError> {
+        let mut file_path = cliclack::input(prompt)
+            .placeholder(placeholder.unwrap_or("Path to PEM file"))
+            .validate(move |input: &String| {
+                let f = if shellexpand::full(input.as_str()).is_ok() {
+                    shellexpand::full(input.as_str()).unwrap().to_string()
+                } else {
+                    input.to_string()
+                };
+                match validators::pem_asymmetric_object_file_validator(f.as_str(), object_type, object_algorithm) {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(e),
+                }
+            });
+        let file_path:String = return_or_exit!(file_path.interact());
+        if let Ok(expanded) = shellexpand::full(file_path.as_str()) {
+            return Ok(expanded.to_string());
+        }
+        Ok(file_path)
+    }
+
 
     fn get_sunpkcs11_import_filepath(&self, prompt: &str, placeholder: Option<&str>) -> Result<String, MgmError> {
         self.get_pem_filepath_ex(
@@ -428,6 +450,16 @@ impl YubihsmUi for Cmdline {
             None,
             Some("16, 24 or 32 bytes in HEX format"),
             Some(validators::aes_key_validator))
+    }
+
+    fn get_aes_key_params_hex(&self, prompt: &str, keylen: usize) -> Result<Vec<u8>, MgmError> {
+        let mut input_prompt = cliclack::input(prompt)
+            .required(true)
+            .default_input("")
+            .validate(move |input: &String| validators::aes_key_of_length_validator(input.as_str(), keylen))
+            .placeholder(format!("{} bytes in HEX format", keylen).as_str());
+        let input: String = return_or_exit!(input_prompt.interact());
+        Ok(hex::decode(input)?)
     }
 
     fn get_aes_iv_hex(&self, prompt: &str, required: bool, default: Option<&str>) -> Result<Vec<u8>, MgmError> {
@@ -676,7 +708,7 @@ impl Cmdline {
     {
         let mut file_path = cliclack::input(prompt)
             .required(required)
-            .placeholder(placeholder.unwrap_or("Absolute path to PEM file"));
+            .placeholder(placeholder.unwrap_or("Path to PEM file"));
 
         if let Some(v) = validator {
             file_path = file_path.validate(move |input: &String| {

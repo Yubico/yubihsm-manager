@@ -4,7 +4,7 @@ mod tests {
     use std::path::Path;
     use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectType};
     use crate::script::script_recorder::SessionRecorder;
-    use crate::script::types::{RecordableObjectSpec, RecordedOperation, SessionScript};
+    use crate::script::script_common::{RecordableObjectSpec, RecordedOperation, SessionScript};
 
     /// Helper: create a recorder pointing at a temp file.
     fn get_recorder() -> SessionRecorder {

@@ -19,7 +19,7 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectHandle, ObjectT
 use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::cli::cmdline::Cmdline;
-use crate::ui::helper_operations::{delete_objects, display_menu_headers, generate_object, list_objects, display_wrapkey_shares};
+use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_wrapkey_shares, generate_object, list_objects};
 use crate::ui::helper_operations::{display_object_properties, get_new_spec_table};
 use crate::ui::device_menu::DeviceMenu;
 use crate::ui::asym_menu::AsymmetricMenu;
@@ -32,9 +32,10 @@ use crate::hsm_operations::asym::AsymmetricOperations;
 use crate::hsm_operations::sym::SymmetricOperations;
 use crate::hsm_operations::wrap::{WrapKeyType, WrapOperations, WrapOpSpec, WrapType};
 use crate::hsm_operations::common::get_delegated_capabilities;
-use crate::ui::helper_io::{get_pem_from_file, write_bytes_to_file, get_path};
-use crate::script::script_recorder::{SessionRecorder, RedactMode};
-use crate::script::types::{RecordedOperation, RecordableObjectSpec};
+use crate::ui::helper_io::{get_path, get_pem_from_file, write_bytes_to_file};
+use crate::script::script_recorder::SessionRecorder;
+use crate::script::script_common;
+use crate::script::script_common::{RecordableObjectSpec, RecordedOperation, RedactMode};
 
 static WRAP_HEADER: &str = "Wrap keys";
 
@@ -102,7 +103,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         if aes_key_validator(&input).is_ok() {
             self.ui.display_info_message("Detected HEX string. Parsing as AES wrap key...");
             new_key.object_type = ObjectType::WrapKey;
-            new_key.data.push(hex::decode(input)?);
+            new_key.data.push(hex::decode(input.clone())?);
             new_key.algorithm = WrapOperations::get_algorithm_from_keylen(new_key.data[0].len())?;
         } else if pem_private_rsa_file_validator(&input).is_ok() || pem_public_rsa_file_validator(&input).is_ok() {
             self.ui.display_info_message("Detected PEM file with private RSA key. Parsing as RSA key...");
@@ -143,7 +144,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             return Ok(());
         }
 
-        let progress = self.ui.start_progress(Some("Generating key..."));
+        let progress = self.ui.start_progress(Some("Importing key..."));
         new_key.id = WrapOperations.import(session, &new_key)?;
         self.ui.stop_progress(progress, None);
         self.ui.display_success_message(format!("Imported {} object with ID 0x{:04x} into the YubiHSM", new_key.object_type, new_key.id).as_str());
@@ -159,7 +160,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                 display_wrapkey_shares(&self.ui, split_key.shares_data)?;
             }
         }
-        self.record_import_wrapkey(recorder, &new_key, n_threshold, n_shares)?;
+        self.record_import_wrapkey(recorder, &new_key, if AsymmetricOperations::is_rsa_key_algorithm(&new_key.algorithm) { Some(input) } else {None} , n_threshold, n_shares)?;
 
         Ok(())
     }
@@ -179,7 +180,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         self.ui.stop_progress(progress, None);
         self.ui.display_success_message(format!("Imported wrap key with ID 0x{:04x} on the device", new_key.id).as_str());
 
-        self.record_import_wrapkey(recorder, &new_key, 0, 0)?;
+        self.record_import_wrapkey(recorder, &new_key, None, 0, 0)?;
 
         Ok(())
     }
@@ -253,8 +254,8 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         }
 
         if let Some(rec) = recorder {
-            let d = if rec.mode == RedactMode::AllInput {
-                "<REDACTED>".to_string()
+            let d = if rec.mode == RedactMode::All {
+                script_common::REDACTED.to_string()
             } else {
                 dir
             };
@@ -379,24 +380,28 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         Ok(shares_vec)
     }
 
-    fn record_import_wrapkey(&self, recorder: &Option<SessionRecorder>, spec: &NewObjectSpec, n_threshold: u8, n_shares: u8) -> Result<(), MgmError> {
+    fn record_import_wrapkey(&self, recorder: &Option<SessionRecorder>, spec: &NewObjectSpec, filename: Option<String>, n_threshold: u8, n_shares: u8) -> Result<(), MgmError> {
         if let Some(rec) = recorder {
 
-            let rec_data = if rec.mode == RedactMode::Sensitive || rec.mode == RedactMode::AllInput {
-                "<REDACTED>".to_string()
-            } else {
-                hex::encode(spec.data[0].clone())
+            let data = match rec.mode {
+                RedactMode::All | RedactMode::Sensitive => script_common::REDACTED.to_string(),
+                RedactMode::None => {
+                    if let Some(f) = filename {
+                        f
+                    } else {
+                        hex::encode(&spec.data[0])
+                    }
+                },
             };
-
-            rec.record(RecordedOperation::ImportWrapKey { spec: RecordableObjectSpec::from(spec), key: rec_data, n_threshold, n_shares })?;
+            rec.record(RecordedOperation::ImportWrapKey { spec: RecordableObjectSpec::from(spec), key: data, n_threshold, n_shares })?;
         }
         Ok(())
     }
 
     fn record_import_wrapped(&self, recorder: &Option<SessionRecorder>, wrapping_spec: &WrapOpSpec, filepath: &str, new_key_spec: Option<&NewObjectSpec>) -> Result<(), MgmError> {
         if let Some(rec) = recorder {
-            let fp = if rec.mode == RedactMode::AllInput {
-                "<REDACTED>"
+            let fp = if rec.mode == RedactMode::All {
+                script_common::REDACTED
             } else {
                 filepath
             };

@@ -1,25 +1,29 @@
 use std::fmt;
 use std::fmt::Display;
 use serde::{Deserialize, Serialize};
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectHandle, ObjectType};
 use crate::hsm_operations::types::NewObjectSpec;
-use crate::hsm_operations::wrap::{WrapOpSpec, WrapKeyShares};
+use crate::hsm_operations::wrap::WrapOpSpec;
 
-// #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
-// pub enum ScriptInputFormat {
-//     #[default]
-//     Raw,
-//     FilePath,
-// }
-//
-// impl Display for ScriptInputFormat {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         match self {
-//             ScriptInputFormat::Raw => write!(f, "Raw data in HEX format"),
-//             ScriptInputFormat::FilePath => write!(f, "Path to input file"),
-//         }
-//     }
-// }
+pub const REDACTED: &str = "<REDACTED>";
+
+#[derive(Clone, Debug, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum RedactMode {
+    #[default]
+    Sensitive,
+    All,
+    None,
+}
+
+impl Display for RedactMode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RedactMode::Sensitive => write!(f, "sensitive"),
+            RedactMode::All => write!(f, "all"),
+            RedactMode::None => write!(f, "none"),
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SessionScript {
@@ -36,8 +40,6 @@ pub struct SessionInfo {
 }
 
 /// Serde-friendly mirror of NewObjectSpec using real yubihsmrs types.
-/// Serde auto-serializes ObjectType as "AsymmetricKey",
-/// ObjectAlgorithm as "EcP256", ObjectCapability as "SignEcdsa", etc.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct RecordableObjectSpec {
     pub id: u16,
@@ -116,6 +118,8 @@ pub enum RecordedOperation {
         spec: RecordableObjectSpec,
         credential: String,
     },
+
+    // ── Wrap key management ──
 
     ExportWrapped {
         wrap_spec: WrapOpSpec,

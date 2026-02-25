@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use tabled::{builder::Builder, settings::{Width, Modify, Style, object::Columns}};
+use tabled::{builder::Builder, settings::{Modify, object::Columns, Style, Width}};
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
@@ -22,8 +22,9 @@ use crate::traits::ui_traits::YubihsmUi;
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::types::{MgmCommand, NewObjectSpec};
 use crate::hsm_operations::common::get_delegated_capabilities;
-use crate::script::script_recorder::{SessionRecorder, RedactMode};
-use crate::script::types::{RecordableObjectSpec, RecordedOperation};
+use crate::script::script_recorder::SessionRecorder;
+use crate::script::script_common;
+use crate::script::script_common::{RecordableObjectSpec, RecordedOperation, RedactMode};
 
 static ESC_HELP_TEXT: &str = "Pressing 'Esc' will always cancel current operation and return to previous menu";
 
@@ -77,6 +78,15 @@ pub fn display_object_properties(ui: &impl YubihsmUi,yh_operation: &dyn YubihsmO
         Some("Select key:"))?;
     ui.display_objects_properties(&[key]);
     Ok(())
+}
+
+pub fn get_aes_keylen_from_algorithm(object_algorithm: ObjectAlgorithm) -> Result<usize, MgmError> {
+    match object_algorithm {
+        ObjectAlgorithm::Aes128 | ObjectAlgorithm::Aes128CcmWrap => Ok(16),
+        ObjectAlgorithm::Aes192 | ObjectAlgorithm::Aes192CcmWrap => Ok(24),
+        ObjectAlgorithm::Aes256 | ObjectAlgorithm::Aes256CcmWrap => Ok(32),
+        _ => Err(MgmError::Error(format!("{} is not an AES key algorithm", object_algorithm)))
+    }
 }
 
 pub fn delete_objects(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh_operation: &dyn YubihsmOperations, session: &Session, available_objects: &[ObjectDescriptor]) -> Result<(), MgmError> {
@@ -164,8 +174,12 @@ pub fn generate_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, 
 }
 
 pub fn import_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh_operation: &dyn YubihsmOperations,
-              session: &Session,
-              authkey: &ObjectDescriptor, object_type: ObjectType, object_algorithm: ObjectAlgorithm, data: Vec<Vec<u8>>) -> Result<(), MgmError> {
+                     session: &Session,
+                     authkey: &ObjectDescriptor,
+                     object_type: ObjectType,
+                     object_algorithm: ObjectAlgorithm,
+                     data: Vec<Vec<u8>>,
+                    filename: Option<String>) -> Result<(), MgmError> {
     let mut new_key = NewObjectSpec::empty();
     new_key.object_type = object_type;
     new_key.algorithm = object_algorithm;
@@ -192,21 +206,24 @@ pub fn import_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh
     ui.display_success_message(
         format!("Imported {} object with ID 0x{:04x} into the YubiHSM", new_key.object_type, new_key.id).as_str());
 
-    record_import_object_operation(recorder, &new_key, yh_operation.context_name().to_string())?;
+    record_import_object_operation(recorder, &new_key, yh_operation.context_name().to_string(), filename)?;
 
     Ok(())
 }
 
-pub fn record_import_object_operation(recorder: &Option<SessionRecorder>, new_key: &NewObjectSpec, context: String) -> Result<(), MgmError> {
+pub fn record_import_object_operation(recorder: &Option<SessionRecorder>, new_key: &NewObjectSpec, context: String, filename: Option<String>) -> Result<(), MgmError> {
     if let Some(rec) = recorder {
-
-        let rec_data = if rec.mode == RedactMode::Sensitive || rec.mode == RedactMode::AllInput {
-            vec!["<REDACTED>".to_string(); new_key.data.len()]
-        } else {
-            new_key.data.iter().map(hex::encode).collect()
+        let data = match rec.mode {
+            RedactMode::All | RedactMode::Sensitive => vec![script_common::REDACTED.to_string(); new_key.data.len()],
+            RedactMode::None => {
+                if let Some(filename) = filename {
+                    vec![filename]
+                } else {
+                    new_key.data.iter().map(hex::encode).collect()
+                }
+            },
         };
-
-        rec.record(RecordedOperation::ImportObject { spec: RecordableObjectSpec::from(new_key), data: rec_data, context })?;
+        rec.record(RecordedOperation::ImportObject { spec: RecordableObjectSpec::from(new_key), data, context })?;
     }
     Ok(())
 }

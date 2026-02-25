@@ -1,27 +1,8 @@
 use std::cell::RefCell;
-use std::fmt::Display;
-use std::{fmt, fs};
-use std::path::{Path, PathBuf};
+use std::fs;
+use std::path::PathBuf;
 use chrono::Local;
-use crate::script::types::{RecordedOperation, SessionScript, SessionInfo};
-
-#[derive(Clone, Debug, PartialEq, Eq, Default, clap::ValueEnum)]
-pub enum RedactMode {
-    #[default]
-    Sensitive,
-    AllInput,
-    None,
-}
-
-impl Display for RedactMode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            RedactMode::Sensitive => write!(f, "sensitive"),
-            RedactMode::AllInput => write!(f, "all"),
-            RedactMode::None => write!(f, "none"),
-        }
-    }
-}
+use crate::script::script_common::{RecordedOperation, RedactMode, SessionInfo, SessionScript};
 
 /// Accumulates recorded operations and writes them to a JSON file on flush.
 pub struct SessionRecorder {
@@ -33,13 +14,11 @@ pub struct SessionRecorder {
 }
 
 impl SessionRecorder {
-    pub fn new(connector: String, auth_key_id: u16, script_suffix: String,  mode: RedactMode) -> Self {
-        let timestamp = Local::now().format("%Y%m%d-%H:%M").to_string();
-        let filename = format!("./yubihsm-manager-{}-{}.json", timestamp, script_suffix);
+    pub fn new(connector: String, auth_key_id: u16, script_path: String, mode: RedactMode) -> Self {
         Self {
             connector,
             auth_key_id,
-            script_path: PathBuf::from(filename),
+            script_path: PathBuf::from(script_path),
             mode,
             operations: RefCell::new(Vec::new()),
         }

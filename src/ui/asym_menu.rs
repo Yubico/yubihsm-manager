@@ -85,7 +85,7 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
             return Err(MgmError::InvalidInput("File does not contain a private key nor an X509 certificate".to_string()));
         }
 
-        import_object(&self.ui, recorder, &AsymmetricOperations, session, authkey, _type, _algo, [_bytes].to_vec())
+        import_object(&self.ui, recorder, &AsymmetricOperations, session, authkey, _type, _algo, [_bytes].to_vec(), Some(filepath))
     }
 
     pub fn get_public_key(&self, session: &Session, object_type: ObjectType) -> Result<(), MgmError> {

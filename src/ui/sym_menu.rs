@@ -68,10 +68,9 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
 
     pub fn import(&self, session: &Session, recorder: &Option<SessionRecorder>,  authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let key_data = vec![self.ui.get_aes_key_hex("Enter AES key in HEX format:")?];
-        // key_data.push(self.ui.get_aes_key_hex("Enter AES key in HEX format:")?);
         let key_algo = SymmetricOperations::get_symkey_algorithm_from_keylen(key_data[0].len())?;
 
-        import_object(&self.ui, recorder, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey, key_algo, key_data)
+        import_object(&self.ui, recorder, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey, key_algo, key_data, None)
     }
 
     fn operate(&self, session: &Session, authkey: &ObjectDescriptor, enc_mode: EncryptionMode) -> Result<(), MgmError> {

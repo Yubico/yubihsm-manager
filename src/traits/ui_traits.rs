@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::types::{MgmCommand, SelectionItem};
 use crate::hsm_operations::algorithms::MgmAlgorithm;
@@ -64,12 +64,14 @@ pub trait YubihsmUi {
     fn get_pem_filepath(&self, prompt: &str, required: bool, place_holder: Option<&str>) -> Result<String, MgmError>;
     fn get_certificate_filepath(&self, prompt: &str, required: bool, place_holder: Option<&str>) -> Result<String, MgmError>;
     fn get_asymmetric_import_filepath(&self, prompt: &str, place_holder: Option<&str>) -> Result<String, MgmError>;
+    fn get_asymmetric_import_params_filepath(&self, prompt: &str, place_holder: Option<&str>, object_type: ObjectType, algorithm: ObjectAlgorithm) -> Result<String, MgmError>;
     fn get_sunpkcs11_import_filepath(&self, prompt: &str, place_holder: Option<&str>) -> Result<String, MgmError>;
     fn get_public_eckey_filepath(&self, prompt: &str) -> Result<String, MgmError>;
     fn get_public_ecp256_filepath(&self, prompt: &str) -> Result<String, MgmError>;
     fn get_private_rsa_filepath(&self, prompt: &str) -> Result<String, MgmError>;
     fn get_public_rsa_filepath(&self, prompt: &str) -> Result<String, MgmError>;
     fn get_aes_key_hex(&self, prompt: &str) -> Result<Vec<u8>, MgmError>;
+    fn get_aes_key_params_hex(&self, prompt: &str, keylen: usize) -> Result<Vec<u8>, MgmError>;
     fn get_aes_iv_hex(&self, prompt: &str, required: bool, default: Option<&str>) -> Result<Vec<u8>, MgmError>;
     fn get_aes_operation_input_hex(&self, prompt: &str) -> Result<Vec<u8>, MgmError>;
 
