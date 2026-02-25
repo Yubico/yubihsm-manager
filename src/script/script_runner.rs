@@ -132,7 +132,7 @@ impl ScriptRunner {
                 Ok(())
             },
 
-            RecordedOperation::ImportObject { spec, data, context } => {
+            RecordedOperation::ImportObject { spec, value: data, context } => {
                 ui.display_info_message(&format!("{} Import {:?} 0x{:04x} ({:?})", step, spec.object_type, spec.id, spec.algorithm));
                 let mut new_spec: NewObjectSpec = spec.into();
                 match context.as_str() {
@@ -142,7 +142,7 @@ impl ScriptRunner {
                                 "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of an asymmetric object.",
                                 spec.object_type, spec.id)));
                         }
-                        if data[0] == script_common::REDACTED {
+                        if data == script_common::REDACTED {
                             let prompt = if new_spec.algorithm == ObjectAlgorithm::OpaqueX509Certificate {
                                 "Enter path to PEM file containing an X509 certificate:".to_string()
                             } else {
@@ -154,7 +154,7 @@ impl ScriptRunner {
                             let (_, _, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
                             new_spec.data.push(_bytes);
                         } else {
-                            let pem = get_pem_from_file(&data[0])?[0].to_owned();
+                            let pem = get_pem_from_file(data)?[0].to_owned();
                             let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem.clone())?;
                             if _algo != new_spec.algorithm && _type != new_spec.object_type {
                                 return Err(MgmError::Error(format!(
@@ -166,19 +166,19 @@ impl ScriptRunner {
                         AsymmetricOperations.import(session, &new_spec)?;
                     },
                     asym::SUNPKCS11_CONTEXT => {
-                        if !is_asym_privkey_spec(spec) && data.len() == 2 {
+                        if !is_asym_privkey_spec(spec) {
                             return Err(MgmError::Error(format!(
                                 "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of an SunPKCS11 special case object.",
                                 spec.object_type, spec.id)));
                         }
 
-                        let pems = if data[0] == script_common::REDACTED {
+                        let pems = if data == script_common::REDACTED {
                             let fp = ui.get_sunpkcs11_import_filepath(
                                 "Enter absolute path to PEM file containing private key and X509Certificate (Only the first object of its type will be imported):",
                                 None)?;
                             get_pem_from_file(&fp)?
                         } else {
-                            get_pem_from_file(&data[0])?
+                            get_pem_from_file(data)?
                         };
                         for pem in pems.clone() {
                             let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem.clone())?;
@@ -203,12 +203,12 @@ impl ScriptRunner {
                                 spec.object_type, spec.id)));
                         }
 
-                        if data[0] == script_common::REDACTED {
+                        if data == script_common::REDACTED {
                             let keylen = get_aes_keylen_from_algorithm(new_spec.algorithm)?;
                             let k = ui.get_aes_key_params_hex(format!("Enter AES key of length {} bytes in HEX format:", keylen).as_str(), keylen)?;
                             new_spec.data.push(k);
                         } else {
-                            new_spec.data.push(hex::decode(&data[0])?);
+                            new_spec.data.push(hex::decode(data)?);
                         }
                         SymmetricOperations.import(session, &new_spec)?;
                     }
@@ -217,7 +217,7 @@ impl ScriptRunner {
                 Ok(())
             },
 
-            RecordedOperation::ImportWrapKey { spec, key, n_threshold, n_shares } => {
+            RecordedOperation::ImportWrapKey { spec, value: key, n_threshold, n_shares } => {
                 ui.display_info_message(&format!("{} Import WrapKey 0x{:04x}", step, spec.id));
 
                 if !is_wrap_spec(spec) && !is_publicwrap_spec(spec) {

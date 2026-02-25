@@ -211,19 +211,24 @@ pub fn import_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh
     Ok(())
 }
 
+pub fn get_script_input_data(recorder: &SessionRecorder, new_key: &NewObjectSpec, filename: Option<String>) -> Result<String, MgmError> {
+    let data = match recorder.mode {
+        RedactMode::All | RedactMode::Sensitive => script_common::REDACTED.to_string(),
+        RedactMode::None => {
+            if let Some(filename) = filename {
+                filename
+            } else {
+                hex::encode(&new_key.data[0])
+            }
+        },
+    };
+    Ok(data)
+}
+
 pub fn record_import_object_operation(recorder: &Option<SessionRecorder>, new_key: &NewObjectSpec, context: String, filename: Option<String>) -> Result<(), MgmError> {
     if let Some(rec) = recorder {
-        let data = match rec.mode {
-            RedactMode::All | RedactMode::Sensitive => vec![script_common::REDACTED.to_string(); new_key.data.len()],
-            RedactMode::None => {
-                if let Some(filename) = filename {
-                    vec![filename]
-                } else {
-                    new_key.data.iter().map(hex::encode).collect()
-                }
-            },
-        };
-        rec.record(RecordedOperation::ImportObject { spec: RecordableObjectSpec::from(new_key), data, context })?;
+        let data = get_script_input_data(rec, new_key, filename)?;
+        rec.record(RecordedOperation::ImportObject { spec: RecordableObjectSpec::from(new_key), value: data, context })?;
     }
     Ok(())
 }

@@ -19,7 +19,7 @@ use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::helper_operations::{delete_objects, display_object_properties, get_new_spec_table, list_objects};
-use crate::ui::helper_operations::display_menu_headers;
+use crate::ui::helper_operations::{display_menu_headers, get_script_input_data};
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::asym::AsymmetricOperations;
 use crate::hsm_operations::types::{MgmCommandType, NewObjectSpec, SelectionItem};
@@ -27,8 +27,7 @@ use crate::hsm_operations::common::get_delegated_capabilities;
 use crate::hsm_operations::auth::{AuthenticationOperations, AuthenticationType, UserType};
 use crate::ui::helper_io::get_pem_from_file;
 use crate::script::script_recorder::SessionRecorder;
-use crate::script::script_common;
-use crate::script::script_common::{RecordableObjectSpec, RecordedOperation, RedactMode};
+use crate::script::script_common::{RecordableObjectSpec, RecordedOperation};
 
 static AUTH_HEADER: &str = "Authentication keys";
 
@@ -123,16 +122,7 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
         self.ui.display_success_message(format!("Created new authentication key with ID 0x{:04x}", new_key.id).as_str());
 
         if let Some(rec) = recorder {
-            let credential = match rec.mode {
-                RedactMode::All | RedactMode::Sensitive => script_common::REDACTED.to_string(),
-                RedactMode::None => {
-                    if let Some(filename) = pubkey_filename {
-                        filename
-                    } else {
-                        hex::encode(&new_key.data[0])
-                    }
-                },
-            };
+            let credential = get_script_input_data(rec, &new_key, pubkey_filename)?;
             rec.record(RecordedOperation::CreateAuthKey { spec: RecordableObjectSpec::from(&new_key), credential })?;
         }
 

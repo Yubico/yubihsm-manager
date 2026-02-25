@@ -94,14 +94,13 @@ pub enum RecordedOperation {
 
     ImportObject {
         spec: RecordableObjectSpec,
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        data: Vec<String>,
+        value: String,
         context: String,
     },
 
     ImportWrapKey {
         spec: RecordableObjectSpec,
-        key: String,
+        value: String,
         n_threshold: u8,
         n_shares: u8,
     },

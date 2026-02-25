@@ -20,7 +20,7 @@ use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::cli::cmdline::Cmdline;
 use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_wrapkey_shares, generate_object, list_objects};
-use crate::ui::helper_operations::{display_object_properties, get_new_spec_table};
+use crate::ui::helper_operations::{display_object_properties, get_new_spec_table, get_script_input_data};
 use crate::ui::device_menu::DeviceMenu;
 use crate::ui::asym_menu::AsymmetricMenu;
 use crate::traits::operation_traits::YubihsmOperations;
@@ -382,18 +382,8 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
 
     fn record_import_wrapkey(&self, recorder: &Option<SessionRecorder>, spec: &NewObjectSpec, filename: Option<String>, n_threshold: u8, n_shares: u8) -> Result<(), MgmError> {
         if let Some(rec) = recorder {
-
-            let data = match rec.mode {
-                RedactMode::All | RedactMode::Sensitive => script_common::REDACTED.to_string(),
-                RedactMode::None => {
-                    if let Some(f) = filename {
-                        f
-                    } else {
-                        hex::encode(&spec.data[0])
-                    }
-                },
-            };
-            rec.record(RecordedOperation::ImportWrapKey { spec: RecordableObjectSpec::from(spec), key: data, n_threshold, n_shares })?;
+            let value = get_script_input_data(rec, spec, filename)?;
+            rec.record(RecordedOperation::ImportWrapKey { spec: RecordableObjectSpec::from(spec), value, n_threshold, n_shares })?;
         }
         Ok(())
     }
