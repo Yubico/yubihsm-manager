@@ -34,7 +34,7 @@ pub trait ScriptBackend {
     ) -> Result<(), MgmError>;
 
     /// Deserialize a script file back into the canonical model.
-    /// Returns `MgmErr` for formats that are write-only (e.g. bash).
+    /// Returns `MgmError` for formats that are write-only (e.g. bash).
     fn read(
         &self,
         path: &Path,

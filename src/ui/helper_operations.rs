@@ -161,7 +161,7 @@ pub fn generate_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, 
     new_key.id = yh_operation.generate(session, &new_key)?;
     ui.stop_progress(progress, None);
     ui.display_success_message(
-        format!("Generated asymmetric keypair with ID 0x{:04x} on the YubiHSM", new_key.id).as_str());
+        format!("Generated object of type {} and ID 0x{:04x} on the YubiHSM", new_key.object_type, new_key.id).as_str());
 
     if let Some(rec) = recorder {
         rec.record(RecordedOperation::GenerateObject {

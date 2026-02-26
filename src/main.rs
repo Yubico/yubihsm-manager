@@ -124,13 +124,13 @@ fn main() -> Result<(), MgmError>{
         .arg(Arg::new("script-path")
             .long("script-path")
             .short('s')
-            .help("Path the the new script file. Default is './yubihsm-manager_<timestamp>.json' where <timestamp> is the current date and time. This option is used when recording a session to specify the name of the recorded script file, and is ignored when executing a script")
+            .help("Path to the new script file. Default is './yubihsm-manager_<timestamp>.json' where <timestamp> is the current date and time. This option is used when recording a session to specify the name of the recorded script file, and is ignored when executing a script")
             .value_name("script_name")
             .num_args(1)
             .help_heading("Scripting"))
         .arg(Arg::new("redact")
             .long("redact")
-            .help("Redact sensitive values when recording a script. Default is only new Authentication Key value (password and private ECP256 key) are redacted. Redacted data will be prompted for when executing a script")
+            .help("Redact sensitive values when recording a script. Default is only sensitive input (aka. object values) is redacted. Redacted data will be prompted for when executing a script. Use --redact=all to redact all values, and --redact=none to have all values written in plain text.")
             .value_parser(clap::builder::EnumValueParser::<RedactMode>::new())
             .default_value("sensitive")
             .requires("record")
@@ -246,7 +246,7 @@ fn main() -> Result<(), MgmError>{
 
     let recorder: Option<SessionRecorder> = if matches.get_flag("record") {
         let script_path = if let Some(sn) = matches.get_one::<String>("script-path") {
-            format!("{}.json", sn)
+            if sn.ends_with(".json") { sn.to_owned() } else { format!("{}.json", sn) }
         } else {
             format!("yubihsm-manager-{}.json", chrono::Local::now().format("%Y%m%d-%H:%M:%S"))
         };

@@ -157,7 +157,7 @@ impl ScriptRunner {
                     asym::ASYM_CONTEXT => {
                         if !is_asym_privkey_spec(spec) && !is_cert_spec(spec) {
                             return Err(MgmError::Error(format!(
-                                "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of an asymmetric object.",
+                                "Cannot execute import of {:?} 0x{:04x}: Object type and/or algorithm are not of an asymmetric object.",
                                 spec.object_type, spec.id)));
                         }
                         if data == script_common::REDACTED {
@@ -174,7 +174,7 @@ impl ScriptRunner {
                         } else {
                             let pem = get_pem_from_file(data)?[0].to_owned();
                             let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem.clone())?;
-                            if _algo != new_spec.algorithm && _type != new_spec.object_type {
+                            if _algo != new_spec.algorithm || _type != new_spec.object_type {
                                 return Err(MgmError::Error(format!(
                                     "Cannot execute import of {:?} 0x{:04x}: Algorithm and/or object type of provided PEM data do not match expected algorithm and object type of the object.",
                                     spec.object_type, spec.id)));
@@ -217,7 +217,7 @@ impl ScriptRunner {
                     sym::SYM_CONTEXT => {
                         if !is_sym_spec(spec) {
                             return Err(MgmError::Error(format!(
-                                "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of a symmetric object.",
+                                "Cannot execute import of {:?} 0x{:04x}: Object type and/or algorithm are not of a symmetric object.",
                                 spec.object_type, spec.id)));
                         }
 
