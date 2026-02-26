@@ -20,8 +20,8 @@ use crate::ui::helper_operations::{delete_objects, display_object_properties, ge
 use crate::ui::helper_operations::{display_menu_headers};
 use crate::traits::ui_traits::YubihsmUi;
 use crate::traits::operation_traits::YubihsmOperations;
-use crate::hsm_operations::error::MgmError;
-use crate::hsm_operations::types::{MgmCommandType, SelectionItem};
+use crate::common::error::MgmError;
+use crate::common::types::{MgmCommandType, SelectionItem};
 use crate::hsm_operations::wrap::WrapOperations;
 use crate::hsm_operations::asym::{AsymmetricOperations, AttestationType};
 use crate::ui::helper_io::{get_hex_or_bytes_from_file, get_pem_from_file, get_string_or_bytes_from_file, write_bytes_to_file, get_path};

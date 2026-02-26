@@ -20,11 +20,11 @@ use serde::{Deserialize, Serialize};
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
-use crate::hsm_operations::error::MgmError;
-use crate::hsm_operations::algorithms::MgmAlgorithm;
-use crate::hsm_operations::types::{MgmCommand, MgmCommandType, NewObjectSpec};
+use crate::common::error::MgmError;
+use crate::common::algorithms::MgmAlgorithm;
+use crate::common::types::{MgmCommand, MgmCommandType, NewObjectSpec};
+use crate::common::util::{contains_all, get_object_descriptors};
 use crate::hsm_operations::asym::AsymmetricOperations;
-use crate::hsm_operations::common::{contains_all, get_object_descriptors};
 use crate::hsm_operations::sym::SymmetricOperations;
 
 
@@ -398,7 +398,7 @@ impl WrapOperations {
             )));
         }
 
-        let mut wrapkey_spec = NewObjectSpec::empty();
+        let mut wrapkey_spec = NewObjectSpec::new();
         wrapkey_spec.object_type = ObjectType::WrapKey;
         wrapkey_spec.algorithm = WrapOperations::get_algorithm_from_keylen(key_len)?;
         wrapkey_spec.id = ((u16::from(data[0])) << 8) | u16::from(data[1]);

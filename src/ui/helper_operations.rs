@@ -19,12 +19,12 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
-use crate::hsm_operations::error::MgmError;
-use crate::hsm_operations::types::{MgmCommand, NewObjectSpec};
-use crate::hsm_operations::common::get_delegated_capabilities;
+use crate::common::error::MgmError;
+use crate::common::types::{MgmCommand, NewObjectSpec};
+use crate::common::util::get_delegated_capabilities;
 use crate::script::script_recorder::SessionRecorder;
-use crate::script::script_common;
-use crate::script::script_common::{RecordableObjectSpec, RecordedOperation, RedactMode};
+use crate::script::script_types;
+use crate::script::script_types::{RecordableObjectSpec, RecordedOperation, RedactMode};
 
 static ESC_HELP_TEXT: &str = "Pressing 'Esc' will always cancel current operation and return to previous menu";
 
@@ -131,7 +131,7 @@ pub fn generate_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, 
                        session: &Session,
                        authkey: &ObjectDescriptor,
                        object_type: ObjectType) -> Result<(), MgmError> {
-    let mut new_key = NewObjectSpec::empty();
+    let mut new_key = NewObjectSpec::new();
     new_key.object_type = object_type;
     new_key.algorithm = ui.select_algorithm(
         &yh_operation.get_generation_algorithms(),
@@ -180,7 +180,7 @@ pub fn import_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh
                      object_algorithm: ObjectAlgorithm,
                      data: Vec<Vec<u8>>,
                     filename: Option<String>) -> Result<(), MgmError> {
-    let mut new_key = NewObjectSpec::empty();
+    let mut new_key = NewObjectSpec::new();
     new_key.object_type = object_type;
     new_key.algorithm = object_algorithm;
     new_key.data.extend(data);
@@ -213,7 +213,7 @@ pub fn import_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh
 
 pub fn get_script_input_data(recorder: &SessionRecorder, new_key: &NewObjectSpec, filename: Option<String>) -> Result<String, MgmError> {
     let data = match recorder.mode {
-        RedactMode::All | RedactMode::Sensitive => script_common::REDACTED.to_string(),
+        RedactMode::All | RedactMode::Sensitive => script_types::REDACTED.to_string(),
         RedactMode::None => {
             if let Some(filename) = filename {
                 filename

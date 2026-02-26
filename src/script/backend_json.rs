@@ -16,9 +16,9 @@
 
 use std::fs;
 use std::path::Path;
-use crate::traits::script_backend::ScriptBackend;
-use crate::hsm_operations::error::MgmError;
-use crate::script::script_common::{RecordedOperation, SessionInfo, SessionScript};
+use crate::traits::script_traits::ScriptBackend;
+use crate::common::error::MgmError;
+use crate::script::script_types::{RecordedOperation, SessionInfo, SessionScript};
 
 pub struct JsonBackend;
 

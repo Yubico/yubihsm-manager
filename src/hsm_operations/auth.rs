@@ -17,11 +17,11 @@
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
-use crate::hsm_operations::types::NewObjectSpec;
-use crate::hsm_operations::error::MgmError;
-use crate::hsm_operations::algorithms::MgmAlgorithm;
-use crate::hsm_operations::types::{MgmCommand, MgmCommandType};
-use crate::hsm_operations::common::{get_object_descriptors, get_delegated_capabilities};
+use crate::common::types::NewObjectSpec;
+use crate::common::error::MgmError;
+use crate::common::algorithms::MgmAlgorithm;
+use crate::common::types::{MgmCommand, MgmCommandType};
+use crate::common::util::{get_object_descriptors, get_delegated_capabilities};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UserType {

@@ -16,9 +16,9 @@
 
 use std::cell::RefCell;
 use std::path::PathBuf;
-use crate::hsm_operations::error::MgmError;
-use crate::traits::script_backend::ScriptBackend;
-use crate::script::script_common::{RecordedOperation, RedactMode, SessionInfo};
+use crate::common::error::MgmError;
+use crate::traits::script_traits::ScriptBackend;
+use crate::script::script_types::{RecordedOperation, RedactMode, SessionInfo};
 
 /// Accumulates recorded operations and writes them to a script file
 pub struct SessionRecorder {

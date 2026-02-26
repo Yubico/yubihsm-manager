@@ -15,9 +15,9 @@
  */
 
 use std::path::Path;
-use crate::script::script_common::SessionScript;
-use crate::hsm_operations::error::MgmError;
-use crate::script::script_common::{RecordedOperation, SessionInfo};
+use crate::script::script_types::SessionScript;
+use crate::common::error::MgmError;
+use crate::script::script_types::{RecordedOperation, SessionInfo};
 
 /// A script backend knows how to read/write a particular script format.
 pub trait ScriptBackend {

@@ -17,18 +17,18 @@
 use std::fs;
 use std::path::Path;
 use crate::script::backend_json::JsonBackend;
-use crate::traits::script_backend::ScriptBackend;
+use crate::traits::script_traits::ScriptBackend;
 use yubihsmrs::Session;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectType};
 use crate::hsm_operations::{asym, sym, wrap};
 use crate::hsm_operations::asym::{AsymmetricOperations, JavaOps};
 use crate::hsm_operations::auth::AuthenticationOperations;
-use crate::hsm_operations::error::MgmError;
+use crate::common::error::MgmError;
+use crate::common::types::NewObjectSpec;
 use crate::hsm_operations::sym::SymmetricOperations;
-use crate::hsm_operations::types::NewObjectSpec;
 use crate::hsm_operations::wrap::{WrapOperations, WrapKeyType};
-use crate::script::script_common;
-use crate::script::script_common::{RecordedOperation, RecordableObjectSpec, SessionScript};
+use crate::script::script_types;
+use crate::script::script_types::{RecordedOperation, RecordableObjectSpec, SessionScript};
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::helper_operations::{display_wrapkey_shares, get_aes_keylen_from_algorithm};
@@ -160,7 +160,7 @@ impl ScriptRunner {
                                 "Cannot execute import of {:?} 0x{:04x}: Object type and/or algorithm are not of an asymmetric object.",
                                 spec.object_type, spec.id)));
                         }
-                        if data == script_common::REDACTED {
+                        if data == script_types::REDACTED {
                             let prompt = if new_spec.algorithm == ObjectAlgorithm::OpaqueX509Certificate {
                                 "Enter path to PEM file containing an X509 certificate:".to_string()
                             } else {
@@ -190,7 +190,7 @@ impl ScriptRunner {
                                 spec.object_type, spec.id)));
                         }
 
-                        let pems = if data == script_common::REDACTED {
+                        let pems = if data == script_types::REDACTED {
                             let fp = ui.get_sunpkcs11_import_filepath(
                                 "Enter absolute path to PEM file containing private key and X509Certificate (Only the first object of its type will be imported):",
                                 None)?;
@@ -221,7 +221,7 @@ impl ScriptRunner {
                                 spec.object_type, spec.id)));
                         }
 
-                        if data == script_common::REDACTED {
+                        if data == script_types::REDACTED {
                             let keylen = get_aes_keylen_from_algorithm(new_spec.algorithm)?;
                             let k = ui.get_aes_key_params_hex(format!("Enter AES key of length {} bytes in HEX format:", keylen).as_str(), keylen)?;
                             new_spec.data.push(k);
@@ -248,7 +248,7 @@ impl ScriptRunner {
                 let wrapkey_type = WrapOperations::get_wrapkey_type(new_spec.object_type, new_spec.algorithm)?;
                 match wrapkey_type {
                     WrapKeyType::Aes => {
-                        if key == script_common::REDACTED {
+                        if key == script_types::REDACTED {
                             let kl = get_aes_keylen_from_algorithm(new_spec.algorithm)?;
                             let k = ui.get_aes_key_params_hex(format!("Enter Wrap Key of length {} bytes in HEX format:", kl).as_str(), kl)?;
                             new_spec.data.push(k);
@@ -257,7 +257,7 @@ impl ScriptRunner {
                         }
                     },
                     WrapKeyType::Rsa | WrapKeyType::RsaPublic => {
-                        if key == script_common::REDACTED {
+                        if key == script_types::REDACTED {
                             let filepath = if wrapkey_type == WrapKeyType::Rsa {
                                 ui.get_asymmetric_import_params_filepath(
                                     format!("Enter path to PEM file containing an {} private key:", new_spec.algorithm).as_str(), None, ObjectType::AsymmetricKey, new_spec.algorithm)?
@@ -306,14 +306,14 @@ impl ScriptRunner {
                                                  if spec.algorithm == ObjectAlgorithm::Aes128YubicoAuthentication { "Derived password" } else { "ECP256 public key" }));
                 let mut new_spec: NewObjectSpec = spec.into();
                 if new_spec.algorithm == ObjectAlgorithm::Aes128YubicoAuthentication {
-                    if credential == script_common::REDACTED {
+                    if credential == script_types::REDACTED {
                         let pwd = ui.get_password("Enter user password:", true)?;
                         new_spec.data.push(pwd.as_bytes().to_vec());
                     } else {
                        new_spec.data.push(hex::decode(credential)?);
                     }
                 } else if new_spec.algorithm == ObjectAlgorithm::Ecp256YubicoAuthentication {
-                    if credential == script_common::REDACTED {
+                    if credential == script_types::REDACTED {
                         let filepath = ui.get_asymmetric_import_params_filepath(
                             "Enter path to PEM file containing an ECP256 public key:", None, ObjectType::PublicKey, ObjectAlgorithm::EcP256)?;
                         let pubkey = get_pem_from_file(&filepath)?[0].to_owned();
@@ -340,7 +340,7 @@ impl ScriptRunner {
             RecordedOperation::BackupDevice { wrap_spec, objects, destination_directory} => {
                 ui.display_info_message(&format!("{} Export wrapped objects using WrapKey 0x{:04x}", step, wrap_spec.wrapkey_id));
 
-                let dir = if destination_directory == script_common::REDACTED {
+                let dir = if destination_directory == script_types::REDACTED {
                     ui.get_path_input(
                         "Enter path to backup directory:",
                         false,
@@ -364,7 +364,7 @@ impl ScriptRunner {
 
             RecordedOperation::ImportWrapped { wrap_spec, wrapped_filepath, new_key_spec } => {
                 ui.display_info_message(&format!("{} Import wrapped object using WrapKey 0x{:04x}", step, wrap_spec.wrapkey_id));
-                let wrapped = if wrapped_filepath == script_common::REDACTED {
+                let wrapped = if wrapped_filepath == script_types::REDACTED {
                     ui.get_path_input(
                         "Enter absolute path to wrapped object file:",
                         true,
@@ -385,7 +385,7 @@ impl ScriptRunner {
 
             RecordedOperation::RestoreDevice { wrap_spec, source_directory } => {
                 ui.display_info_message(&format!("{} Restore device using WrapKey 0x{:04x}", step, wrap_spec.wrapkey_id));
-                let dir = if source_directory == script_common::REDACTED {
+                let dir = if source_directory == script_types::REDACTED {
                     ui.get_path_input(
                         "Enter path to backup directory:",
                         false,

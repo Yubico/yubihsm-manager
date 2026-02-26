@@ -17,11 +17,11 @@
 use yubihsmrs::Session;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
 use crate::traits::operation_traits::YubihsmOperations;
-use crate::hsm_operations::error::MgmError;
-use crate::hsm_operations::common::contains_all;
+use crate::common::error::MgmError;
+use crate::common::util::contains_all;
+use crate::common::types::NewObjectSpec;
 use crate::hsm_operations::wrap::{WrapKeyShares, WrapOperations};
 use crate::hsm_operations::auth::AuthenticationOperations;
-use crate::hsm_operations::types::NewObjectSpec;
 
 pub struct KspOperations;
 
@@ -94,16 +94,16 @@ impl KspOperations {
     pub fn import_ksp_wrapkey(session: &Session, id: u16, domains: &[ObjectDomain], rsa_decrypt: bool, shares: u8, threshold: u8) -> Result<(u16, WrapKeyShares), MgmError> {
         let wrapkey = session.get_random(Self::KSP_WRAPKEY_LEN)?;
 
-        let mut new_key = NewObjectSpec::new(
+        let mut new_key = NewObjectSpec {
             id,
-            ObjectType::WrapKey,
-            "KSP Wrap Key".to_string(),
-            ObjectAlgorithm::Aes256CcmWrap,
-            domains.to_vec(),
-            Self::WRAPKEY_CAPABILITIES.to_vec(),
-            Self::expand_capabilities(&Self::WRAPKEY_DELEGATED, rsa_decrypt),
-            vec![wrapkey],
-        );
+            object_type: ObjectType::WrapKey,
+            label: "KSP Wrap Key".to_string(),
+            algorithm: ObjectAlgorithm::Aes256CcmWrap,
+            domains: domains.to_vec(),
+            capabilities: Self::WRAPKEY_CAPABILITIES.to_vec(),
+            delegated_capabilities: Self::expand_capabilities( & Self::WRAPKEY_DELEGATED, rsa_decrypt),
+            data: vec![wrapkey],
+        };
 
         new_key.id = WrapOperations.import(session, &new_key)?;
 
@@ -119,16 +119,16 @@ impl KspOperations {
         rsa_decrypt: bool,
         password: String) -> Result<ObjectDescriptor, MgmError> {
 
-        let mut new_key = NewObjectSpec::new(
+        let mut new_key = NewObjectSpec {
             id,
-            ObjectType::AuthenticationKey,
-            "Application auth key".to_string(),
-            ObjectAlgorithm::Aes128YubicoAuthentication,
-            domains.to_vec(),
-            Self::expand_capabilities(&Self::APP_AUTHKEY_CAPABILITIES, rsa_decrypt),
-            Self::expand_capabilities(&Self::APP_AUTHKEY_DELEGATED, rsa_decrypt),
-            vec![password.into_bytes()],
-        );
+            object_type: ObjectType::AuthenticationKey,
+            label: "Application auth key".to_string(),
+            algorithm: ObjectAlgorithm::Aes128YubicoAuthentication,
+            domains: domains.to_vec(),
+            capabilities: Self::expand_capabilities( & Self::APP_AUTHKEY_CAPABILITIES, rsa_decrypt),
+            delegated_capabilities: Self::expand_capabilities( & Self::APP_AUTHKEY_DELEGATED, rsa_decrypt),
+            data: vec![password.into_bytes()],
+        };
 
         new_key.id = AuthenticationOperations.import(session, &new_key)?;
 
@@ -137,16 +137,16 @@ impl KspOperations {
 
     pub fn import_audit_authkey(session: &Session, id: u16, domains: &[ObjectDomain], password: String) -> Result<ObjectDescriptor, MgmError> {
 
-        let mut new_key = NewObjectSpec::new(
+        let mut new_key = NewObjectSpec {
             id,
-            ObjectType::AuthenticationKey,
-            "Audit auth key".to_string(),
-            ObjectAlgorithm::Aes128YubicoAuthentication,
-            domains.to_vec(),
-            Self::AUDIT_AUTHKEY_CAPABILITIES.to_vec(),
-            vec![],
-            vec![password.into_bytes()],
-        );
+            object_type: ObjectType::AuthenticationKey,
+            label: "Audit auth key".to_string(),
+            algorithm: ObjectAlgorithm::Aes128YubicoAuthentication,
+            domains: domains.to_vec(),
+            capabilities: Self::AUDIT_AUTHKEY_CAPABILITIES.to_vec(),
+            delegated_capabilities: vec![],
+            data: vec![password.into_bytes()],
+        };
 
         new_key.id = AuthenticationOperations.import(session, &new_key)?;
 

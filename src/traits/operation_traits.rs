@@ -16,11 +16,11 @@
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::hsm_operations::common::{get_delegated_capabilities, get_authorized_commands};
-use crate::hsm_operations::algorithms::MgmAlgorithm;
-use crate::hsm_operations::types::MgmCommand;
-use crate::hsm_operations::error::MgmError;
-use crate::hsm_operations::types::NewObjectSpec;
+use crate::common::util::{get_delegated_capabilities, get_authorized_commands};
+use crate::common::algorithms::MgmAlgorithm;
+use crate::common::types::MgmCommand;
+use crate::common::error::MgmError;
+use crate::common::types::NewObjectSpec;
 
 pub trait YubihsmOperations {
 

@@ -14,20 +14,23 @@
  * limitations under the License.
  */
 
+extern crate x509_parser;
+extern crate yubihsmrs;
+
 use clap::Arg;
 use yubihsmrs::YubiHsm;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectType};
 use hsm_operations::asym::AsymmetricOperations;
-use hsm_operations::common::get_id_from_string;
-use hsm_operations::error::MgmError;
-use hsm_operations::validators::pem_private_ecp256_file_validator;
+use common::util::get_id_from_string;
+use common::error::MgmError;
+use common::validators::pem_private_ecp256_file_validator;
 use traits::ui_traits::YubihsmUi;
 use ui::helper_io::get_pem_from_file;
 use cli::cmdline::Cmdline;
 use script::script_recorder::SessionRecorder;
 use script::script_runner::ScriptRunner;
-use script::script_common::{RedactMode, SessionScript};
-use traits::script_backend::ScriptBackend;
+use script::script_types::{RedactMode, SessionScript};
+use traits::script_traits::ScriptBackend;
 use ui::asym_menu::AsymmetricMenu;
 use ui::auth_menu::AuthenticationMenu;
 use ui::device_menu::DeviceMenu;
@@ -37,9 +40,10 @@ use ui::main_menu::MainMenu;
 use ui::sym_menu::SymmetricMenu;
 use ui::wrap_menu::WrapMenu;
 
+pub mod common;
+pub mod traits;
 pub mod hsm_operations;
 pub mod ui;
-pub mod traits;
 pub mod cli;
 pub mod script;
 

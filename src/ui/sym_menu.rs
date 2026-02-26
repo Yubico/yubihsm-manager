@@ -21,8 +21,8 @@ use crate::ui::helper_operations::{generate_object, import_object, list_objects}
 use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_object_properties};
 use crate::ui::device_menu::DeviceMenu;
 use crate::traits::operation_traits::YubihsmOperations;
-use crate::hsm_operations::error::MgmError;
-use crate::hsm_operations::types::{MgmCommandType, SelectionItem};
+use crate::common::error::MgmError;
+use crate::common::types::{MgmCommandType, SelectionItem};
 use crate::hsm_operations::sym::{AesMode, AesOperationSpec, EncryptionMode, SymmetricOperations};
 use crate::ui::helper_io::{get_hex_or_bytes_from_file, write_bytes_to_file, get_path};
 use crate::script::script_recorder::SessionRecorder;
@@ -76,10 +76,18 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
     fn operate(&self, session: &Session, authkey: &ObjectDescriptor, enc_mode: EncryptionMode) -> Result<(), MgmError> {
         let mut aes_mode = vec![];
         if (enc_mode == EncryptionMode::Encrypt && authkey.capabilities.contains(&ObjectCapability::EncryptEcb)) || (enc_mode == EncryptionMode::Decrypt && authkey.capabilities.contains(&ObjectCapability::DecryptEcb)) {
-            aes_mode.push(SelectionItem::new(AesMode::Ecb, "ECB".to_string(), "".to_string()));
+            aes_mode.push(SelectionItem {
+                value: AesMode::Ecb,
+                label: "ECB".to_string(),
+                hint: "".to_string() }
+            );
         }
         if (enc_mode == EncryptionMode::Encrypt && authkey.capabilities.contains(&ObjectCapability::EncryptCbc)) || (enc_mode == EncryptionMode::Decrypt && authkey.capabilities.contains(&ObjectCapability::DecryptCbc)) {
-            aes_mode.push(SelectionItem::new(AesMode::Cbc, "CBC".to_string(), "".to_string()));
+            aes_mode.push(SelectionItem {
+                value: AesMode::Cbc,
+                label: "CBC".to_string(),
+                hint: "".to_string() }
+            );
         }
         let aes_mode = self.ui.select_one_item(
             &aes_mode,

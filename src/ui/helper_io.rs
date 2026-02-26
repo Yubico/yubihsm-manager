@@ -20,7 +20,7 @@ use std::fs::File;
 use pem::Pem;
 use std::io::Write;
 use crate::traits::ui_traits::YubihsmUi;
-use crate::hsm_operations::error::MgmError;
+use crate::common::error::MgmError;
 
 pub fn get_string_or_bytes_from_file(ui: &impl YubihsmUi, string: String) -> Result<Vec<u8>, MgmError> {
     if string.is_empty() {

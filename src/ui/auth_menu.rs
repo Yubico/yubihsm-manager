@@ -20,14 +20,14 @@ use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::helper_operations::{delete_objects, display_object_properties, get_new_spec_table, list_objects};
 use crate::ui::helper_operations::{display_menu_headers, get_script_input_data};
-use crate::hsm_operations::error::MgmError;
+use crate::common::error::MgmError;
+use crate::common::types::{MgmCommandType, NewObjectSpec, SelectionItem};
+use crate::common::util::get_delegated_capabilities;
 use crate::hsm_operations::asym::AsymmetricOperations;
-use crate::hsm_operations::types::{MgmCommandType, NewObjectSpec, SelectionItem};
-use crate::hsm_operations::common::get_delegated_capabilities;
 use crate::hsm_operations::auth::{AuthenticationOperations, AuthenticationType, UserType};
 use crate::ui::helper_io::get_pem_from_file;
 use crate::script::script_recorder::SessionRecorder;
-use crate::script::script_common::{RecordableObjectSpec, RecordedOperation};
+use crate::script::script_types::{RecordableObjectSpec, RecordedOperation};
 
 static AUTH_HEADER: &str = "Authentication keys";
 
@@ -78,8 +78,14 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
 
         let auth_type = self.ui.select_one_item(
             &[
-                SelectionItem::new(AuthenticationType::PasswordDerived, "Password derived".to_string(), "Session keys are derived from a password".to_string()),
-                SelectionItem::new(AuthenticationType::Ecp256, "EC P256".to_string(), "Session authenticated using EC key with curve secp256r1".to_string()),
+                SelectionItem {
+                    value: AuthenticationType::PasswordDerived,
+                    label: "Password derived".to_string(),
+                    hint: "Session keys are derived from a password".to_string() },
+                SelectionItem {
+                    value: AuthenticationType::Ecp256,
+                    label: "EC P256".to_string(),
+                    hint: "Session authenticated using EC key with curve secp256r1".to_string() },
             ],
             None,
             Some("Select authentication type"))?;
@@ -130,7 +136,7 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
     }
 
     fn setup_user(&self, current_authkey: &ObjectDescriptor, user_type: UserType) -> Result<NewObjectSpec, MgmError> {
-        let mut new_key = NewObjectSpec::empty();
+        let mut new_key = NewObjectSpec::new();
         new_key.object_type = ObjectType::AuthenticationKey;
         new_key.id = self.ui.get_new_object_id(0)?;
         new_key.label = self.ui.get_object_label("")?;

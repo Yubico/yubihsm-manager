@@ -19,7 +19,7 @@ use yubihsmrs::object::{ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::helper_operations::{display_menu_headers, display_wrapkey_shares};
-use crate::hsm_operations::error::MgmError;
+use crate::common::error::MgmError;
 use crate::hsm_operations::ksp::KspOperations;
 use crate::hsm_operations::wrap::{WrapKeyType, WrapOperations, WrapOpSpec, WrapType};
 use crate::ui::helper_io::{write_bytes_to_file, get_path};

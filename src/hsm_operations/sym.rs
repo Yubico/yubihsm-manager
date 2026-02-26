@@ -17,10 +17,10 @@
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
-use crate::hsm_operations::error::MgmError;
-use crate::hsm_operations::common::{get_op_keys, get_object_descriptors};
-use crate::hsm_operations::algorithms::MgmAlgorithm;
-use crate::hsm_operations::types::{MgmCommand, NewObjectSpec, MgmCommandType};
+use crate::common::error::MgmError;
+use crate::common::util::{get_op_keys, get_object_descriptors};
+use crate::common::algorithms::MgmAlgorithm;
+use crate::common::types::{MgmCommand, NewObjectSpec, MgmCommandType};
 
 
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]

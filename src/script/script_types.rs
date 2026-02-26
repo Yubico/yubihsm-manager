@@ -18,7 +18,7 @@ use std::fmt;
 use std::fmt::Display;
 use serde::{Deserialize, Serialize};
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectHandle, ObjectType};
-use crate::hsm_operations::types::NewObjectSpec;
+use crate::common::types::NewObjectSpec;
 use crate::hsm_operations::wrap::WrapOpSpec;
 
 pub const REDACTED: &str = "<REDACTED>";
@@ -84,16 +84,16 @@ impl From<&NewObjectSpec> for RecordableObjectSpec {
 
 impl From<&RecordableObjectSpec> for NewObjectSpec {
     fn from(spec: &RecordableObjectSpec) -> Self {
-        NewObjectSpec::new(
-            spec.id,
-            spec.object_type,
-            spec.label.clone(),
-            spec.algorithm,
-            spec.domains.clone(),
-            spec.capabilities.clone(),
-            spec.delegated_capabilities.clone(),
-            vec![],
-        )
+        NewObjectSpec {
+            id: spec.id,
+            object_type: spec.object_type,
+            label: spec.label.clone(),
+            algorithm: spec.algorithm,
+            domains: spec.domains.clone(),
+            capabilities: spec.capabilities.clone(),
+            delegated_capabilities: spec.delegated_capabilities.clone(),
+            data: vec![],
+        }
     }
 }
 

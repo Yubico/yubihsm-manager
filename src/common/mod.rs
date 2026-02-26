@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 Yubico AB
+ * Copyright 2025 Yubico AB
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-pub mod script_types;
-pub mod script_recorder;
-pub mod script_runner;
-pub mod backend_json;
+pub mod algorithms;
+pub mod error;
+pub mod validators;
+pub mod util;
+pub mod types;
