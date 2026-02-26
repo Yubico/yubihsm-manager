@@ -39,9 +39,15 @@ pub enum AuthenticationType {
     Ecp256,
 }
 
+pub const AUTH_CONTEXT: &str = "auth";
+
 pub struct AuthenticationOperations;
 
 impl YubihsmOperations for AuthenticationOperations {
+
+    fn context_name(&self) -> &'static str {
+        AUTH_CONTEXT
+    }
 
     fn get_commands(&self) -> Vec<MgmCommand> {
         [

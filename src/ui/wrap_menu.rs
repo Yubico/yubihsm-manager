@@ -15,12 +15,12 @@
  */
 
 use std::fs;
-use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
+use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::cli::cmdline::Cmdline;
-use crate::ui::helper_operations::{delete_objects, display_menu_headers, generate_object, list_objects};
-use crate::ui::helper_operations::{display_object_properties, get_new_spec_table};
+use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_wrapkey_shares, generate_object, list_objects};
+use crate::ui::helper_operations::{display_object_properties, get_new_spec_table, get_script_input_data};
 use crate::ui::device_menu::DeviceMenu;
 use crate::ui::asym_menu::AsymmetricMenu;
 use crate::traits::operation_traits::YubihsmOperations;
@@ -32,7 +32,10 @@ use crate::hsm_operations::asym::AsymmetricOperations;
 use crate::hsm_operations::sym::SymmetricOperations;
 use crate::hsm_operations::wrap::{WrapKeyType, WrapOperations, WrapOpSpec, WrapType};
 use crate::hsm_operations::common::get_delegated_capabilities;
-use crate::ui::helper_io::{get_pem_from_file, write_bytes_to_file, get_path};
+use crate::ui::helper_io::{get_path, get_pem_from_file, write_bytes_to_file};
+use crate::script::script_recorder::SessionRecorder;
+use crate::script::script_common;
+use crate::script::script_common::{RecordableObjectSpec, RecordedOperation, RedactMode};
 
 static WRAP_HEADER: &str = "Wrap keys";
 
@@ -46,7 +49,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         WrapMenu { ui: interface  }
     }
     
-    pub fn exec_command(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    pub fn exec_command(&self, session: &Session, recorder: &Option<SessionRecorder>,  authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         loop {
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, WRAP_HEADER],
                                  "Wrap key operations allow you to manage and use wrap keys keys stored on the YubiHSM")?;
@@ -57,12 +60,12 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             let result = match cmd.command {
                 MgmCommandType::List => list_objects(&self.ui, &WrapOperations, session),
                 MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &WrapOperations, session),
-                MgmCommandType::Generate => generate_object(&self.ui, &WrapOperations, session, authkey, ObjectType::WrapKey),
-                MgmCommandType::Import => self.import(session, authkey),
-                MgmCommandType::Delete => delete_objects(&self.ui, &WrapOperations, session, &WrapOperations.get_all_objects(session)?),
+                MgmCommandType::Generate => generate_object(&self.ui, recorder, &WrapOperations, session, authkey, ObjectType::WrapKey),
+                MgmCommandType::Import => self.import(session, recorder, authkey),
+                MgmCommandType::Delete => delete_objects(&self.ui, recorder, &WrapOperations, session, &WrapOperations.get_all_objects(session)?),
                 MgmCommandType::GetPublicKey => AsymmetricMenu::new(Cmdline).get_public_key(session, ObjectType::WrapKey),
-                MgmCommandType::ExportWrapped => self.export_wrapped(session, authkey),
-                MgmCommandType::ImportWrapped => self.import_wrapped(session, authkey),
+                MgmCommandType::ExportWrapped => self.export_wrapped(session, recorder, authkey),
+                MgmCommandType::ImportWrapped => self.import_wrapped(session, recorder, authkey),
                 MgmCommandType::GetRandom => DeviceMenu::new(self.ui.clone()).get_random(session),
                 MgmCommandType::Exit => std::process::exit(0),
                 _ => unreachable!()
@@ -74,15 +77,15 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         }
     }
 
-    pub fn import(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    pub fn import(&self, session: &Session, recorder: &Option<SessionRecorder>,  authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         if self.ui.get_confirmation("Re-create from shares?")? {
-            self.import_from_shares(session)
+            self.import_from_shares(session, recorder)
         } else {
-            self.import_full_key(session, authkey)
+            self.import_full_key(session, recorder, authkey)
         }
     }
 
-    fn import_full_key(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    fn import_full_key(&self, session: &Session, recorder: &Option<SessionRecorder>,  authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let mut new_key = NewObjectSpec::empty();
 
 
@@ -100,7 +103,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         if aes_key_validator(&input).is_ok() {
             self.ui.display_info_message("Detected HEX string. Parsing as AES wrap key...");
             new_key.object_type = ObjectType::WrapKey;
-            new_key.data.push(hex::decode(input)?);
+            new_key.data.push(hex::decode(input.clone())?);
             new_key.algorithm = WrapOperations::get_algorithm_from_keylen(new_key.data[0].len())?;
         } else if pem_private_rsa_file_validator(&input).is_ok() || pem_public_rsa_file_validator(&input).is_ok() {
             self.ui.display_info_message("Detected PEM file with private RSA key. Parsing as RSA key...");
@@ -141,28 +144,28 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             return Ok(());
         }
 
-        let progress = self.ui.start_progress(Some("Generating key..."));
+        let progress = self.ui.start_progress(Some("Importing key..."));
         new_key.id = WrapOperations.import(session, &new_key)?;
         self.ui.stop_progress(progress, None);
         self.ui.display_success_message(format!("Imported {} object with ID 0x{:04x} into the YubiHSM", new_key.object_type, new_key.id).as_str());
 
-
-        if key_type != WrapKeyType::Aes {
-            return Ok(());
+        let mut n_shares = 0;
+        let mut n_threshold = 0;
+        if key_type == WrapKeyType::Aes {
+            self.ui.display_info_message("Split wrap key? Note that the wrap key is already imported into the YubiHSM2. Key split is done outside the device");
+            if self.ui.get_confirmation("Split wrap key?")? {
+                n_shares = self.ui.get_split_aes_n_shares("Enter the number of shares to create:")?;
+                n_threshold = self.ui.get_split_aes_m_threshold("Enter the number of shares necessary to re-create the key:", n_shares)?;
+                let split_key = WrapOperations::split_wrap_key(&new_key, n_threshold, n_shares)?;
+                display_wrapkey_shares(&self.ui, split_key.shares_data)?;
+            }
         }
-
-        self.ui.display_info_message("Split wrap key? Note that the wrap key is already imported into the YubiHSM2. Key split is done outside the device");
-        if self.ui.get_confirmation("Split wrap key?")? {
-            let n_shares = self.ui.get_split_aes_n_shares("Enter the number of shares to create:")?;
-            let n_threshold = self.ui.get_split_aes_m_threshold("Enter the number of shares necessary to re-create the key:", n_shares)?;
-            let split_key = WrapOperations::split_wrap_key(&new_key, n_threshold, n_shares)?;
-            self.display_wrapkey_shares(split_key.shares_data)?;
-        }
+        self.record_import_wrapkey(recorder, &new_key, if AsymmetricOperations::is_rsa_key_algorithm(&new_key.algorithm) { Some(input) } else {None} , n_threshold, n_shares)?;
 
         Ok(())
     }
 
-    fn import_from_shares(&self, session: &Session) -> Result<(), MgmError> {
+    pub fn import_from_shares(&self, session: &Session, recorder: &Option<SessionRecorder>) -> Result<(), MgmError> {
         let shares = self.recover_wrapkey_shares()?;
         let mut new_key = WrapOperations::get_wrapkey_from_shares(shares)?;
         new_key.label = self.ui.get_object_label("")?;
@@ -175,12 +178,14 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         let progress = self.ui.start_progress(Some("Importing key..."));
         new_key.id = WrapOperations.import(session, &new_key)?;
         self.ui.stop_progress(progress, None);
-
         self.ui.display_success_message(format!("Imported wrap key with ID 0x{:04x} on the device", new_key.id).as_str());
+
+        self.record_import_wrapkey(recorder, &new_key, None, 0, 0)?;
+
         Ok(())
     }
 
-    fn export_wrapped(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    fn export_wrapped(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let wrapkeys = WrapOperations::get_wrapping_keys(session, authkey)?;
         let wrapkey = self.ui.select_one_object(
             &wrapkeys,
@@ -215,6 +220,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         if exportable_objects.iter().any(|x| x.algorithm == ObjectAlgorithm::Ed25519) {
             wrap_op.include_ed_seed = self.ui.get_confirmation("Include Ed25519 seed in the wrapped export? (required for importing Ed25519 keys)")?;
         };
+        let export_objects = export_objects.iter().map(|obj| ObjectHandle { object_id: obj.id, object_type: obj.object_type }).collect();
 
         if wrapkey_type == WrapKeyType::RsaPublic {
             wrap_op.aes_algorithm = Some(self.ui.select_algorithm(
@@ -247,10 +253,24 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             write_bytes_to_file(&self.ui,&object.wrapped_data, filename.as_str())?;
         }
 
+        if let Some(rec) = recorder {
+            let d = if rec.mode == RedactMode::All {
+                script_common::REDACTED.to_string()
+            } else {
+                dir
+            };
+
+            rec.record(RecordedOperation::ExportWrapped {
+                wrap_spec: wrap_op,
+                objects: export_objects,
+                destination_directory: d,
+            })?;
+        }
+
         Ok(())
     }
 
-    fn import_wrapped(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    fn import_wrapped(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let filepath = self.ui.get_path_input(
             "Enter absolute path to wrapped object file:",
             true,
@@ -287,7 +307,10 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
 
         let res = WrapOperations::import_wrapped(session, &wrap_op, &wrapped, None);
         let handle = match res {
-            Ok(h) => h,
+            Ok(h) => {
+                self.record_import_wrapped(recorder, &wrap_op, &filepath, None)?;
+                h
+            },
             Err(e) => {
                 if wrapkey_type == WrapKeyType::Rsa {
                     self.ui.display_info_message(format!("Failed to unwrap as object: {}. Trying as key data...", e).as_str());
@@ -318,7 +341,10 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                         &[],
                         Some("Select object capabilities"))?;
 
-                    WrapOperations::import_wrapped(session, &wrap_op, &wrapped, Some(new_key))?
+                    let handle = WrapOperations::import_wrapped(session, &wrap_op, &wrapped, Some(new_key.clone()))?;
+                    self.record_import_wrapped(recorder, &wrap_op, &filepath, Some(&new_key))?;
+                    handle
+
                 } else {
                     return Err(e)
                 }
@@ -327,32 +353,6 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
 
         self.ui.display_success_message(format!("Successfully imported object {}, with ID 0x{:04x}", handle.object_type, handle.object_id).as_str());
 
-        Ok(())
-    }
-
-    pub fn display_wrapkey_shares(&self, shares: Vec<String>) -> Result<(), MgmError> {
-        self.ui.display_warning(
-            "*************************************************************\n\
-        * WARNING! The following shares will NOT be stored anywhere *\n\
-        * Save them and store them safely if you wish to re-use     *\n\
-        * the wrap key for this device in the future                *\n\
-        *************************************************************");
-
-        self.ui.get_string_input("Press any key to start saving key shares", false, None, None)?;
-
-        for share in shares {
-            loop {
-                self.ui.clear_screen();
-                println!("{}", share);
-                if self.ui.get_confirmation("Have you saved the key share?")? {
-                    break;
-                }
-            }
-            self.ui.clear_screen();
-            self.ui.get_string_input("Press any key to display next key share or to return to menu", false, None, None)?;
-        }
-
-        self.ui.clear_screen();
         Ok(())
     }
 
@@ -378,5 +378,30 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         self.ui.display_info_message(format!("{} shares have been registered", n_shares).as_str());
 
         Ok(shares_vec)
+    }
+
+    fn record_import_wrapkey(&self, recorder: &Option<SessionRecorder>, spec: &NewObjectSpec, filename: Option<String>, n_threshold: u8, n_shares: u8) -> Result<(), MgmError> {
+        if let Some(rec) = recorder {
+            let value = get_script_input_data(rec, spec, filename)?;
+            rec.record(RecordedOperation::ImportWrapKey { spec: RecordableObjectSpec::from(spec), value, n_threshold, n_shares })?;
+        }
+        Ok(())
+    }
+
+    fn record_import_wrapped(&self, recorder: &Option<SessionRecorder>, wrapping_spec: &WrapOpSpec, filepath: &str, new_key_spec: Option<&NewObjectSpec>) -> Result<(), MgmError> {
+        if let Some(rec) = recorder {
+            let fp = if rec.mode == RedactMode::All {
+                script_common::REDACTED
+            } else {
+                filepath
+            };
+
+            rec.record(RecordedOperation::ImportWrapped {
+                wrap_spec: wrapping_spec.clone(),
+                wrapped_filepath: fp.to_string(),
+                new_key_spec: new_key_spec.map(RecordableObjectSpec::from),
+            })?;
+        }
+        Ok(())
     }
 }

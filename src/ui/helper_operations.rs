@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use tabled::{builder::Builder, settings::{Width, Modify, Style, object::Columns}};
+use tabled::{builder::Builder, settings::{Modify, object::Columns, Style, Width}};
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
@@ -22,7 +22,9 @@ use crate::traits::ui_traits::YubihsmUi;
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::types::{MgmCommand, NewObjectSpec};
 use crate::hsm_operations::common::get_delegated_capabilities;
-
+use crate::script::script_recorder::SessionRecorder;
+use crate::script::script_common;
+use crate::script::script_common::{RecordableObjectSpec, RecordedOperation, RedactMode};
 
 static ESC_HELP_TEXT: &str = "Pressing 'Esc' will always cancel current operation and return to previous menu";
 
@@ -78,7 +80,16 @@ pub fn display_object_properties(ui: &impl YubihsmUi,yh_operation: &dyn YubihsmO
     Ok(())
 }
 
-pub fn delete_objects(ui: &impl YubihsmUi,yh_operation: &dyn YubihsmOperations, session: &Session, available_objects: &[ObjectDescriptor]) -> Result<(), MgmError> {
+pub fn get_aes_keylen_from_algorithm(object_algorithm: ObjectAlgorithm) -> Result<usize, MgmError> {
+    match object_algorithm {
+        ObjectAlgorithm::Aes128 | ObjectAlgorithm::Aes128CcmWrap => Ok(16),
+        ObjectAlgorithm::Aes192 | ObjectAlgorithm::Aes192CcmWrap => Ok(24),
+        ObjectAlgorithm::Aes256 | ObjectAlgorithm::Aes256CcmWrap => Ok(32),
+        _ => Err(MgmError::Error(format!("{} is not an AES key algorithm", object_algorithm)))
+    }
+}
+
+pub fn delete_objects(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh_operation: &dyn YubihsmOperations, session: &Session, available_objects: &[ObjectDescriptor]) -> Result<(), MgmError> {
     let objects = ui.select_multiple_objects(
         available_objects,
         false,
@@ -99,6 +110,14 @@ pub fn delete_objects(ui: &impl YubihsmUi,yh_operation: &dyn YubihsmOperations, 
             Ok(_) => {
                 ui.display_success_message(
                     format!("Successfully deleted {} object with ID 0x{:04x} from the YubiHSM", object.object_type, object.id).as_str());
+
+                if let Some(rec) = recorder {
+                    rec.record(RecordedOperation::DeleteObject {
+                        object_id: object.id,
+                        object_type: object.object_type,
+                        context: yh_operation.context_name().to_string(),
+                    })?;
+                }
             },
             Err(err) => {
                 ui.display_error_message(format!("Failed to delete {} object with ID 0x{:04x}. {}", object.object_type, object.id, err).as_str());
@@ -108,10 +127,10 @@ pub fn delete_objects(ui: &impl YubihsmUi,yh_operation: &dyn YubihsmOperations, 
     Ok(())
 }
 
-pub fn generate_object(ui: &impl YubihsmUi,yh_operation: &dyn YubihsmOperations,
-                session: &Session,
-                authkey: &ObjectDescriptor,
-                object_type: ObjectType) -> Result<(), MgmError> {
+pub fn generate_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh_operation: &dyn YubihsmOperations,
+                       session: &Session,
+                       authkey: &ObjectDescriptor,
+                       object_type: ObjectType) -> Result<(), MgmError> {
     let mut new_key = NewObjectSpec::empty();
     new_key.object_type = object_type;
     new_key.algorithm = ui.select_algorithm(
@@ -142,13 +161,25 @@ pub fn generate_object(ui: &impl YubihsmUi,yh_operation: &dyn YubihsmOperations,
     new_key.id = yh_operation.generate(session, &new_key)?;
     ui.stop_progress(progress, None);
     ui.display_success_message(
-        format!("Generated asymmetric keypair with ID 0x{:04x} on the YubiHSM", new_key.id).as_str());
+        format!("Generated object of type {} and ID 0x{:04x} on the YubiHSM", new_key.object_type, new_key.id).as_str());
+
+    if let Some(rec) = recorder {
+        rec.record(RecordedOperation::GenerateObject {
+            spec: RecordableObjectSpec::from(&new_key),
+            context: yh_operation.context_name().to_string()
+        })?;
+    }
+
     Ok(())
 }
 
-pub fn import_object(ui: &impl YubihsmUi,yh_operation: &dyn YubihsmOperations,
-              session: &Session,
-              authkey: &ObjectDescriptor, object_type: ObjectType, object_algorithm: ObjectAlgorithm, data: Vec<Vec<u8>>) -> Result<(), MgmError> {
+pub fn import_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh_operation: &dyn YubihsmOperations,
+                     session: &Session,
+                     authkey: &ObjectDescriptor,
+                     object_type: ObjectType,
+                     object_algorithm: ObjectAlgorithm,
+                     data: Vec<Vec<u8>>,
+                    filename: Option<String>) -> Result<(), MgmError> {
     let mut new_key = NewObjectSpec::empty();
     new_key.object_type = object_type;
     new_key.algorithm = object_algorithm;
@@ -169,10 +200,61 @@ pub fn import_object(ui: &impl YubihsmUi,yh_operation: &dyn YubihsmOperations,
         return Ok(());
     }
 
-    let progress = ui.start_progress(Some("Generating key..."));
+    let progress = ui.start_progress(Some("Importing key..."));
     new_key.id = yh_operation.import(session, &new_key)?;
     ui.stop_progress(progress, None);
     ui.display_success_message(
         format!("Imported {} object with ID 0x{:04x} into the YubiHSM", new_key.object_type, new_key.id).as_str());
+
+    record_import_object_operation(recorder, &new_key, yh_operation.context_name().to_string(), filename)?;
+
+    Ok(())
+}
+
+pub fn get_script_input_data(recorder: &SessionRecorder, new_key: &NewObjectSpec, filename: Option<String>) -> Result<String, MgmError> {
+    let data = match recorder.mode {
+        RedactMode::All | RedactMode::Sensitive => script_common::REDACTED.to_string(),
+        RedactMode::None => {
+            if let Some(filename) = filename {
+                filename
+            } else {
+                hex::encode(&new_key.data[0])
+            }
+        },
+    };
+    Ok(data)
+}
+
+pub fn record_import_object_operation(recorder: &Option<SessionRecorder>, new_key: &NewObjectSpec, context: String, filename: Option<String>) -> Result<(), MgmError> {
+    if let Some(rec) = recorder {
+        let data = get_script_input_data(rec, new_key, filename)?;
+        rec.record(RecordedOperation::ImportObject { spec: RecordableObjectSpec::from(new_key), value: data, context })?;
+    }
+    Ok(())
+}
+
+pub fn display_wrapkey_shares(ui: &impl YubihsmUi, shares: Vec<String>) -> Result<(), MgmError> {
+    ui.display_warning(
+        "*************************************************************\n\
+        * WARNING! The following shares will NOT be stored anywhere *\n\
+        * Save them and store them safely if you wish to re-use     *\n\
+        * the wrap key for this device in the future                *\n\
+        *************************************************************");
+
+    ui.get_string_input("Press any key to start saving key shares", false, None, None)?;
+
+    for share in shares {
+        loop {
+            ui.clear_screen();
+            println!("{}", share);
+            if ui.get_confirmation("Have you saved the key share?")? {
+                break;
+            }
+        }
+        ui.clear_screen();
+        ui.get_string_input("Press any key to display next key share or to return to menu", false, None, None)?;
+    }
+
+    ui.clear_screen();
     Ok(())
 }

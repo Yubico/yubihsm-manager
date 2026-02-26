@@ -52,9 +52,17 @@ impl Display for AttestationType {
     }
 }
 
+pub const ASYM_CONTEXT: &str = "asym";
+pub const SUNPKCS11_CONTEXT: &str = "sunpkcs11";
+
 pub struct AsymmetricOperations;
 
 impl YubihsmOperations for AsymmetricOperations {
+
+    fn context_name(&self) -> &'static str {
+        ASYM_CONTEXT
+    }
+
     fn get_commands(&self) -> Vec<MgmCommand> {
         [
             MgmCommand {
@@ -665,6 +673,11 @@ impl AsymmetricOperations {
 pub struct JavaOps;
 
 impl YubihsmOperations for JavaOps {
+
+    fn context_name(&self) -> &'static str {
+        SUNPKCS11_CONTEXT
+    }
+
     fn get_commands(&self) -> Vec<MgmCommand> {
         Self::JAVA_COMMANDS.to_vec()
     }

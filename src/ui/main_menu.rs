@@ -33,6 +33,7 @@ use crate::hsm_operations::wrap::WrapOperations;
 use crate::hsm_operations::types::{SelectionItem, MgmCommandType};
 use crate::hsm_operations::main_ops::{MgmObjectType, FilterType, MainOperations};
 use crate::hsm_operations::asym::AsymmetricOperations;
+use crate::script::script_recorder::SessionRecorder;
 
 static MAIN_HEADER: &str = "YubiHSM Manager";
 
@@ -43,10 +44,10 @@ pub struct MainMenu<T: YubihsmUi + Clone> {
 impl<T: YubihsmUi + Clone> MainMenu<T> {
 
     pub fn new(interface: T) -> Self {
-        MainMenu { ui: interface  }
+        MainMenu { ui: interface }
     }
 
-    pub fn exec_command(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    pub fn exec_command(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         loop {
             display_menu_headers(&self.ui, &[MAIN_HEADER],
                                  "Operations applicable for all objects on the YubiHSM")?;
@@ -60,11 +61,11 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
             let res = match cmd.command {
                 MgmCommandType::List => list_objects(&self.ui, &MainOperations, session),
                 MgmCommandType::Search => self.search(session),
-                MgmCommandType::Delete => delete_objects(&self.ui, &MainOperations, session, &MainOperations::get_objects_for_delete(session, authkey)?),
-                MgmCommandType::Generate => self.generate(session, authkey),
-                MgmCommandType::Import => self.import(session, authkey),
-                MgmCommandType::GotoKey => self.goto_key(session, authkey),
-                MgmCommandType::GotoDevice => DeviceMenu::new(self.ui.clone()).exec_command(session, authkey),
+                MgmCommandType::Delete => delete_objects(&self.ui, recorder, &MainOperations, session, &MainOperations::get_objects_for_delete(session, authkey)?),
+                MgmCommandType::Generate => self.generate(session, recorder, authkey),
+                MgmCommandType::Import => self.import(session, recorder, authkey),
+                MgmCommandType::GotoKey => self.goto_key(session, recorder, authkey),
+                MgmCommandType::GotoDevice => DeviceMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
                 MgmCommandType::Exit => std::process::exit(0),
                 _ => unreachable!()
             };
@@ -108,47 +109,47 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
         Ok(())
     }
 
-    fn generate(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    fn generate(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let _type: MgmObjectType = self.ui.select_one_item(
             &SelectionItem::get_items(&MainOperations::get_generatable_types(authkey)),
             None,
             Some("\nSelect object type:")
         )?;
         match _type {
-            MgmObjectType::Asymmetric => generate_object(&self.ui, &AsymmetricOperations, session, authkey, ObjectType::AsymmetricKey),
-            MgmObjectType::Symmetric => generate_object(&self.ui, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey),
-            MgmObjectType::Wrap => generate_object(&self.ui, &WrapOperations, session, authkey, ObjectType::WrapKey),
+            MgmObjectType::Asymmetric => generate_object(&self.ui, recorder, &AsymmetricOperations, session, authkey, ObjectType::AsymmetricKey),
+            MgmObjectType::Symmetric => generate_object(&self.ui, recorder, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey),
+            MgmObjectType::Wrap => generate_object(&self.ui, recorder, &WrapOperations, session, authkey, ObjectType::WrapKey),
             _ => Ok(())
         }
     }
 
-    fn import(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    fn import(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let _type: MgmObjectType = self.ui.select_one_item(
             &SelectionItem::get_items(&MainOperations::get_importable_types(authkey)),
             None,
             Some("\nSelect object type:")
         )?;
         match _type {
-            MgmObjectType::Asymmetric | MgmObjectType::Certificate => AsymmetricMenu::new(Cmdline).import(session, authkey),
-            MgmObjectType::Symmetric => SymmetricMenu::new(Cmdline).import(session, authkey),
-            MgmObjectType::Wrap => WrapMenu::new(Cmdline).import(session, authkey),
-            MgmObjectType::Authentication => AuthenticationMenu::new(Cmdline).exec_command(session, authkey),
+            MgmObjectType::Asymmetric | MgmObjectType::Certificate => AsymmetricMenu::new(Cmdline).import(session, recorder, authkey),
+            MgmObjectType::Symmetric => SymmetricMenu::new(Cmdline).import(session, recorder, authkey),
+            MgmObjectType::Wrap => WrapMenu::new(Cmdline).import(session, recorder, authkey),
+            MgmObjectType::Authentication => AuthenticationMenu::new(Cmdline).exec_command(session, recorder, authkey),
             _ => Ok(())
         }
     }
 
-    fn goto_key(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    fn goto_key(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let _type: MgmObjectType = self.ui.select_one_item(
             &SelectionItem::get_items(&MainOperations::get_key_operation_types()),
             None,
             Some("\nSelect object type:")
         )?;
         match _type {
-            MgmObjectType::Asymmetric | MgmObjectType::Certificate => AsymmetricMenu::new(Cmdline).exec_command(session, authkey),
-            MgmObjectType::Symmetric => SymmetricMenu::new(Cmdline).exec_command(session, authkey),
-            MgmObjectType::Wrap => WrapMenu::new(Cmdline).exec_command(session, authkey),
-            MgmObjectType::Authentication => AuthenticationMenu::new(self.ui.clone()).exec_command(session, authkey),
-            MgmObjectType::Java => JavaMenu::new(self.ui.clone()).exec_command(session, authkey),
+            MgmObjectType::Asymmetric | MgmObjectType::Certificate => AsymmetricMenu::new(Cmdline).exec_command(session, recorder, authkey),
+            MgmObjectType::Symmetric => SymmetricMenu::new(Cmdline).exec_command(session, recorder, authkey),
+            MgmObjectType::Wrap => WrapMenu::new(Cmdline).exec_command(session, recorder, authkey),
+            MgmObjectType::Authentication => AuthenticationMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
+            MgmObjectType::Java => JavaMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
             MgmObjectType::Ksp => Ksp::new(self.ui.clone()).guided_setup(session, authkey),
         }
     }

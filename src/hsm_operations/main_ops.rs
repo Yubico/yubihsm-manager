@@ -82,9 +82,16 @@ impl From<MgmObjectType> for ObjectType {
     }
 }
 
+pub const MAIN_CONTEXT: &str = "main";
+
 pub struct MainOperations;
 
 impl YubihsmOperations for MainOperations {
+
+    fn context_name(&self) -> &'static str {
+        MAIN_CONTEXT
+    }
+
     fn get_commands(&self) -> Vec<MgmCommand> {
         [
             MgmCommand {

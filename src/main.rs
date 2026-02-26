@@ -24,6 +24,10 @@ use hsm_operations::validators::pem_private_ecp256_file_validator;
 use traits::ui_traits::YubihsmUi;
 use ui::helper_io::get_pem_from_file;
 use cli::cmdline::Cmdline;
+use script::script_recorder::SessionRecorder;
+use script::script_runner::ScriptRunner;
+use script::script_common::{RedactMode, SessionScript};
+use traits::script_backend::ScriptBackend;
 use ui::asym_menu::AsymmetricMenu;
 use ui::auth_menu::AuthenticationMenu;
 use ui::device_menu::DeviceMenu;
@@ -37,6 +41,7 @@ pub mod hsm_operations;
 pub mod ui;
 pub mod traits;
 pub mod cli;
+pub mod script;
 
 
 macro_rules! unwrap_or_exit1 {
@@ -80,7 +85,7 @@ fn main() -> Result<(), MgmError>{
             .hide_default_value(false))
         .arg(Arg::new("privkey")
             .long("privkey")
-            .short('d')
+            // .short('d')
             .help("Path to PEM file containing ECP256 private key used to open an asymmetric session"))
         .arg(Arg::new("password")
             .long("password")
@@ -99,9 +104,64 @@ fn main() -> Result<(), MgmError>{
             .num_args(0)
             .default_value("false")
             .action(clap::ArgAction::SetTrue))
+
+        .arg(Arg::new("record")
+            .long("record")
+            .short('r')
+            .help("Record session operations in a script for later execution. Use the --redact option to redact sensitive values in the recorded script")
+            .num_args(0)
+            .default_value("false")
+            .action(clap::ArgAction::SetTrue)
+            .help_heading("Scripting"))
+        .arg(Arg::new("exec")
+            .long("exec")
+            .short('e')
+            .help("Execute operations from a recorded script file")
+            .value_name("file")
+            .num_args(1)
+            .conflicts_with("record")
+            .help_heading("Scripting"))
+        .arg(Arg::new("script-path")
+            .long("script-path")
+            .short('s')
+            .help("Path to the new script file. Default is './yubihsm-manager_<timestamp>.json' where <timestamp> is the current date and time. This option is used when recording a session to specify the name of the recorded script file, and is ignored when executing a script")
+            .value_name("script_name")
+            .num_args(1)
+            .help_heading("Scripting"))
+        .arg(Arg::new("redact")
+            .long("redact")
+            .help("Redact sensitive values when recording a script. Default is only sensitive input (aka. object values) is redacted. Redacted data will be prompted for when executing a script. Use --redact=all to redact all values, and --redact=none to have all values written in plain text.")
+            .value_parser(clap::builder::EnumValueParser::<RedactMode>::new())
+            .default_value("sensitive")
+            .requires("record")
+            .help_heading("Scripting"))
+        .arg(Arg::new("continue-on-error")
+            .long("continue-on-error")
+            .help("If an error occurs during script execution, print out a warning and continue executing the next operation. Default is to exit on error.")
+            .num_args(0)
+            .default_value("false")
+            .action(clap::ArgAction::SetTrue)
+            .help_heading("Scripting"))
         .get_matches();
 
-    let Some(connector) = matches.get_one::<String>("connector") else {
+    // Check if we are executing a script or entering into command line mode
+    let script: Option<SessionScript> = if let Some(script_path) = matches.get_one::<String>("exec") {
+        let s = ScriptRunner::load(std::path::Path::new(script_path))?;
+
+        ui.display_info_message(&format!(
+            "Loaded script with {} operations", s.operations.len()));
+        Some(s)
+    } else {
+        None
+    };
+
+    // Connector value is needed to create the HSM object. Priority: command line > script > default.
+    let connector =
+    if let Some(c) = matches.get_one::<String>("connector") {
+        c
+     } else if let Some(s) = &script {
+        &s.session.connector
+     } else {
         YubihsmUi::display_error_message(&ui, "Failed to read connector value");
         std::process::exit(1);
     };
@@ -110,26 +170,33 @@ fn main() -> Result<(), MgmError>{
     let h = unwrap_or_exit1!(YubiHsm::new(connector), "Unable to create HSM object");
     unwrap_or_exit1!(h.set_verbosity(matches.get_flag("verbose")), "Unable to set verbosity");
 
+    // This command does not require authentication
     if let Some("get-device-info") = matches.subcommand_name() {
         let info = h.get_device_info()?;
-        println!("{}\n",info);
+          println!("{}\n", info);
         return Ok(());
     };
 
+    // This command does not require authentication
     if let Some("get-device-publickey") = matches.subcommand_name() {
         let pubkey = h.get_device_pubkey()?;
         let pubkey = AsymmetricOperations::get_pubkey_pem(ObjectAlgorithm::EcP256, &pubkey)?;
-        println!("{}\n",pubkey);
+        println!("{}\n", pubkey);
         return Ok(());
     };
 
-    let authkey = if let Some(id) = matches.get_one::<String>("authkey") {
-        get_id_from_string(id)?
-    } else {
-        1
-    };
+    // Determine authentication key ID to use for session. Priority: command line > script > default (1).
+    let authkey =
+        if let Some(id) = matches.get_one::<String>("authkey") {
+            get_id_from_string(id)?
+        } else if let Some(s) = &script {
+            s.session.auth_key_id
+        } else {
+            1
+        };
     YubihsmUi::display_info_message(&ui, format!("Using authentication key 0x{:04x}", authkey).as_str());
 
+    // Open a session authenticated either by a password or a private ECP256 key
     let session =
     if matches.contains_id("privkey") {
         let filename = if let Some(f) = matches.get_one::<String>("privkey") {
@@ -168,24 +235,61 @@ fn main() -> Result<(), MgmError>{
         unwrap_or_exit1!(h.establish_session(authkey, &password, true), "Unable to open session")
     };
 
+    // If a script was loaded, execute it and exit — skip interactive menu.
+    if let Some(s) = &script {
+        YubihsmUi::display_info_message(&ui, "Executing script...");
+        if let Err(e) = ScriptRunner::run(&ui, &session, s, matches.get_flag("continue-on-error")) {
+            YubihsmUi::display_error_message(&ui,e.to_string().as_str());
+        }
+        return Ok(())
+    }
 
+    let recorder: Option<SessionRecorder> = if matches.get_flag("record") {
+        let script_path = if let Some(sn) = matches.get_one::<String>("script-path") {
+            if sn.ends_with(".json") { sn.to_owned() } else { format!("{}.json", sn) }
+        } else {
+            format!("yubihsm-manager-{}.json", chrono::Local::now().format("%Y%m%d-%H:%M:%S"))
+        };
+
+        // Currently, only JSON script is supported. If this changes in the future, just add an arm for a new file extension
+        let backend: Box<dyn ScriptBackend> = if script_path.ends_with(".json") {
+            Box::new(script::backend_json::JsonBackend)
+        } else {
+            YubihsmUi::display_error_message(&ui, "Unsupported script file extension. Only .json is currently supported");
+            std::process::exit(1);
+        };
+
+        YubihsmUi::display_info_message(&ui, "Starting session recording...");
+        let mode = matches.get_one::<RedactMode>("redact").cloned().unwrap_or_default();  // defaults to RedactMode::Sensitive
+        Some(SessionRecorder::new(
+            connector.clone(),
+            authkey,
+            script_path.to_owned(),
+            mode,
+            backend,
+        ))
+    } else {
+        None
+    };
+
+    // Enter command line mode
     let authkey = session.get_object_info(authkey, ObjectType::AuthenticationKey)?;
 
     match matches.subcommand() {
         Some(subcommand) => {
             match subcommand.0 {
-                "asym" => AsymmetricMenu::new(ui).exec_command(&session, &authkey),
-                "sym" => SymmetricMenu::new(ui).exec_command(&session, &authkey),
-                "auth" => AuthenticationMenu::new(ui).exec_command(&session, &authkey),
-                "wrap" => WrapMenu::new(ui).exec_command(&session, &authkey),
+                "asym" => AsymmetricMenu::new(ui).exec_command(&session, &recorder, &authkey),
+                "sym" => SymmetricMenu::new(ui).exec_command(&session, &recorder, &authkey),
+                "auth" => AuthenticationMenu::new(ui).exec_command(&session, &recorder, &authkey),
+                "wrap" => WrapMenu::new(ui).exec_command(&session, &recorder, &authkey),
                 "ksp" => Ksp::new(ui).guided_setup(&session, &authkey),
-                "sunpkcs11" => JavaMenu::new(ui).exec_command(&session, &authkey),
+                "sunpkcs11" => JavaMenu::new(ui).exec_command(&session, &recorder, &authkey),
                 "reset" => DeviceMenu::new(ui).reset(&session),
                 _ => unreachable!(),
             }
         },
         None => {
-            MainMenu::new(ui).exec_command(&session, &authkey)
+            MainMenu::new(ui).exec_command(&session, &recorder, &authkey)
         }
     }
 }

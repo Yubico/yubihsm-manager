@@ -18,13 +18,16 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
-use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_object_properties, list_objects, get_new_spec_table};
+use crate::ui::helper_operations::{delete_objects, display_object_properties, get_new_spec_table, list_objects};
+use crate::ui::helper_operations::{display_menu_headers, get_script_input_data};
 use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::asym::AsymmetricOperations;
 use crate::hsm_operations::types::{MgmCommandType, NewObjectSpec, SelectionItem};
 use crate::hsm_operations::common::get_delegated_capabilities;
-use crate::hsm_operations::auth::{AuthenticationType, AuthenticationOperations, UserType};
+use crate::hsm_operations::auth::{AuthenticationOperations, AuthenticationType, UserType};
 use crate::ui::helper_io::get_pem_from_file;
+use crate::script::script_recorder::SessionRecorder;
+use crate::script::script_common::{RecordableObjectSpec, RecordedOperation};
 
 static AUTH_HEADER: &str = "Authentication keys";
 
@@ -38,7 +41,7 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
         AuthenticationMenu { ui: interface  }
     }
 
-    pub fn exec_command(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    pub fn exec_command(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         loop {
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, AUTH_HEADER],
                                  "Authentication key operations allow you to setup users by managing authentication keys stored on the YubiHSM")?;
@@ -50,11 +53,11 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
             let res = match cmd.command {
                 MgmCommandType::List => list_objects(&self.ui, &AuthenticationOperations, session),
                 MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &AuthenticationOperations, session),
-                MgmCommandType::Delete => delete_objects(&self.ui, &AuthenticationOperations, session, &AuthenticationOperations.get_all_objects(session)?),
-                MgmCommandType::SetupUser => self.create_authkey(session, authkey, UserType::KeyUser),
-                MgmCommandType::SetupAdmin => self.create_authkey(session, authkey, UserType::KeyAdmin),
-                MgmCommandType::SetupAuditor => self.create_authkey(session, authkey, UserType::Auditor),
-                MgmCommandType::SetupCustomUser => self.create_authkey(session, authkey, UserType::CustomUser),
+                MgmCommandType::Delete => delete_objects(&self.ui, recorder, &AuthenticationOperations, session, &AuthenticationOperations.get_all_objects(session)?),
+                MgmCommandType::SetupUser => self.create_authkey(session, recorder, authkey, UserType::KeyUser),
+                MgmCommandType::SetupAdmin => self.create_authkey(session, recorder, authkey, UserType::KeyAdmin),
+                MgmCommandType::SetupAuditor => self.create_authkey(session, recorder, authkey, UserType::Auditor),
+                MgmCommandType::SetupCustomUser => self.create_authkey(session, recorder, authkey, UserType::CustomUser),
                 MgmCommandType::Exit => std::process::exit(0),
                 _ => unreachable!()
             };
@@ -67,6 +70,7 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
 
     fn create_authkey(&self,
                       session: &Session,
+                      recorder: &Option<SessionRecorder>,
                       current_authkey: &ObjectDescriptor,
                       user_type: UserType
     ) -> Result<(), MgmError> {
@@ -80,6 +84,7 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
             None,
             Some("Select authentication type"))?;
 
+        let mut pubkey_filename:Option<String> = None;
         match auth_type {
             AuthenticationType::PasswordDerived => {
                 new_key.algorithm = ObjectAlgorithm::Aes128YubicoAuthentication;
@@ -90,12 +95,13 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
             AuthenticationType::Ecp256 => {
                 new_key.algorithm = ObjectAlgorithm::Ecp256YubicoAuthentication;
 
-                let pubkey = self.ui.get_public_ecp256_filepath("Enter path to ECP256 public key PEM file: ")?;
-                let pubkey = get_pem_from_file(&pubkey)?;
+                let f = self.ui.get_public_ecp256_filepath("Enter path to ECP256 public key PEM file: ")?;
+                let pubkey = get_pem_from_file(&f)?;
                 if pubkey.len() > 1 {
                     self.ui.display_warning("Warning!! More than one PEM object found in file. Only the first object is read");
                 }
                 let pubkey = pubkey[0].clone();
+                pubkey_filename = Some(f);
 
                 let (_type, _algo, _value) = AsymmetricOperations::parse_asym_pem(pubkey)?;
                 if _type != ObjectType::PublicKey && _algo != ObjectAlgorithm::EcP256 {
@@ -114,6 +120,12 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
 
         new_key.id = AuthenticationOperations.import(session, &new_key)?;
         self.ui.display_success_message(format!("Created new authentication key with ID 0x{:04x}", new_key.id).as_str());
+
+        if let Some(rec) = recorder {
+            let credential = get_script_input_data(rec, &new_key, pubkey_filename)?;
+            rec.record(RecordedOperation::CreateAuthKey { spec: RecordableObjectSpec::from(&new_key), credential })?;
+        }
+
         Ok(())
     }
 

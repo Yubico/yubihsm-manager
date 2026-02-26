@@ -26,6 +26,7 @@ use crate::hsm_operations::error::MgmError;
 use crate::hsm_operations::types::MgmCommandType;
 use crate::hsm_operations::asym::{AsymmetricOperations, JavaOps};
 use crate::ui::helper_io::get_pem_from_file;
+use crate::script::script_recorder::SessionRecorder;
 
 
 static JAVA_HEADER: &str = "SunPKCS11 keys";
@@ -40,7 +41,7 @@ impl<T: YubihsmUi> JavaMenu<T> {
         JavaMenu { ui: interface  }
     }
 
-    pub fn exec_command(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    pub fn exec_command(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         loop {
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, JAVA_HEADER],
                                  "SunPKCS11 compatible keys entails that an asymmetric key and its equivalent X509Certificate are store in the device with the same ObjectID")?;
@@ -51,9 +52,9 @@ impl<T: YubihsmUi> JavaMenu<T> {
             let res = match cmd.command {
                 MgmCommandType::List => list_objects(&self.ui, &JavaOps, session),
                 MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &JavaOps, session),
-                MgmCommandType::Generate => generate_object(&self.ui, &JavaOps, session, authkey, ObjectType::AsymmetricKey),
-                MgmCommandType::Import => self.import(session, authkey),
-                MgmCommandType::Delete => delete_objects(&self.ui, &JavaOps, session, &JavaOps.get_all_objects(session)?),
+                MgmCommandType::Generate => generate_object(&self.ui, recorder, &JavaOps, session, authkey, ObjectType::AsymmetricKey),
+                MgmCommandType::Import => self.import(session, recorder, authkey),
+                MgmCommandType::Delete => delete_objects(&self.ui, recorder, &JavaOps, session, &JavaOps.get_all_objects(session)?),
                 MgmCommandType::Exit => std::process::exit(0),
                 _ => unreachable!()
             };
@@ -64,7 +65,7 @@ impl<T: YubihsmUi> JavaMenu<T> {
         }
     }
 
-    fn import(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    fn import(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let filepath = self.ui.get_sunpkcs11_import_filepath(
             "Enter absolute path to PEM file containing private key and X509Certificate (Only the first object of its type will be imported):",
             None)?;
@@ -78,7 +79,7 @@ impl<T: YubihsmUi> JavaMenu<T> {
         let (_, cert) = Self::get_first_object_from_pem(pems.clone(), ObjectType::Opaque)?;
         self.ui.display_info_message("X509Certificate loaded from PEM file");
 
-        import_object(&self.ui, &JavaOps, session, authkey, ObjectType::AsymmetricKey, algo, [key, cert].to_vec())
+        import_object(&self.ui, recorder, &JavaOps, session, authkey, ObjectType::AsymmetricKey, algo, [key, cert].to_vec(), Some(filepath))
     }
 
     fn get_first_object_from_pem(pems: Vec<Pem>, object_type: ObjectType) -> Result<(ObjectAlgorithm, Vec<u8>), MgmError> {

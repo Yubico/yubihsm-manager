@@ -78,6 +78,17 @@ pub fn aes_key_validator(input: &str) -> Result<(), MgmError> {
     }
 }
 
+pub fn aes_key_of_length_validator(input: &str, keylen: usize) -> Result<(), MgmError> {
+    let key_bytes = match hex::decode(input) {
+        Ok(bytes) => bytes,
+        Err(_) => return Err(MgmError::InvalidInput("AES key not in HEX format".to_string())),
+    };
+    if key_bytes.len() != keylen {
+        return Err(MgmError::InvalidInput(format!("Key must be {} bytes long", keylen)));
+    }
+    Ok(())
+}
+
 pub fn aes_operation_input_validator(input: &str) -> Result<(), MgmError> {
     let data_bytes = match hex::decode(input) {
         Ok(bytes) => bytes,
@@ -115,6 +126,15 @@ pub fn pem_certificate_file_validator(input: &str, required: bool) -> Result<(),
     let (_, _algo, _) = AsymmetricOperations::parse_asym_pem(pem)?;
     if _algo != ObjectAlgorithm::OpaqueX509Certificate {
         return Err(MgmError::InvalidInput("Found PEM object is not an X509Certificate".to_string()));
+    }
+    Ok(())
+}
+
+pub fn pem_asymmetric_object_file_validator(input: &str, object_type: ObjectType, object_algorithm: ObjectAlgorithm) -> Result<(), MgmError> {
+    let pem = get_validated_pem_content(input)?[0].to_owned();
+    let (_type, _algo, _) = AsymmetricOperations::parse_asym_pem(pem)?;
+    if _type != object_type || _algo != object_algorithm {
+        return Err(MgmError::InvalidInput("Found PEM object with unexpected type or algorithm".to_string()));
     }
     Ok(())
 }

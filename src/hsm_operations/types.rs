@@ -16,11 +16,12 @@
 
 use std::fmt;
 use std::fmt::Display;
+use serde::{Serialize, Deserialize};
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
 use crate::hsm_operations::algorithms;
 use crate::hsm_operations::common::contains_all;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NewObjectSpec {
     pub id: u16,
     pub object_type: ObjectType,
