@@ -1,4 +1,4 @@
-name: "Building binaries for Linux, MacOS and Windows"
+name: "Release binaries for Linux, MacOS and Windows"
 
 on: [push]
 
