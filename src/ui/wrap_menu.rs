@@ -317,7 +317,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                     wrap_op.wrap_type = WrapType::Key;
 
                     let algo = self.ui.select_algorithm(
-                        &WrapOperations::get_unwrapped_key_algorithms(),
+                        &WrapOperations::get_rsa_unwrapped_key_algorithms(),
                         None,
                         Some("Select wrapped key algorithm"))?;
                     let caps = if SymmetricOperations::is_aes_algorithm(&algo) {

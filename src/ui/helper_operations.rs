@@ -115,7 +115,7 @@ pub fn delete_objects(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, y
                     rec.record(RecordedOperation::DeleteObject {
                         object_id: object.id,
                         object_type: object.object_type,
-                        context: yh_operation.context_name().to_string(),
+                        context: yh_operation.context().to_string(),
                     })?;
                 }
             },
@@ -166,7 +166,7 @@ pub fn generate_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, 
     if let Some(rec) = recorder {
         rec.record(RecordedOperation::GenerateObject {
             spec: RecordableObjectSpec::from(&new_key),
-            context: yh_operation.context_name().to_string()
+            context: yh_operation.context().to_string()
         })?;
     }
 
@@ -206,7 +206,7 @@ pub fn import_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh
     ui.display_success_message(
         format!("Imported {} object with ID 0x{:04x} into the YubiHSM", new_key.object_type, new_key.id).as_str());
 
-    record_import_object_operation(recorder, &new_key, yh_operation.context_name().to_string(), filename)?;
+    record_import_object_operation(recorder, &new_key, yh_operation.context().to_string(), filename)?;
 
     Ok(())
 }

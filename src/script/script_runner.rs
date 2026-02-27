@@ -20,7 +20,6 @@ use crate::script::backend_json::JsonBackend;
 use crate::traits::script_traits::ScriptBackend;
 use yubihsmrs::Session;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectType};
-use crate::hsm_operations::{asym, sym, wrap};
 use crate::hsm_operations::asym::{AsymmetricOperations, JavaOps};
 use crate::hsm_operations::auth::AuthenticationOperations;
 use crate::common::error::MgmError;
@@ -112,7 +111,7 @@ impl ScriptRunner {
                 let new_spec: NewObjectSpec = spec.into();
                 let progress = ui.start_progress(Some(step));
                 match context.as_str() {
-                    asym::ASYM_CONTEXT => {
+                    AsymmetricOperations::ASYM_CONTEXT => {
                         if !is_asym_privkey_spec(spec) && !is_cert_spec(spec) {
                             return Err(MgmError::Error(format!(
                                 "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of an asymmetric object.",
@@ -120,7 +119,7 @@ impl ScriptRunner {
                         }
                         AsymmetricOperations.generate(session, &new_spec)?;
                     },
-                    asym::SUNPKCS11_CONTEXT => {
+                    JavaOps::SUNPKCS11_CONTEXT => {
                         if !is_asym_privkey_spec(spec) {
                             return Err(MgmError::Error(format!(
                                 "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of an asymmetric object.",
@@ -128,7 +127,7 @@ impl ScriptRunner {
                         }
                         JavaOps.generate(session, &new_spec)?;
                     },
-                    sym::SYM_CONTEXT  => {
+                    SymmetricOperations::SYM_CONTEXT  => {
                             if !is_sym_spec(spec) {
                                 return Err(MgmError::Error(format!(
                                     "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of a symmetric key.",
@@ -136,7 +135,7 @@ impl ScriptRunner {
                             }
                         SymmetricOperations.generate(session, &new_spec)?;
                     },
-                    wrap::WRAP_CONTEXT => {
+                    WrapOperations::WRAP_CONTEXT => {
                         if !is_wrap_spec(spec) {
                             return Err(MgmError::Error(format!(
                                 "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of a wrap key.",
@@ -154,7 +153,7 @@ impl ScriptRunner {
                 ui.display_info_message(&format!("{} Import {:?} 0x{:04x} ({:?})", step, spec.object_type, spec.id, spec.algorithm));
                 let mut new_spec: NewObjectSpec = spec.into();
                 match context.as_str() {
-                    asym::ASYM_CONTEXT => {
+                    AsymmetricOperations::ASYM_CONTEXT => {
                         if !is_asym_privkey_spec(spec) && !is_cert_spec(spec) {
                             return Err(MgmError::Error(format!(
                                 "Cannot execute import of {:?} 0x{:04x}: Object type and/or algorithm are not of an asymmetric object.",
@@ -183,7 +182,7 @@ impl ScriptRunner {
                         }
                         AsymmetricOperations.import(session, &new_spec)?;
                     },
-                    asym::SUNPKCS11_CONTEXT => {
+                    JavaOps::SUNPKCS11_CONTEXT => {
                         if !is_asym_privkey_spec(spec) {
                             return Err(MgmError::Error(format!(
                                 "Cannot execute generate of {:?} 0x{:04x}: Object type and/or algorithm are not of an SunPKCS11 special case object.",
@@ -214,7 +213,7 @@ impl ScriptRunner {
                         }
                         JavaOps.import(session, &new_spec)?;
                     },
-                    sym::SYM_CONTEXT => {
+                    SymmetricOperations::SYM_CONTEXT => {
                         if !is_sym_spec(spec) {
                             return Err(MgmError::Error(format!(
                                 "Cannot execute import of {:?} 0x{:04x}: Object type and/or algorithm are not of a symmetric object.",
@@ -291,7 +290,7 @@ impl ScriptRunner {
 
             RecordedOperation::DeleteObject { object_id, object_type, context} => {
                 ui.display_info_message(&format!("{} Delete {:?} 0x{:04x}", step, object_type, object_id));
-                if context == asym::SUNPKCS11_CONTEXT {
+                if context == JavaOps::SUNPKCS11_CONTEXT {
                     JavaOps.delete(session, *object_id, *object_type)?;
                 } else {
                     session.delete_object(*object_id, *object_type)?;

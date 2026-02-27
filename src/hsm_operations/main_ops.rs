@@ -23,7 +23,7 @@ use crate::common::algorithms::MgmAlgorithm;
 use crate::common::types::NewObjectSpec;
 use crate::common::error::MgmError;
 use crate::common::types::{MgmCommand, MgmCommandType};
-use crate::common::util::get_object_descriptors;
+use crate::common::util::{get_object_descriptors, get_authorized_commands};
 
 #[derive(Debug, Clone, PartialEq,  Eq)]
 pub enum FilterType {
@@ -82,87 +82,18 @@ impl From<MgmObjectType> for ObjectType {
     }
 }
 
-pub const MAIN_CONTEXT: &str = "main";
-
 pub struct MainOperations;
 
 impl YubihsmOperations for MainOperations {
 
-    fn context_name(&self) -> &'static str {
-        MAIN_CONTEXT
+    fn context(&self) -> &'static str {
+        MainOperations::MAIN_CONTEXT
     }
 
-    fn get_commands(&self) -> Vec<MgmCommand> {
-        [
-            MgmCommand {
-                command: MgmCommandType::List,
-                label: "List",
-                description: "List all objects stored on the YubiHSM",
-                required_capabilities: &[],
-                require_all_capabilities: false
-            },
-            MgmCommand {
-                command: MgmCommandType::Search,
-                label: "Search objects",
-                description: "Search for objects stored on the YubiHSM by ID, type or label",
-                required_capabilities: &[],
-                require_all_capabilities: false
-            },
-            MgmCommand {
-                command: MgmCommandType::Delete,
-                label: "Delete",
-                description: "Delete an object from the YubiHSM",
-                required_capabilities: &[
-                    ObjectCapability::DeleteAsymmetricKey,
-                    ObjectCapability::DeleteOpaque,
-                    ObjectCapability::DeleteOpaque,
-                    ObjectCapability::DeleteSymmetricKey,
-                    ObjectCapability::DeleteWrapKey,
-                    ObjectCapability::DeleteAuthenticationKey],
-                require_all_capabilities: false,
-            },
-            MgmCommand {
-                command: MgmCommandType::Generate,
-                label: "Generate",
-                description: "Generate a new key inside the YubiHSM",
-                required_capabilities: &[
-                    ObjectCapability::GenerateAsymmetricKey,
-                    ObjectCapability::GenerateSymmetricKey,
-                    ObjectCapability::GenerateWrapKey],
-                require_all_capabilities: false,
-            },
-            MgmCommand {
-                command: MgmCommandType::Import,
-                label: "Import",
-                description: "Import an object into the YubiHSM",
-                required_capabilities: &[
-                    ObjectCapability::PutAsymmetricKey,
-                    ObjectCapability::PutOpaque,
-                    ObjectCapability::PutSymmetricKey,
-                    ObjectCapability::PutWrapKey],
-                require_all_capabilities: false,
-            },
-            MgmCommand {
-                command: MgmCommandType::GotoKey,
-                label: "Goto key operation",
-                description: "",
-                required_capabilities: &[],
-                require_all_capabilities: false,
-            },
-            MgmCommand {
-                command: MgmCommandType::GotoDevice,
-                label: "Goto device operations",
-                description: "Get pseudo random number, backup, restore or reset device",
-                required_capabilities: &[
-                    ObjectCapability::GetPseudoRandom,
-                    ObjectCapability::ExportWrapped,
-                    ObjectCapability::ImportWrapped
-                ],
-                require_all_capabilities: false,
-            },
-            MgmCommand::EXIT_COMMAND,
-        ].to_vec()
+    fn get_authorized_commands(&self, authkey: &ObjectDescriptor) -> Vec<MgmCommand> {
+        get_authorized_commands(authkey, &Self::COMMANDS)
     }
+
 
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
         let objects = session.list_objects()?;
@@ -187,6 +118,78 @@ impl YubihsmOperations for MainOperations {
 }
 
 impl MainOperations {
+
+    pub const MAIN_CONTEXT: &'static str = "main";
+
+    const COMMANDS: [MgmCommand; 8] = [
+        MgmCommand {
+            command: MgmCommandType::List,
+            label: "List",
+            description: "List all objects stored on the YubiHSM",
+            required_capabilities: &[],
+            require_all_capabilities: false
+        },
+        MgmCommand {
+            command: MgmCommandType::Search,
+            label: "Search objects",
+            description: "Search for objects stored on the YubiHSM by ID, type or label",
+            required_capabilities: &[],
+            require_all_capabilities: false
+        },
+        MgmCommand {
+            command: MgmCommandType::Delete,
+            label: "Delete",
+            description: "Delete an object from the YubiHSM",
+            required_capabilities: &[
+                ObjectCapability::DeleteAsymmetricKey,
+                ObjectCapability::DeleteOpaque,
+                ObjectCapability::DeleteOpaque,
+                ObjectCapability::DeleteSymmetricKey,
+                ObjectCapability::DeleteWrapKey,
+                ObjectCapability::DeleteAuthenticationKey],
+            require_all_capabilities: false,
+        },
+        MgmCommand {
+            command: MgmCommandType::Generate,
+            label: "Generate",
+            description: "Generate a new key inside the YubiHSM",
+            required_capabilities: &[
+                ObjectCapability::GenerateAsymmetricKey,
+                ObjectCapability::GenerateSymmetricKey,
+                ObjectCapability::GenerateWrapKey],
+            require_all_capabilities: false,
+        },
+        MgmCommand {
+            command: MgmCommandType::Import,
+            label: "Import",
+            description: "Import an object into the YubiHSM",
+            required_capabilities: &[
+                ObjectCapability::PutAsymmetricKey,
+                ObjectCapability::PutOpaque,
+                ObjectCapability::PutSymmetricKey,
+                ObjectCapability::PutWrapKey],
+            require_all_capabilities: false,
+        },
+        MgmCommand {
+            command: MgmCommandType::GotoKey,
+            label: "Goto key operation",
+            description: "",
+            required_capabilities: &[],
+            require_all_capabilities: false,
+        },
+        MgmCommand {
+            command: MgmCommandType::GotoDevice,
+            label: "Goto device operations",
+            description: "Get pseudo random number, backup, restore or reset device",
+            required_capabilities: &[
+                ObjectCapability::GetPseudoRandom,
+                ObjectCapability::ExportWrapped,
+                ObjectCapability::ImportWrapped
+            ],
+            require_all_capabilities: false,
+        },
+        MgmCommand::EXIT_COMMAND,
+    ];
 
     pub fn get_filtered_objects(session: &Session, filter: FilterType) -> Result<Vec<ObjectDescriptor>, MgmError> {
         let objects =

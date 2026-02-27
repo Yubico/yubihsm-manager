@@ -31,7 +31,7 @@ use yubihsmrs::Session;
 use crate::traits::operation_traits::{YubihsmOperations};
 use crate::common::error::MgmError;
 use crate::common::algorithms::MgmAlgorithm;
-use crate::common::util::{get_op_keys, get_object_descriptors};
+use crate::common::util::{get_op_keys, get_object_descriptors, get_authorized_commands};
 use crate::common::types::{MgmCommand, NewObjectSpec, MgmCommandType};
 
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
@@ -52,102 +52,16 @@ impl Display for AttestationType {
     }
 }
 
-pub const ASYM_CONTEXT: &str = "asym";
-pub const SUNPKCS11_CONTEXT: &str = "sunpkcs11";
-
 pub struct AsymmetricOperations;
 
 impl YubihsmOperations for AsymmetricOperations {
 
-    fn context_name(&self) -> &'static str {
-        ASYM_CONTEXT
+    fn context(&self) -> &'static str {
+        AsymmetricOperations::ASYM_CONTEXT
     }
 
-    fn get_commands(&self) -> Vec<MgmCommand> {
-        [
-            MgmCommand {
-                command: MgmCommandType::List,
-                label: "List",
-                description: "List all asymmetric keys and X509 certificates stored on the YubiHSM",
-                required_capabilities: &[],
-                require_all_capabilities: false
-            },
-            MgmCommand {
-                command: MgmCommandType::GetKeyProperties,
-                label: "Get Object Properties",
-                description: "Get properties of an asymmetric key or X509 certificate stored on the YubiHSM",
-                required_capabilities: &[],
-                require_all_capabilities: false,
-            },
-            MgmCommand {
-                command: MgmCommandType::Generate,
-                label: "Generate",
-                description: "Generate a new asymmetric key inside the YubiHSM",
-                required_capabilities: &[ObjectCapability::GenerateAsymmetricKey],
-                require_all_capabilities: false,
-            },
-            MgmCommand {
-                command: MgmCommandType::Import,
-                label: "Import",
-                description: "Import an asymmetric key or X509 certificate into the YubiHSM",
-                required_capabilities: &[ObjectCapability::PutAsymmetricKey, ObjectCapability::PutOpaque],
-                require_all_capabilities: false,
-            },
-            MgmCommand {
-                command: MgmCommandType::Delete,
-                label: "Delete",
-                description: "Delete an asymmetric key or X509 certificate from the YubiHSM",
-                required_capabilities: &[ObjectCapability::DeleteAsymmetricKey,
-                    ObjectCapability::DeleteOpaque],
-                require_all_capabilities: false,
-            },
-            MgmCommand {
-                command: MgmCommandType::GetPublicKey,
-                label: "Get Public Key",
-                description: "Retrieve the public key portion of an asymmetric key stored on the YubiHSM",
-                required_capabilities: &[],
-                require_all_capabilities: false,
-            },
-            MgmCommand {
-                command: MgmCommandType::GetCertificate,
-                label: "Get X509 Certificate",
-                description: "Retrieve an X509 certificate stored on the YubiHSM",
-                required_capabilities: &[],
-                require_all_capabilities: false,
-            },
-            MgmCommand {
-                command: MgmCommandType::Sign,
-                label: "Sign",
-                description: "Sign data using an asymmetric private key stored on the YubiHSM",
-                required_capabilities: &[ObjectCapability::SignPkcs,
-                    ObjectCapability::SignPss,
-                    ObjectCapability::SignEcdsa,
-                    ObjectCapability::SignEddsa],
-                require_all_capabilities: false,
-            },
-            MgmCommand {
-                command: MgmCommandType::Decrypt,
-                label: "Decrypt",
-                description: "Decrypt data using an asymmetric private key stored on the YubiHSM",
-                required_capabilities: &[ObjectCapability::DecryptPkcs,
-                    ObjectCapability::DecryptOaep],
-                require_all_capabilities: false,
-            },
-            MgmCommand {
-                command: MgmCommandType::DeriveEcdh,
-                label: "Derive ECDH",
-                description: "Derive an ECDH shared secret using an EC private key stored on the YubiHSM",
-                required_capabilities: &[ObjectCapability::DeriveEcdh],
-                require_all_capabilities: false,
-            },
-            MgmCommand {
-                command: MgmCommandType::SignAttestationCert,
-                label: "Sign Attestation Certificate",
-                description: "Generate and sign an attestation certificate for a key generated on the YubiHSM",
-                required_capabilities: &[ObjectCapability::SignAttestationCertificate],
-                require_all_capabilities: false,
-            },
-            MgmCommand::EXIT_COMMAND].to_vec()
+    fn get_authorized_commands(&self, authkey: &ObjectDescriptor) -> Vec<MgmCommand> {
+        get_authorized_commands(authkey, &Self::COMMANDS)
     }
 
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
@@ -232,6 +146,94 @@ impl YubihsmOperations for AsymmetricOperations {
 }
 
 impl AsymmetricOperations {
+
+    pub const ASYM_CONTEXT: &'static str = "asym";
+
+    const COMMANDS: [MgmCommand; 12] =  [
+        MgmCommand {
+            command: MgmCommandType::List,
+            label: "List",
+            description: "List all asymmetric keys and X509 certificates stored on the YubiHSM",
+            required_capabilities: &[],
+            require_all_capabilities: false
+        },
+        MgmCommand {
+            command: MgmCommandType::GetKeyProperties,
+            label: "Get Object Properties",
+            description: "Get properties of an asymmetric key or X509 certificate stored on the YubiHSM",
+            required_capabilities: &[],
+            require_all_capabilities: false,
+        },
+        MgmCommand {
+            command: MgmCommandType::Generate,
+            label: "Generate",
+            description: "Generate a new asymmetric key inside the YubiHSM",
+            required_capabilities: &[ObjectCapability::GenerateAsymmetricKey],
+            require_all_capabilities: false,
+        },
+        MgmCommand {
+            command: MgmCommandType::Import,
+            label: "Import",
+            description: "Import an asymmetric key or X509 certificate into the YubiHSM",
+            required_capabilities: &[ObjectCapability::PutAsymmetricKey, ObjectCapability::PutOpaque],
+            require_all_capabilities: false,
+        },
+        MgmCommand {
+            command: MgmCommandType::Delete,
+            label: "Delete",
+            description: "Delete an asymmetric key or X509 certificate from the YubiHSM",
+            required_capabilities: &[ObjectCapability::DeleteAsymmetricKey,
+                ObjectCapability::DeleteOpaque],
+            require_all_capabilities: false,
+        },
+        MgmCommand {
+            command: MgmCommandType::GetPublicKey,
+            label: "Get Public Key",
+            description: "Retrieve the public key portion of an asymmetric key stored on the YubiHSM",
+            required_capabilities: &[],
+            require_all_capabilities: false,
+        },
+        MgmCommand {
+            command: MgmCommandType::GetCertificate,
+            label: "Get X509 Certificate",
+            description: "Retrieve an X509 certificate stored on the YubiHSM",
+            required_capabilities: &[],
+            require_all_capabilities: false,
+        },
+        MgmCommand {
+            command: MgmCommandType::Sign,
+            label: "Sign",
+            description: "Sign data using an asymmetric private key stored on the YubiHSM",
+            required_capabilities: &[ObjectCapability::SignPkcs,
+                ObjectCapability::SignPss,
+                ObjectCapability::SignEcdsa,
+                ObjectCapability::SignEddsa],
+            require_all_capabilities: false,
+        },
+        MgmCommand {
+            command: MgmCommandType::Decrypt,
+            label: "Decrypt",
+            description: "Decrypt data using an asymmetric private key stored on the YubiHSM",
+            required_capabilities: &[ObjectCapability::DecryptPkcs,
+                ObjectCapability::DecryptOaep],
+            require_all_capabilities: false,
+        },
+        MgmCommand {
+            command: MgmCommandType::DeriveEcdh,
+            label: "Derive ECDH",
+            description: "Derive an ECDH shared secret using an EC private key stored on the YubiHSM",
+            required_capabilities: &[ObjectCapability::DeriveEcdh],
+            require_all_capabilities: false,
+        },
+        MgmCommand {
+            command: MgmCommandType::SignAttestationCert,
+            label: "Sign Attestation Certificate",
+            description: "Generate and sign an attestation certificate for a key generated on the YubiHSM",
+            required_capabilities: &[ObjectCapability::SignAttestationCertificate],
+            require_all_capabilities: false,
+        },
+        MgmCommand::EXIT_COMMAND];
+
 
     const RSA_KEY_CAPABILITIES: [ObjectCapability; 6] = [
         ObjectCapability::SignPkcs,
@@ -674,12 +676,12 @@ pub struct JavaOps;
 
 impl YubihsmOperations for JavaOps {
 
-    fn context_name(&self) -> &'static str {
-        SUNPKCS11_CONTEXT
+    fn context(&self) -> &'static str {
+        JavaOps::SUNPKCS11_CONTEXT
     }
 
-    fn get_commands(&self) -> Vec<MgmCommand> {
-        Self::JAVA_COMMANDS.to_vec()
+    fn get_authorized_commands(&self, authkey: &ObjectDescriptor) -> Vec<MgmCommand> {
+        get_authorized_commands(authkey, &Self::COMMANDS)
     }
 
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
@@ -804,7 +806,9 @@ impl YubihsmOperations for JavaOps {
 
 impl JavaOps {
 
-    const JAVA_COMMANDS: [MgmCommand;6] = [
+    pub const SUNPKCS11_CONTEXT: &'static str = "sunpkcs11";
+
+    const COMMANDS: [MgmCommand;6] = [
         MgmCommand {
             command: MgmCommandType::List,
             label: "List",
@@ -848,5 +852,413 @@ impl JavaOps {
             return Err(MgmError::Error("Object ID already in use".to_string()));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::traits::operation_traits::YubihsmOperations;
+
+    // ── Helper: build ObjectDescriptor with specific caps + algo ──
+
+    fn make_desc(algo: ObjectAlgorithm, caps: Vec<ObjectCapability>) -> ObjectDescriptor {
+        let mut desc = ObjectDescriptor::new();
+        desc.algorithm = algo;
+        desc.capabilities = caps;
+        desc
+    }
+    
+    // ══════════════════════════════════════════════
+    //  is_rsa_key_algorithm
+    // ══════════════════════════════════════════════
+
+    #[test]
+    fn test_is_rsa() {
+        assert!(AsymmetricOperations::is_rsa_key_algorithm(&ObjectAlgorithm::Rsa2048));
+        assert!(AsymmetricOperations::is_rsa_key_algorithm(&ObjectAlgorithm::Rsa3072));
+        assert!(AsymmetricOperations::is_rsa_key_algorithm(&ObjectAlgorithm::Rsa4096));
+    }
+
+    #[test]
+    fn test_is_rsa_rejects() {
+        assert!(!AsymmetricOperations::is_rsa_key_algorithm(&ObjectAlgorithm::EcP256));
+        assert!(!AsymmetricOperations::is_rsa_key_algorithm(&ObjectAlgorithm::Ed25519));
+        assert!(!AsymmetricOperations::is_rsa_key_algorithm(&ObjectAlgorithm::Aes128));
+    }
+
+    // ══════════════════════════════════════════════
+    //  is_ec_key_algorithm
+    // ══════════════════════════════════════════════
+
+    #[test]
+    fn test_is_ec_p256() {
+        for algo in MgmAlgorithm::EC_KEY_ALGORITHMS {
+            assert!(AsymmetricOperations::is_ec_key_algorithm(&algo.algorithm()));
+        }
+    }
+
+    #[test]
+    fn test_is_ec_rejects() {
+        assert!(!AsymmetricOperations::is_ec_key_algorithm(&ObjectAlgorithm::Rsa2048));
+        assert!(!AsymmetricOperations::is_ec_key_algorithm(&ObjectAlgorithm::Ed25519));
+        assert!(!AsymmetricOperations::is_ec_key_algorithm(&ObjectAlgorithm::Aes128));
+    }
+
+    // ══════════════════════════════════════════════
+    //  is_oaep_algorithm
+    // ══════════════════════════════════════════════
+
+    #[test]
+    fn test_is_oaep_sha256() {
+        for algo in MgmAlgorithm::RSA_OAEP_ALGORITHMS {
+            assert!(AsymmetricOperations::is_oaep_algorithm(&algo.algorithm()));
+        }
+    }
+
+    // ══════════════════════════════════════════════
+    //  get_hashed_bytes
+    // ═════════════════════��════════════════════════
+
+    #[test]
+    fn test_hash_sha1_length() {
+        let input = b"test";
+        let hash = AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::RsaPkcs1Sha1, input).unwrap();
+        assert_eq!(hash.len(), 20); // SHA-1 = 20 bytes
+        let hash = AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::RsaPssSha1, input).unwrap();
+        assert_eq!(hash.len(), 20); // SHA-1 = 20 bytes
+        let hash = AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::EcdsaSha1, input).unwrap();
+        assert_eq!(hash.len(), 20); // SHA-1 = 20 bytes
+        let hash = AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::RsaOaepSha1, input).unwrap();
+        assert_eq!(hash.len(), 20); // SHA-1 = 20 bytes
+    }
+
+    #[test]
+    fn test_hash_sha256_length() {
+        let input = b"test";
+        let hash = AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::RsaPkcs1Sha256, input).unwrap();
+        assert_eq!(hash.len(), 32);
+        let hash = AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::RsaPssSha256, input).unwrap();
+        assert_eq!(hash.len(), 32);
+        let hash = AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::EcdsaSha256, input).unwrap();
+        assert_eq!(hash.len(), 32);
+        let hash = AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::RsaOaepSha256, input).unwrap();
+        assert_eq!(hash.len(), 32);
+    }
+
+    #[test]
+    fn test_hash_sha384_length() {
+        let input = b"test";
+        let hash = AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::RsaPkcs1Sha384, input).unwrap();
+        assert_eq!(hash.len(), 48);
+        let hash = AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::RsaPssSha384, input).unwrap();
+        assert_eq!(hash.len(), 48);
+        let hash = AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::EcdsaSha384, input).unwrap();
+        assert_eq!(hash.len(), 48);
+        let hash = AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::RsaOaepSha384, input).unwrap();
+        assert_eq!(hash.len(), 48);
+    }
+
+    #[test]
+    fn test_hash_sha512_length() {
+        let input = b"test";
+        let hash = AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::RsaPkcs1Sha512, input).unwrap();
+        assert_eq!(hash.len(), 64);
+        let hash = AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::RsaPssSha512, input).unwrap();
+        assert_eq!(hash.len(), 64);
+        let hash = AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::EcdsaSha512, input).unwrap();
+        assert_eq!(hash.len(), 64);
+        let hash = AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::RsaOaepSha512, input).unwrap();
+        assert_eq!(hash.len(), 64);
+    }
+
+    #[test]
+    fn test_hash_deterministic() {
+        let h1 = AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::RsaPkcs1Sha256, b"hello").unwrap();
+        let h2 = AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::RsaPkcs1Sha256, b"hello").unwrap();
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_hash_unsupported_algo() {
+        assert!(AsymmetricOperations::get_hashed_bytes(&ObjectAlgorithm::Aes128, b"test").is_err());
+    }
+
+    // ══════════════════════════════════════════════
+    //  get_mgf1_algorithm
+    // ══════════════════════════════════════════════
+
+    #[test]
+    fn test_mgf1_oaep_sha1() {
+        assert_eq!(
+            AsymmetricOperations::get_mgf1_algorithm(&ObjectAlgorithm::RsaOaepSha1).unwrap(),
+            ObjectAlgorithm::Mgf1Sha1
+        );
+        assert_eq!(
+            AsymmetricOperations::get_mgf1_algorithm(&ObjectAlgorithm::RsaPssSha1).unwrap(),
+            ObjectAlgorithm::Mgf1Sha1
+        );
+    }
+
+    #[test]
+    fn test_mgf1_oaep_sha256() {
+        assert_eq!(
+            AsymmetricOperations::get_mgf1_algorithm(&ObjectAlgorithm::RsaOaepSha256).unwrap(),
+            ObjectAlgorithm::Mgf1Sha256
+        );
+        assert_eq!(
+            AsymmetricOperations::get_mgf1_algorithm(&ObjectAlgorithm::RsaPssSha256).unwrap(),
+            ObjectAlgorithm::Mgf1Sha256
+        );
+
+    }
+
+    #[test]
+    fn test_mgf1_pss_sha384() {
+        assert_eq!(
+            AsymmetricOperations::get_mgf1_algorithm(&ObjectAlgorithm::RsaOaepSha384).unwrap(),
+            ObjectAlgorithm::Mgf1Sha384
+        );
+        assert_eq!(
+            AsymmetricOperations::get_mgf1_algorithm(&ObjectAlgorithm::RsaPssSha384).unwrap(),
+            ObjectAlgorithm::Mgf1Sha384
+        );
+
+    }
+
+    #[test]
+    fn test_mgf1_pss_sha512() {
+        assert_eq!(
+            AsymmetricOperations::get_mgf1_algorithm(&ObjectAlgorithm::RsaOaepSha512).unwrap(),
+            ObjectAlgorithm::Mgf1Sha512
+        );
+        assert_eq!(
+            AsymmetricOperations::get_mgf1_algorithm(&ObjectAlgorithm::RsaPssSha512).unwrap(),
+            ObjectAlgorithm::Mgf1Sha512
+        );
+    }
+
+    #[test]
+    fn test_mgf1_unsupported() {
+        assert!(AsymmetricOperations::get_mgf1_algorithm(&ObjectAlgorithm::Aes128).is_err());
+    }
+
+    // ══════════════════════════════════════════════
+    //  get_object_capabilities
+    // ══════════════════════════════════════════════
+
+    #[test]
+    fn test_object_caps_rsa() {
+        let caps = AsymmetricOperations.get_object_capabilities(None, Some(ObjectAlgorithm::Rsa2048)).unwrap();
+        assert_eq!(caps.len(), AsymmetricOperations::RSA_KEY_CAPABILITIES.len());
+        assert!(caps.iter().all(|item| AsymmetricOperations::RSA_KEY_CAPABILITIES.contains(item)));
+    }
+
+    #[test]
+    fn test_object_caps_ec() {
+        let caps = AsymmetricOperations.get_object_capabilities(None, Some(ObjectAlgorithm::EcP256)).unwrap();
+        assert_eq!(caps.len(), AsymmetricOperations::EC_KEY_CAPABILITIES.len());
+        assert!(caps.iter().all(|item| AsymmetricOperations::EC_KEY_CAPABILITIES.contains(item)));
+    }
+
+    #[test]
+    fn test_object_caps_ed() {
+        let caps = AsymmetricOperations.get_object_capabilities(None, Some(ObjectAlgorithm::Ed25519)).unwrap();
+        assert_eq!(caps.len(), AsymmetricOperations::ED_KEY_CAPABILITIES.len());
+        assert!(caps.iter().all(|item| AsymmetricOperations::ED_KEY_CAPABILITIES.contains(item)));
+    }
+
+    #[test]
+    fn test_object_caps_opaque() {
+        let caps = AsymmetricOperations.get_object_capabilities(None, Some(ObjectAlgorithm::OpaqueX509Certificate)).unwrap();
+        assert_eq!(caps.len(), AsymmetricOperations::OPAQUE_CAPABILITIES.len());
+        assert!(caps.iter().all(|item| AsymmetricOperations::OPAQUE_CAPABILITIES.contains(item)));
+    }
+
+    #[test]
+    fn test_object_caps_none_algo_err() {
+        assert!(AsymmetricOperations.get_object_capabilities(None, None).is_err());
+    }
+
+    #[test]
+    fn test_object_caps_unsupported_algo_err() {
+        assert!(AsymmetricOperations.get_object_capabilities(None, Some(ObjectAlgorithm::Aes128)).is_err());
+    }
+
+    #[test]
+    fn test_object_caps_type_irrelevant() {
+        let caps = AsymmetricOperations.get_object_capabilities(Some(ObjectType::SymmetricKey), Some(ObjectAlgorithm::Rsa2048)).unwrap();
+        assert_eq!(caps.len(), AsymmetricOperations::RSA_KEY_CAPABILITIES.len());
+        assert!(caps.iter().all(|item| AsymmetricOperations::RSA_KEY_CAPABILITIES.contains(item)));
+    }
+
+    // ══════════════════════════════════════════════
+    //  get_signing_algorithms
+    // ══════════════════════════════════════════════
+
+    #[test]
+    fn test_signing_algos_rsa_pkcs_only() {
+        let authkey = make_desc(ObjectAlgorithm::ANY, vec![ObjectCapability::SignPkcs]);
+        let signkey = make_desc(ObjectAlgorithm::Rsa2048, vec![ObjectCapability::SignPkcs]);
+        let algos = AsymmetricOperations::get_signing_algorithms(&authkey, &signkey);
+        assert_eq!(algos.len(), MgmAlgorithm::RSA_PKCS_ALGORITHMS.len());
+        assert!(algos.iter().all(|item| MgmAlgorithm::RSA_PKCS_ALGORITHMS.contains(item)));
+    }
+
+    #[test]
+    fn test_signing_algos_rsa_pss_only() {
+        let authkey = make_desc(ObjectAlgorithm::ANY, vec![ObjectCapability::SignPkcs, ObjectCapability::SignPss]);
+        let signkey = make_desc(ObjectAlgorithm::Rsa2048, vec![ObjectCapability::SignPss]);
+        let algos = AsymmetricOperations::get_signing_algorithms(&authkey, &signkey);
+        assert_eq!(algos.len(), MgmAlgorithm::RSA_PSS_ALGORITHMS.len()); // RSA_PSS_ALGORITHMS = 4
+        assert!(algos.iter().all(|item| MgmAlgorithm::RSA_PSS_ALGORITHMS.contains(item)));
+    }
+
+    #[test]
+    fn test_signing_algos_rsa_both() {
+        let authkey = make_desc(ObjectAlgorithm::ANY, vec![ObjectCapability::SignPkcs, ObjectCapability::SignPss]);
+        let signkey = make_desc(ObjectAlgorithm::Rsa2048, vec![ObjectCapability::SignPkcs, ObjectCapability::SignPss]);
+        let algos = AsymmetricOperations::get_signing_algorithms(&authkey, &signkey);
+        assert_eq!(algos.len(), MgmAlgorithm::RSA_PKCS_ALGORITHMS.len() + MgmAlgorithm::RSA_PSS_ALGORITHMS.len()); // 4 PKCS + 4 PSS
+        assert!(algos.iter().all(|item| MgmAlgorithm::RSA_PKCS_ALGORITHMS.contains(item) || MgmAlgorithm::RSA_PSS_ALGORITHMS.contains(item)));
+    }
+
+    #[test]
+    fn test_signing_algos_ec() {
+        let authkey = make_desc(ObjectAlgorithm::ANY, vec![ObjectCapability::SignEcdsa]);
+        let signkey = make_desc(ObjectAlgorithm::EcP256, vec![ObjectCapability::SignEcdsa]);
+        let algos = AsymmetricOperations::get_signing_algorithms(&authkey, &signkey);
+        assert_eq!(algos.len(), MgmAlgorithm::ECDSA_ALGORITHMS.len()); // ECDSA_ALGORITHMS = 4
+        assert!(algos.iter().all(|item| MgmAlgorithm::ECDSA_ALGORITHMS.contains(item)));
+    }
+
+    #[test]
+    fn test_signing_algos_ed25519() {
+        let authkey = make_desc(ObjectAlgorithm::ANY, vec![ObjectCapability::SignEddsa]);
+        let signkey = make_desc(ObjectAlgorithm::Ed25519, vec![ObjectCapability::SignEddsa]);
+        let algos = AsymmetricOperations::get_signing_algorithms(&authkey, &signkey);
+        assert_eq!(algos.len(), MgmAlgorithm::EDDSA_ALGORITHMS.len()); // EDDSA_ALGORITHMS = 1
+        assert!(algos.iter().all(|item| MgmAlgorithm::EDDSA_ALGORITHMS.contains(item)));
+    }
+
+    #[test]
+    fn test_signing_algos_empty_when_authkey_lacks_cap() {
+        let authkey = make_desc(ObjectAlgorithm::ANY, vec![]); // no signing cap
+        let signkey = make_desc(ObjectAlgorithm::Rsa2048, vec![ObjectCapability::SignPkcs]);
+        let algos = AsymmetricOperations::get_signing_algorithms(&authkey, &signkey);
+        assert!(algos.is_empty());
+    }
+
+    #[test]
+    fn test_signing_algos_match_key_algorithm() {
+        let authkey = make_desc(ObjectAlgorithm::ANY, vec![ObjectCapability::SignPkcs, ObjectCapability::SignEcdsa]); // no signing cap
+        let signkey = make_desc(ObjectAlgorithm::Rsa2048, vec![ObjectCapability::SignPkcs, ObjectCapability::SignEcdsa]);
+        let algos = AsymmetricOperations::get_signing_algorithms(&authkey, &signkey);
+        // Even though the signing key was given the capability to sign ECDSA, it is an RSA key, so it will only be
+        // able to sign with RSA algorithms. The presence of the SignEcdsa cap on the key should not cause any ECDSA
+        // algos to be included in the result.
+        assert_eq!(algos.len(), MgmAlgorithm::RSA_PKCS_ALGORITHMS.len());
+        assert!(algos.iter().all(|item| MgmAlgorithm::RSA_PKCS_ALGORITHMS.contains(item)));
+    }
+
+    // ══════════════════════════════════════════════
+    //  get_decryption_algorithms
+    // ══════════════════════════════════════════════
+
+    #[test]
+    fn test_decryption_algos_pkcs() {
+        let authkey = make_desc(ObjectAlgorithm::ANY, vec![ObjectCapability::DecryptPkcs]);
+        let deckey = make_desc(ObjectAlgorithm::Rsa2048, vec![ObjectCapability::DecryptPkcs]);
+        let algos = AsymmetricOperations::get_decryption_algorithms(&authkey, &deckey);
+        assert_eq!(algos.len(), 1); // just RsaPkcs1Decrypt
+        assert_eq!(algos[0], ObjectAlgorithm::RsaPkcs1Decrypt.into());
+    }
+
+    #[test]
+    fn test_decryption_algos_oaep() {
+        let authkey = make_desc(ObjectAlgorithm::ANY, vec![ObjectCapability::DecryptOaep]);
+        let deckey = make_desc(ObjectAlgorithm::Rsa2048, vec![ObjectCapability::DecryptOaep]);
+        let algos = AsymmetricOperations::get_decryption_algorithms(&authkey, &deckey);
+        assert_eq!(algos.len(), MgmAlgorithm::RSA_OAEP_ALGORITHMS.len()); // RSA_OAEP_ALGORITHMS = 4
+        assert!(algos.iter().all(|item| MgmAlgorithm::RSA_OAEP_ALGORITHMS.contains(item)));
+    }
+
+    #[test]
+    fn test_decryption_algos_empty_for_ec() {
+        let authkey = make_desc(ObjectAlgorithm::ANY, vec![ObjectCapability::DecryptPkcs]);
+        let deckey = make_desc(ObjectAlgorithm::EcP256, vec![ObjectCapability::DecryptPkcs]);
+        let algos = AsymmetricOperations::get_decryption_algorithms(&authkey, &deckey);
+        assert!(algos.is_empty()); // EC keys can't decrypt
+    }
+
+    #[test]
+    fn test_decryption_algos_limited_by_authkey() {
+        let authkey = make_desc(ObjectAlgorithm::ANY, vec![ObjectCapability::DecryptOaep]);
+        let deckey = make_desc(ObjectAlgorithm::Rsa2048, vec![ObjectCapability::DecryptPkcs , ObjectCapability::DecryptOaep]);
+        let algos = AsymmetricOperations::get_decryption_algorithms(&authkey, &deckey);
+        assert_eq!(algos.len(), MgmAlgorithm::RSA_OAEP_ALGORITHMS.len());
+        // PKCS decryption should not be included because the authkey doesn't have the DecryptPkcs capability
+        assert!(!algos.contains(&ObjectAlgorithm::RsaPkcs1Decrypt.into()));
+    }
+
+    // ══════════════════════════════════════════════
+    //  parse_asym_pem  (requires test fixture PEM files)
+    // ══════════════════════════════════════════════
+
+    fn fixture_path(name: &str) -> String {
+        let path = format!("src/tests/fixtures/{}", name);
+        assert!(
+            std::path::Path::new(&path).exists(),
+            "Test fixture missing: {}.",
+            path
+        );
+        path
+    }
+
+    fn load_pem(name: &str) -> Pem {
+        let content = std::fs::read_to_string(fixture_path(name)).unwrap();
+        pem::parse_many(content).unwrap().remove(0)
+    }
+
+    #[test]
+    fn test_parse_rsa_private_key() {
+        let pem = load_pem("rsa2048_private.pem");
+        let (obj_type, algo, bytes) = AsymmetricOperations::parse_asym_pem(pem).unwrap();
+        assert_eq!(obj_type, ObjectType::AsymmetricKey);
+        assert_eq!(algo, ObjectAlgorithm::Rsa2048);
+        assert_eq!(bytes.len(), 256); // RSA 2048 private key should be 256 bytes
+    }
+
+    #[test]
+    fn test_parse_ecp256_private_key() {
+        let pem = load_pem("ecp256_private.pem");
+        let (obj_type, algo, bytes) = AsymmetricOperations::parse_asym_pem(pem).unwrap();
+        assert_eq!(obj_type, ObjectType::AsymmetricKey);
+        assert_eq!(algo, ObjectAlgorithm::EcP256);
+        assert_eq!(bytes.len(), 32); // EC P256 private key should be 32 bytes
+    }
+
+    #[test]
+    fn test_parse_ecp256_public_key() {
+        let pem = load_pem("ecp256_public.pem");
+        let (obj_type, algo, bytes) = AsymmetricOperations::parse_asym_pem(pem).unwrap();
+        assert_eq!(obj_type, ObjectType::PublicKey);
+        assert_eq!(algo, ObjectAlgorithm::EcP256);
+        assert_eq!(bytes.len(), 65); // EC P256 public key should be 65 bytes (0x04 + 32 byte X + 32 byte Y)
+    }
+
+    #[test]
+    fn test_parse_x509_cert() {
+        let pem = load_pem("x509_cert.pem");
+        let (obj_type, algo, bytes) = AsymmetricOperations::parse_asym_pem(pem).unwrap();
+        assert_eq!(obj_type, ObjectType::Opaque);
+        assert_eq!(algo, ObjectAlgorithm::OpaqueX509Certificate);
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn test_parse_empty_pem() {
+        let pem = Pem::new("EMPTY", vec![]);
+        assert!(AsymmetricOperations::parse_asym_pem(pem).is_err());
     }
 }
