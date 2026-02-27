@@ -452,3 +452,463 @@ fn is_wrap_spec(spec: &RecordableObjectSpec) -> bool {
 fn is_publicwrap_spec(spec: &RecordableObjectSpec) -> bool {
     spec.object_type == ObjectType::PublicWrapKey && AsymmetricOperations::is_rsa_key_algorithm(&spec.algorithm)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    use crate::script::backend_json::JsonBackend;
+    use crate::script::script_types::{RecordableObjectSpec, RecordedOperation, SessionInfo, SessionScript};
+    use crate::script::script_recorder::SessionRecorder;
+    use crate::script::script_types::RedactMode;
+    use crate::hsm_operations::wrap::{WrapKeyType, WrapOpSpec, WrapType};
+    use yubihsmrs::object::{
+        ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectHandle, ObjectType,
+    };
+
+    // ── Helper builders ──
+
+    fn make_asym_rsa_spec() -> RecordableObjectSpec {
+        RecordableObjectSpec {
+            id: 0x0001,
+            object_type: ObjectType::AsymmetricKey,
+            label: "rsa-key".to_string(),
+            algorithm: ObjectAlgorithm::Rsa2048,
+            domains: vec![ObjectDomain::One],
+            capabilities: vec![ObjectCapability::SignPkcs],
+            delegated_capabilities: vec![],
+        }
+    }
+
+    fn make_asym_ec_spec() -> RecordableObjectSpec {
+        RecordableObjectSpec {
+            id: 0x0002,
+            object_type: ObjectType::AsymmetricKey,
+            label: "ec-key".to_string(),
+            algorithm: ObjectAlgorithm::EcP256,
+            domains: vec![ObjectDomain::One],
+            capabilities: vec![ObjectCapability::SignEcdsa],
+            delegated_capabilities: vec![],
+        }
+    }
+
+    fn make_sym_spec() -> RecordableObjectSpec {
+        RecordableObjectSpec {
+            id: 0x0020,
+            object_type: ObjectType::SymmetricKey,
+            label: "aes-key".to_string(),
+            algorithm: ObjectAlgorithm::Aes256,
+            domains: vec![ObjectDomain::One],
+            capabilities: vec![ObjectCapability::EncryptCbc],
+            delegated_capabilities: vec![],
+        }
+    }
+
+    fn make_wrap_aes_spec() -> RecordableObjectSpec {
+        RecordableObjectSpec {
+            id: 0x0030,
+            object_type: ObjectType::WrapKey,
+            label: "wrap-key".to_string(),
+            algorithm: ObjectAlgorithm::Aes256CcmWrap,
+            domains: vec![ObjectDomain::One],
+            capabilities: vec![ObjectCapability::ExportWrapped],
+            delegated_capabilities: vec![],
+        }
+    }
+
+    fn make_session_info() -> SessionInfo {
+        SessionInfo {
+            connector: "yhusb://serial=12345678".to_string(),
+            auth_key_id: 1,
+        }
+    }
+
+    fn make_wrap_op_spec() -> WrapOpSpec {
+        WrapOpSpec {
+            wrapkey_id: 0x0010,
+            wrapkey_type: WrapKeyType::Aes,
+            wrap_type: WrapType::Object,
+            include_ed_seed: false,
+            aes_algorithm: Some(ObjectAlgorithm::Aes256CcmWrap),
+            oaep_algorithm: None,
+            mgf1_algorithm: None,
+        }
+    }
+
+    /// Write a SessionScript to a temporary JSON file and return the path.
+    fn write_test_script(dir: &TempDir, filename: &str, script: &SessionScript) -> std::path::PathBuf {
+        let path = dir.path().join(filename);
+        let json = serde_json::to_string_pretty(script).unwrap();
+        fs::write(&path, json).unwrap();
+        path
+    }
+
+    fn make_valid_script(ops: Vec<RecordedOperation>) -> SessionScript {
+        SessionScript {
+            version: "1.0".to_string(),
+            recorded_at: "20260227-10:00:00".to_string(),
+            session: make_session_info(),
+            operations: ops,
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  is_asym_privkey_spec
+    // ══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_is_asym_privkey_rsa() {
+        let mut spec = make_asym_ec_spec();
+        assert!(is_asym_privkey_spec(&spec));
+
+        spec.algorithm = ObjectAlgorithm::EcP256;
+        assert!(is_asym_privkey_spec(&spec));
+
+        spec.algorithm = ObjectAlgorithm::Ed25519;
+        assert!(is_asym_privkey_spec(&spec));
+
+        spec.algorithm = ObjectAlgorithm::OpaqueX509Certificate;
+        assert!(!is_asym_privkey_spec(&spec));
+
+        spec.algorithm = ObjectAlgorithm::EcP256;
+        spec.object_type = ObjectType::PublicKey;
+        assert!(!is_asym_privkey_spec(&spec));
+
+        spec.object_type = ObjectType::Opaque;
+        assert!(!is_asym_privkey_spec(&spec));
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  is_cert_spec
+    // ══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_is_cert_spec() {
+        let mut spec = RecordableObjectSpec {
+            id: 0x0010,
+            object_type: ObjectType::Opaque,
+            label: "cert".to_string(),
+            algorithm: ObjectAlgorithm::OpaqueX509Certificate,
+            domains: vec![ObjectDomain::One],
+            capabilities: vec![ObjectCapability::ExportableUnderWrap],
+            delegated_capabilities: vec![],
+        };
+
+        assert!(is_cert_spec(&spec));
+
+        spec.algorithm = ObjectAlgorithm::EcP256;
+        assert!(!is_cert_spec(&spec));
+
+        spec.object_type = ObjectType::Opaque;
+        spec.algorithm = ObjectAlgorithm::Rsa2048;
+        assert!(!is_cert_spec(&spec));
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  is_sym_spec
+    // ══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_is_sym_spec() {
+        let mut spec = make_sym_spec();
+
+        assert!(is_sym_spec(&spec));
+
+        spec.algorithm = ObjectAlgorithm::EcP256;
+        assert!(!is_sym_spec(&spec));
+
+        spec.object_type = ObjectType::Opaque;
+        spec.algorithm = ObjectAlgorithm::Aes128;
+        assert!(!is_sym_spec(&spec));
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  is_wrap_spec
+    // ══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_is_wrap_spec() {
+        let mut spec = RecordableObjectSpec {
+            id: 0x0031,
+            object_type: ObjectType::WrapKey,
+            label: "rsa-wrap".to_string(),
+            algorithm: ObjectAlgorithm::Rsa2048,
+            domains: vec![ObjectDomain::One],
+            capabilities: vec![ObjectCapability::ImportWrapped],
+            delegated_capabilities: vec![],
+        };
+
+        assert!(is_wrap_spec(&spec));
+
+        spec.algorithm = ObjectAlgorithm::Aes192CcmWrap;
+        assert!(is_wrap_spec(&spec));
+
+        spec.algorithm = ObjectAlgorithm::Aes192;
+        assert!(!is_wrap_spec(&spec));
+
+        spec.algorithm = ObjectAlgorithm::EcP256;
+        assert!(!is_wrap_spec(&spec));
+
+        spec.object_type = ObjectType::Opaque;
+        spec.algorithm = ObjectAlgorithm::Aes128CcmWrap;
+        assert!(!is_wrap_spec(&spec));
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  is_publicwrap_spec
+    // ══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_is_publicwrap_spec() {
+        let mut spec = RecordableObjectSpec {
+            id: 0x0032,
+            object_type: ObjectType::PublicWrapKey,
+            label: "pub-wrap".to_string(),
+            algorithm: ObjectAlgorithm::Rsa2048,
+            domains: vec![ObjectDomain::One],
+            capabilities: vec![ObjectCapability::ExportWrapped],
+            delegated_capabilities: vec![],
+        };
+
+        assert!(is_publicwrap_spec(&spec));
+
+        spec.algorithm = ObjectAlgorithm::Aes192CcmWrap;
+        assert!(!is_publicwrap_spec(&spec));
+
+        spec.object_type = ObjectType::PublicKey;
+        spec.algorithm = ObjectAlgorithm::Rsa2048;
+        assert!(!is_publicwrap_spec(&spec));
+    }
+    // ══════════════════════════════════════════════════════════════
+    //  ScriptRunner::load — happy paths
+    // ══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_load_valid_script() {
+        let dir = TempDir::new().unwrap();
+        let script = make_valid_script(vec![]);
+        let path = write_test_script(&dir, "valid.json", &script);
+        let loaded = ScriptRunner::load(&path).unwrap();
+        assert_eq!(loaded.version, "1.0");
+        assert_eq!(loaded.session.connector, "yhusb://serial=12345678");
+        assert!(loaded.operations.is_empty());
+    }
+
+    #[test]
+    fn test_load_script_with_operations() {
+        let dir = TempDir::new().unwrap();
+        let ops = vec![
+            RecordedOperation::GenerateObject {
+                spec: make_asym_rsa_spec(),
+                context: "asym".to_string(),
+            },
+            RecordedOperation::DeleteObject {
+                object_id: 0x0001,
+                object_type: ObjectType::AsymmetricKey,
+                context: "asym".to_string(),
+            },
+        ];
+        let script = make_valid_script(ops);
+        let path = write_test_script(&dir, "with_ops.json", &script);
+        let loaded = ScriptRunner::load(&path).unwrap();
+        assert_eq!(loaded.operations.len(), 2);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  ScriptRunner::load — error paths
+    // ══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_load_rejects_wrong_version() {
+        let dir = TempDir::new().unwrap();
+        let script = SessionScript {
+            version: "2.0".to_string(),
+            recorded_at: "20260227-10:00:00".to_string(),
+            session: make_session_info(),
+            operations: vec![],
+        };
+        let path = write_test_script(&dir, "wrong_version.json", &script);
+        let err = ScriptRunner::load(&path).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("Unsupported script version"), "Got: {}", msg);
+    }
+
+    #[test]
+    fn test_load_rejects_no_extension() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("noext");
+        fs::write(&path, "{}").unwrap();
+        let err = ScriptRunner::load(&path).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("no extension"), "Got: {}", msg);
+    }
+
+    #[test]
+    fn test_load_rejects_wrong_extension() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("script.yaml");
+        std::fs::write(&path, "version: 1.0").unwrap();
+        let err = ScriptRunner::load(&path).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("no extension") || msg.contains("Unable to load"), "Got: {}", msg);
+    }
+
+    #[test]
+    fn test_load_rejects_nonexistent_file() {
+        let path = Path::new("/nonexistent/script.json");
+        assert!(ScriptRunner::load(path).is_err());
+    }
+
+    #[test]
+    fn test_load_rejects_invalid_json() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("bad.json");
+        fs::write(&path, "not json at all").unwrap();
+        assert!(ScriptRunner::load(&path).is_err());
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  End-to-end pipeline: Recorder → JSON file → ScriptRunner::load
+    // ══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_e2e_record_then_load_empty() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("e2e_empty.json");
+
+        // Record a single operation so the file is created
+        let rec = SessionRecorder::new(
+            "yhusb://serial=E2E00000".to_string(),
+            1,
+            path.to_str().unwrap().to_string(),
+            RedactMode::Sensitive,
+            Box::new(JsonBackend),
+        );
+        let op = RecordedOperation::GenerateObject {
+            spec: make_asym_rsa_spec(),
+            context: "asym".to_string(),
+        };
+        rec.record(op).unwrap();
+
+        // Load the script back via ScriptRunner
+        let script = ScriptRunner::load(&path).unwrap();
+        assert_eq!(script.version, "1.0");
+        assert_eq!(script.session.connector, "yhusb://serial=E2E00000");
+        assert_eq!(script.session.auth_key_id, 1);
+        assert_eq!(script.operations.len(), 1);
+    }
+
+    #[test]
+    fn test_e2e_record_diverse_then_load() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("e2e_diverse.json");
+        let rec = SessionRecorder::new(
+            "yhusb://serial=DIVERSE1".to_string(),
+            42,
+            path.to_str().unwrap().to_string(),
+            RedactMode::None,
+            Box::new(JsonBackend),
+        );
+
+        // Record a mix of different operation types
+        rec.record(RecordedOperation::GenerateObject {
+            spec: make_asym_rsa_spec(),
+            context: "asym".to_string(),
+        }).unwrap();
+
+        rec.record(RecordedOperation::GenerateObject {
+            spec: make_sym_spec(),
+            context: "sym".to_string(),
+        }).unwrap();
+
+        rec.record(RecordedOperation::ImportObject {
+            spec: make_asym_ec_spec(),
+            value: "/path/to/key.pem".to_string(),
+            context: "asym".to_string(),
+        }).unwrap();
+
+        rec.record(RecordedOperation::CreateAuthKey {
+            spec: RecordableObjectSpec {
+                id: 0x0100,
+                object_type: ObjectType::AuthenticationKey,
+                label: "admin".to_string(),
+                algorithm: ObjectAlgorithm::Aes128YubicoAuthentication,
+                domains: vec![ObjectDomain::One],
+                capabilities: vec![ObjectCapability::PutAuthenticationKey],
+                delegated_capabilities: vec![ObjectCapability::SignPkcs],
+            },
+            credential: "secret".to_string(),
+        }).unwrap();
+
+        rec.record(RecordedOperation::ExportWrapped {
+            wrap_spec: make_wrap_op_spec(),
+            objects: vec![
+                ObjectHandle { object_id: 1, object_type: ObjectType::AsymmetricKey },
+            ],
+            destination_directory: "/tmp/backup".to_string(),
+        }).unwrap();
+
+        rec.record(RecordedOperation::DeleteObject {
+            object_id: 0x0001,
+            object_type: ObjectType::AsymmetricKey,
+            context: "asym".to_string(),
+        }).unwrap();
+
+        assert_eq!(rec.operation_count(), 6);
+
+        // Load and verify
+        let script = ScriptRunner::load(&path).unwrap();
+        assert_eq!(script.session.auth_key_id, 42);
+        assert_eq!(script.operations.len(), 6);
+    }
+
+    #[test]
+    fn test_e2e_drop_flush_then_load() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("e2e_drop.json");
+        {
+            let rec = SessionRecorder::new(
+                "yhusb://serial=DROP0001".to_string(),
+                7,
+                path.to_str().unwrap().to_string(),
+                RedactMode::All,
+                Box::new(JsonBackend),
+            );
+            rec.record(RecordedOperation::GenerateObject {
+                spec: make_wrap_aes_spec(),
+                context: "wrap".to_string(),
+            }).unwrap();
+            // Drop triggers flush
+        }
+
+        let script = ScriptRunner::load(&path).unwrap();
+        assert_eq!(script.session.auth_key_id, 7);
+        assert_eq!(script.operations.len(), 1);
+    }
+
+    #[test]
+    fn test_e2e_incremental_recording_always_consistent() {
+        // Each record() flushes the full list — after N records the file has exactly N ops
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("e2e_incremental.json");
+        let rec = SessionRecorder::new(
+            "yhusb://serial=INCR0001".to_string(),
+            1,
+            path.to_str().unwrap().to_string(),
+            RedactMode::Sensitive,
+            Box::new(JsonBackend),
+        );
+
+        for i in 0..5u16 {
+            rec.record(RecordedOperation::DeleteObject {
+                object_id: i,
+                object_type: ObjectType::AsymmetricKey,
+                context: "asym".to_string(),
+            }).unwrap();
+
+            // At every step the file should be loadable and have i+1 operations
+            let script = ScriptRunner::load(&path).unwrap();
+            assert_eq!(script.operations.len(), (i + 1) as usize);
+        }
+    }
+}

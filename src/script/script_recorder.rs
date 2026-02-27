@@ -72,3 +72,170 @@ impl Drop for SessionRecorder {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    use crate::script::backend_json::JsonBackend;
+    use crate::script::script_types::{RecordableObjectSpec, RedactMode};
+    use crate::traits::script_traits::ScriptBackend;
+    use crate::script::script_recorder::SessionRecorder;
+    use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectType};
+
+    fn make_recorder(dir: &TempDir) -> SessionRecorder {
+        let path = dir.path().join("recording.json");
+        SessionRecorder::new(
+            "yhusb://serial=11111111".to_string(),
+            1,
+            path.to_str().unwrap().to_string(),
+            RedactMode::Sensitive,
+            Box::new(JsonBackend),
+        )
+    }
+
+    fn make_generate_op() -> RecordedOperation {
+        RecordedOperation::GenerateObject {
+            spec: RecordableObjectSpec {
+                id: 0x0042,
+                object_type: ObjectType::AsymmetricKey,
+                label: "test-key".to_string(),
+                algorithm: ObjectAlgorithm::Rsa2048,
+                domains: vec![ObjectDomain::One],
+                capabilities: vec![ObjectCapability::SignPkcs],
+                delegated_capabilities: vec![],
+            },
+            context: "asym".to_string(),
+        }
+    }
+
+    fn make_delete_op(id: u16) -> RecordedOperation {
+        RecordedOperation::DeleteObject {
+            object_id: id,
+            object_type: ObjectType::AsymmetricKey,
+            context: "asym".to_string(),
+        }
+    }
+
+    // ══════════════════════════════════════════════
+    //  Construction
+    // ══════════════════════════════════════════════
+
+    #[test]
+    fn test_new_recorder() {
+        let dir = TempDir::new().unwrap();
+        let rec = make_recorder(&dir);
+        assert_eq!(rec.operation_count(), 0);
+        assert_eq!(rec.mode, RedactMode::Sensitive);
+    }
+
+    // ══════════════════════════════════════════════
+    //  record() increments count
+    // ══════════════════════════════════════════════
+
+    #[test]
+    fn test_record_increments_count() {
+        let dir = TempDir::new().unwrap();
+        let rec = make_recorder(&dir);
+
+        rec.record(make_generate_op()).unwrap();
+        assert_eq!(rec.operation_count(), 1);
+
+        rec.record(make_delete_op(0x0042)).unwrap();
+        assert_eq!(rec.operation_count(), 2);
+    }
+
+    // ══════════════════════════════════════════════
+    //  record() writes file to disk
+    // ══════════════════════════════════════════════
+
+    #[test]
+    fn test_record_creates_file() {
+        let dir = TempDir::new().unwrap();
+        let rec = make_recorder(&dir);
+        let path = rec.script_path.clone();
+
+        rec.record(make_generate_op()).unwrap();
+        assert!(path.exists());
+    }
+
+    // ══════════════════════════════════════════════
+    //  Multiple records → file has all operations
+    // ══════════════════════════════════════════════
+
+    #[test]
+    fn test_multiple_records_all_present() {
+        let dir = TempDir::new().unwrap();
+        let rec = make_recorder(&dir);
+        let path = rec.script_path.clone();
+
+        rec.record(make_generate_op()).unwrap();
+        rec.record(make_delete_op(0x0042)).unwrap();
+        rec.record(make_delete_op(0x0043)).unwrap();
+
+        // Read back with JsonBackend
+        let script = JsonBackend.read(&path).unwrap();
+        assert_eq!(script.operations.len(), 3);
+    }
+
+    // ══════════════════════════════════════════════
+    //  Written file is valid JSON readable by JsonBackend
+    // ══════════════════════════════════════════════
+
+    #[test]
+    fn test_written_file_valid_json() {
+        let dir = TempDir::new().unwrap();
+        let rec = make_recorder(&dir);
+        let path = rec.script_path.clone();
+
+        rec.record(make_generate_op()).unwrap();
+
+        let script = JsonBackend.read(&path).unwrap();
+        assert_eq!(script.version, "1.0");
+        assert_eq!(script.session.connector, "yhusb://serial=11111111");
+        assert_eq!(script.session.auth_key_id, 1);
+    }
+
+    // ══════════════════════════════════════════════
+    //  Session info preserved
+    // ══════════════════════════════════════════════
+
+    #[test]
+    fn test_session_info_preserved() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("session_test.json");
+        let rec = SessionRecorder::new(
+            "yhusb://serial=AABBCCDD".to_string(),
+            42,
+            path.to_str().unwrap().to_string(),
+            RedactMode::None,
+            Box::new(JsonBackend),
+        );
+        rec.record(make_generate_op()).unwrap();
+
+        let script = JsonBackend.read(&path).unwrap();
+        assert_eq!(script.session.connector, "yhusb://serial=AABBCCDD");
+        assert_eq!(script.session.auth_key_id, 42);
+    }
+
+    // ══════════════════════════════════════════════
+    //  Drop: does not create file when 0 operations
+    // ══════════════════════════════════════════════
+
+    #[test]
+    fn test_drop_no_file_when_empty() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("empty_drop.json");
+        {
+            let _rec = SessionRecorder::new(
+                "yhusb://serial=00000000".to_string(),
+                1,
+                path.to_str().unwrap().to_string(),
+                RedactMode::Sensitive,
+                Box::new(JsonBackend),
+            );
+            // rec is dropped here with 0 operations
+        }
+        assert!(!path.exists(), "File should not be created for 0 operations");
+    }
+}
