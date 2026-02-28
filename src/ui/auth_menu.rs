@@ -128,7 +128,7 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
         self.ui.display_success_message(format!("Created new authentication key with ID 0x{:04x}", new_key.id).as_str());
 
         if let Some(rec) = recorder {
-            let credential = get_script_input_data(rec, &new_key, pubkey_filename)?;
+            let credential = get_script_input_data(&rec.mode, &new_key, pubkey_filename)?;
             rec.record(RecordedOperation::CreateAuthKey { spec: RecordableObjectSpec::from(&new_key), credential })?;
         }
 

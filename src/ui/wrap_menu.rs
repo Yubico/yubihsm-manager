@@ -382,7 +382,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
 
     fn record_import_wrapkey(&self, recorder: &Option<SessionRecorder>, spec: &NewObjectSpec, filename: Option<String>, n_threshold: u8, n_shares: u8) -> Result<(), MgmError> {
         if let Some(rec) = recorder {
-            let value = get_script_input_data(rec, spec, filename)?;
+            let value = get_script_input_data(&rec.mode, spec, filename)?;
             rec.record(RecordedOperation::ImportWrapKey { spec: RecordableObjectSpec::from(spec), value, n_threshold, n_shares })?;
         }
         Ok(())
