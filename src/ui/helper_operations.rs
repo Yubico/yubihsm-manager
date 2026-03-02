@@ -142,12 +142,10 @@ pub fn generate_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, 
     new_key.domains = ui.select_object_domains(&authkey.domains)?;
     new_key.capabilities = ui.select_object_capabilities(
         &yh_operation.get_applicable_capabilities(authkey, Some(new_key.object_type), Some(new_key.algorithm))?,
-        &[],
         None)?;
 
     if object_type == ObjectType::WrapKey {
         new_key.delegated_capabilities = ui.select_object_capabilities(
-            &get_delegated_capabilities(authkey),
             &get_delegated_capabilities(authkey),
             Some("Select delegated capabilities"))?;
     }
@@ -190,7 +188,6 @@ pub fn import_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh
     new_key.domains = ui.select_object_domains(&authkey.domains)?;
     new_key.capabilities = ui.select_object_capabilities(
         &yh_operation.get_applicable_capabilities(authkey, Some(new_key.object_type), Some(new_key.algorithm))?,
-        &[],
         Some("Select object capabilities"))?;
 
     if !ui.get_note_confirmation(

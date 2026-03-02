@@ -205,14 +205,14 @@ impl WrapOperations {
         },
         MgmCommand {
             command: MgmCommandType::Generate,
-            label: "Generate",
+            label: "Generate Wrap Key",
             description: "Generate a new wrap key inside the YubiHSM",
             required_capabilities: &[ObjectCapability::GenerateWrapKey],
             require_all_capabilities: false,
         },
         MgmCommand {
             command: MgmCommandType::Import,
-            label: "Import",
+            label: "Import Wrap Key",
             description: "Import a wrap key into the YubiHSM",
             required_capabilities: &[ObjectCapability::PutWrapKey],
             require_all_capabilities: false,

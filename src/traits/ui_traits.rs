@@ -31,7 +31,6 @@ pub trait YubihsmUi {
     fn select_object_domains(&self, available_domains: &[ObjectDomain]) -> Result<Vec<ObjectDomain>, MgmError>;
     fn select_object_capabilities(&self,
                                   available_capabilities: &[ObjectCapability],
-                                  preselected_capabilities: &[ObjectCapability],
                                   prompt: Option<&str>) -> Result<Vec<ObjectCapability>, MgmError>;
 
     fn select_command(&self, available_commands: &[MgmCommand]) -> Result<MgmCommand, MgmError>;
