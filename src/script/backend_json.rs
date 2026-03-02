@@ -191,6 +191,9 @@ mod tests {
         JsonBackend.write(&path, &info, &ops).unwrap();
         let script = JsonBackend.read(&path).unwrap();
 
+        assert_eq!(script.version, "1.0");
+        assert_eq!(script.session.connector, info.connector);
+        assert_eq!(script.session.auth_key_id, info.auth_key_id);
         assert_eq!(script.operations.len(), 1);
     }
 

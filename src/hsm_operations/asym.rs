@@ -1206,7 +1206,7 @@ mod tests {
     // ══════════════════════════════════════════════
 
     fn fixture_path(name: &str) -> String {
-        let path = format!("src/tests/fixtures/{}", name);
+        let path = format!("resources/test_data/{}", name);
         assert!(
             std::path::Path::new(&path).exists(),
             "Test fixture missing: {}.",

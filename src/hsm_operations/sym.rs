@@ -90,6 +90,14 @@ impl YubihsmOperations for SymmetricOperations {
     }
 
     fn import(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError> {
+        match Self::get_symkey_algorithm_from_keylen(spec.data[0].len()) {
+                Err(e) => return Err(MgmError::Error(format!("Failed to import symmetric key: {}", e))),
+                Ok(algo) => {
+                    if algo != spec.algorithm {
+                        return Err(MgmError::Error(format!("Algorithm mismatch: key data length implies {:?} but spec algorithm is {:?}", algo, spec.algorithm)));
+                    }
+                }
+        }
         Ok(session
             .import_aes_key(
                 spec.id,

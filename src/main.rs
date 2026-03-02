@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-extern crate x509_parser;
 extern crate yubihsmrs;
+extern crate tabled;
 
 use clap::Arg;
 use yubihsmrs::YubiHsm;
@@ -46,7 +46,6 @@ pub mod hsm_operations;
 pub mod ui;
 pub mod cli;
 pub mod script;
-
 
 macro_rules! unwrap_or_exit1 {
     ( $e:expr, $msg:expr) => {
@@ -298,21 +297,142 @@ fn main() -> Result<(), MgmError>{
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
+// #[cfg(feature = "device-tests")]
+// mod device_tests {
+//     use yubihsmrs::object::{ObjectAlgorithm, ObjectType};
+//     use crate::hsm_operations::asym::AsymmetricOperations;
+//     use crate::hsm_operations::device::DeviceOperations;
+//     use device_helpers::*;
+//
+// // ════════════════════════════════════════════════════════════════
+// //  A1: get_device_info — basic connectivity check
+// // ════════════════════════════════════════════════════════════════
 //
 //     #[test]
-//     fn id_test() {
-//         let id = parse_id("0");
-//         assert_eq!(id, Ok(0));
-//         let id = parse_id("100");
-//         assert_eq!(id, Ok(100));
-//         let id = parse_id("0x64");
-//         assert_eq!(id, Ok(100));
-//         let id = parse_id("6553564");
-//         assert!(id.is_err());
-//         let id = parse_id("ID");
-//         assert!(id.is_err());
+//     fn test_get_device_info() {
+//         let (h, _session) = open_session();
+//         let info = h.get_device_info().expect("get_device_info failed");
+//         let info_str = format!("{}", info);
+//         // The device info string should contain recognizable fields.
+//         // At minimum, a YubiHSM2 reports version and serial.
+//         assert!(
+//             !info_str.is_empty(),
+//             "Device info string should not be empty"
+//         );
+//     }
+//
+// // ════════════════════════════════════════════════════════════════
+// //  A2: get_device_pubkey — returns exactly 65 bytes (EcP256
+// //      uncompressed point: 0x04 || X || Y)
+// // ════════════════════════════════════════════════════════════════
+//
+//     #[test]
+//     fn test_get_device_pubkey_length() {
+//         let (h, _session) = open_session();
+//         let pubkey = h.get_device_pubkey().expect("get_device_pubkey failed");
+//         assert_eq!(
+//             pubkey.len(),
+//             65,
+//             "Device public key should be 65 bytes (uncompressed EcP256 point)"
+//         );
+//         // The first byte of an uncompressed point is 0x04
+//         assert_eq!(
+//             pubkey[0], 0x04,
+//             "First byte should be 0x04 (uncompressed point marker)"
+//         );
+//     }
+//
+// // ════════════════════════════════════════════════════════════════
+// //  A3: get_device_pubkey → PEM conversion
+// // ════════════════════════════════════════════════════════════════
+//
+//     #[test]
+//     fn test_get_device_pubkey_to_pem() {
+//         let (h, _session) = open_session();
+//         let pubkey_bytes = h.get_device_pubkey().expect("get_device_pubkey failed");
+//
+//         let pem = AsymmetricOperations::get_pubkey_pem(ObjectAlgorithm::EcP256, &pubkey_bytes)
+//             .expect("get_pubkey_pem failed");
+//         let pem_str = pem.to_string();
+//
+//         assert!(
+//             pem_str.contains("BEGIN PUBLIC KEY"),
+//             "PEM should contain BEGIN PUBLIC KEY header, got: {}",
+//             pem_str
+//         );
+//         assert!(
+//             pem_str.contains("END PUBLIC KEY"),
+//             "PEM should contain END PUBLIC KEY footer"
+//         );
+//     }
+//
+// // ════════════════════════════════════════════════════════════════
+// //  A4: get_object_info for the default authentication key (ID 1)
+// // ════════════════════════════════════════════════════════════════
+//
+//     #[test]
+//     fn test_get_object_info_default_authkey() {
+//         let (_h, session) = open_session();
+//         let desc = session
+//             .get_object_info(DEFAULT_AUTHKEY_ID, ObjectType::AuthenticationKey)
+//             .expect("get_object_info for default authkey failed");
+//
+//         assert_eq!(desc.id, DEFAULT_AUTHKEY_ID);
+//         assert_eq!(desc.object_type, ObjectType::AuthenticationKey);
+//         // The factory default authkey label is "DEFAULT AUTHKEY\0..."
+//         // or it could have been changed — just ensure it's non-empty.
+//         assert!(
+//             !desc.label.is_empty(),
+//             "Default authkey should have a label"
+//         );
+//     }
+//
+// // ════════════════════════════════════════════════════════════════
+// //  A5: get_object_info for a nonexistent object → error
+// // ════════════════════════════════════════════════════════════════
+//
+//     #[test]
+//     fn test_get_object_info_nonexistent_fails() {
+//         let (_h, session) = open_session();
+//         let result = session.get_object_info(0xFFFF, ObjectType::AsymmetricKey);
+//         assert!(
+//             result.is_err(),
+//             "get_object_info for a nonexistent object should return Err"
+//         );
+//     }
+//
+// // ════════════════════════════════════════════════════════════════
+// //  A6: DeviceOperations::get_random — returns correct length
+// //      and is not all zeros (probabilistic sanity check)
+// // ════════════════════════════════════════════════════════════════
+//
+//     #[test]
+//     fn test_get_random() {
+//         let (_h, session) = open_session();
+//
+//         let num_bytes = 32;
+//         let random_bytes =
+//             DeviceOperations::get_random(&session, num_bytes).expect("get_random failed");
+//
+//         assert_eq!(
+//             random_bytes.len(),
+//             num_bytes,
+//             "Returned byte vector should have the requested length"
+//         );
+//
+//         // The probability of 32 random bytes being all zeros is 2^-256 — essentially impossible.
+//         assert!(
+//             random_bytes.iter().any(|&b| b != 0),
+//             "Random bytes should not be all zeros"
+//         );
+//
+//         // Verify a second call returns different data (probability of collision: negligible).
+//         let random_bytes_2 =
+//             DeviceOperations::get_random(&session, num_bytes).expect("get_random (2nd call) failed");
+//         assert_ne!(
+//             random_bytes, random_bytes_2,
+//             "Two consecutive get_random calls should return different data"
+//         );
 //     }
 // }
+//

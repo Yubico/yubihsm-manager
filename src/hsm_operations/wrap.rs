@@ -154,7 +154,8 @@ impl YubihsmOperations for WrapOperations {
                 &spec.capabilities,
                 spec.algorithm,
                 &spec.delegated_capabilities)?;
-        Ok(id)    }
+        Ok(id)
+    }
 
     fn import(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError> {
         let id = match spec.object_type {

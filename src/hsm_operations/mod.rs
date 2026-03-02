@@ -21,3 +21,6 @@ pub mod auth;
 pub mod wrap;
 pub mod ksp;
 pub mod device;
+#[cfg(test)]
+#[cfg(feature = "device-tests")]
+mod tests;

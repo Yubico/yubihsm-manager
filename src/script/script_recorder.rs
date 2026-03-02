@@ -179,46 +179,6 @@ mod tests {
     }
 
     // ══════════════════════════════════════════════
-    //  Written file is valid JSON readable by JsonBackend
-    // ══════════════════════════════════════════════
-
-    #[test]
-    fn test_written_file_valid_json() {
-        let dir = TempDir::new().unwrap();
-        let rec = make_recorder(&dir);
-        let path = rec.script_path.clone();
-
-        rec.record(make_generate_op()).unwrap();
-
-        let script = JsonBackend.read(&path).unwrap();
-        assert_eq!(script.version, "1.0");
-        assert_eq!(script.session.connector, "yhusb://serial=11111111");
-        assert_eq!(script.session.auth_key_id, 1);
-    }
-
-    // ══════════════════════════════════════════════
-    //  Session info preserved
-    // ══════════════════════════════════════════════
-
-    #[test]
-    fn test_session_info_preserved() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("session_test.json");
-        let rec = SessionRecorder::new(
-            "yhusb://serial=AABBCCDD".to_string(),
-            42,
-            path.to_str().unwrap().to_string(),
-            RedactMode::None,
-            Box::new(JsonBackend),
-        );
-        rec.record(make_generate_op()).unwrap();
-
-        let script = JsonBackend.read(&path).unwrap();
-        assert_eq!(script.session.connector, "yhusb://serial=AABBCCDD");
-        assert_eq!(script.session.auth_key_id, 42);
-    }
-
-    // ══════════════════════════════════════════════
     //  Drop: does not create file when 0 operations
     // ══════════════════════════════════════════════
 
