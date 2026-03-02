@@ -130,10 +130,8 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         new_key.domains = self.ui.select_object_domains(&authkey.domains)?;
         new_key.capabilities = self.ui.select_object_capabilities(
             &WrapOperations.get_applicable_capabilities(authkey, Some(new_key.object_type), Some(new_key.algorithm))?,
-            &[],
             Some("Select object capabilities"))?;
         new_key.delegated_capabilities = self.ui.select_object_capabilities(
-            &get_delegated_capabilities(authkey),
             &get_delegated_capabilities(authkey),
             Some("Select delegated capabilities"))?;
 
@@ -338,7 +336,6 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                     new_key.domains = self.ui.select_object_domains(&authkey.domains)?;
                     new_key.capabilities = self.ui.select_object_capabilities(
                         &caps,
-                        &[],
                         Some("Select object capabilities"))?;
 
                     let handle = WrapOperations::import_wrapped(session, &wrap_op, &wrapped, Some(new_key.clone()))?;

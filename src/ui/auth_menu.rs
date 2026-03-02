@@ -144,20 +144,17 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
         let applicable_capabilities = AuthenticationOperations::get_applicable_capabilities(current_authkey, user_type);
         new_key.capabilities = self.ui.select_object_capabilities(
             &applicable_capabilities,
-            &applicable_capabilities,
             None)?;
 
         if user_type == UserType::KeyAdmin {
             new_key.delegated_capabilities = self.ui.select_object_capabilities(
                 &AuthenticationOperations::get_applicable_capabilities(current_authkey, UserType::KeyUser),
-                &[],
                 Some("Select delegated capabilities"))?;
         }
 
         if user_type == UserType::CustomUser {
             let current_authkey_delegated = get_delegated_capabilities(current_authkey);
             new_key.delegated_capabilities = self.ui.select_object_capabilities(
-                &current_authkey_delegated,
                 &current_authkey_delegated,
                 Some("Select delegated capabilities"))?;
         }

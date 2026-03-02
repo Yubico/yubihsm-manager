@@ -114,7 +114,7 @@ impl YubihsmUi for Cmdline {
 
         let mut domains = cliclack::multiselect(
             format!("Select object domains. {}", MULTI_SELECT_PROMPT_HELP));
-        domains = domains.item("all".to_string(), "All Domains", "Select all available domains");
+        domains = domains.item("all".to_string(), "*** All Domains ***", "Select all available domains");
         for d in domain_strings {
             domains = domains.item(d.clone(), d, "");
         }
@@ -131,12 +131,18 @@ impl YubihsmUi for Cmdline {
     fn select_object_capabilities(
         &self,
         available_capabilities: &[ObjectCapability],
-        preselected_capabilities: &[ObjectCapability],
         prompt: Option<&str>) -> Result<Vec<ObjectCapability>, MgmError> {
         if available_capabilities.is_empty() {
             do_or_exit!(cliclack::log::info(
                 "No capabilities available to select from. Most likely because logged in user does not have sufficient delegated capabilities"));
             return Ok(vec![]);
+        }
+
+        // Wrapper enum so we can mix "All" with individual capabilities
+        #[derive(Clone, PartialEq, Eq)]
+        enum CapSelection {
+            All,
+            Cap(ObjectCapability),
         }
 
         let mut caps = available_capabilities.to_vec();
@@ -146,11 +152,25 @@ impl YubihsmUi for Cmdline {
         let mut capabilities = cliclack::multiselect(
             format!("{}. {}", p, MULTI_SELECT_PROMPT_HELP)).required(false);
 
-        capabilities = capabilities.initial_values(preselected_capabilities.to_vec());
+        // Add the "All Capabilities" sentinel first
+        capabilities = capabilities.item(CapSelection::All, "*** All Capabilities ***", "Select all available capabilities");
+        // Add all individual capabilities
         for c in caps {
-            capabilities = capabilities.item(c, c.to_string(), "");
+            capabilities = capabilities.item(CapSelection::Cap(c), c.to_string(), "");
         }
         let capabilities = return_or_exit!(capabilities.interact());
+
+        // If "All" was selected, return all available capabilities
+        if capabilities.contains(&CapSelection::All) {
+            return Ok(available_capabilities.to_vec())
+        }
+        let capabilities = capabilities.into_iter().filter_map(|s| {
+            if let CapSelection::Cap(c) = s {
+                Some(c)
+            } else {
+                None
+            }
+        }).collect();
         Ok(capabilities)
     }
 
@@ -296,8 +316,8 @@ impl YubihsmUi for Cmdline {
         if let Some(p) = placeholder {
             input = input.placeholder(p);
         }
-        let input = return_or_exit!(input.interact());
-        Ok(input)
+        let input:String = return_or_exit!(input.interact());
+        Ok(input.trim().to_string())
     }
 
     fn get_integer_input(&self, prompt: &str, required: bool, default: Option<usize>, placeholder: Option<&str>, min: usize, max: usize) -> Result<usize, MgmError> {
@@ -317,7 +337,7 @@ impl YubihsmUi for Cmdline {
     fn get_path_input(&self, prompt: &str, required: bool, default: Option<&str>, placeholder: Option<&str>) -> Result<String, MgmError> {
         let mut path = cliclack::input(prompt)
             .required(required)
-            .validate(|input: &String| validators::path_exists_validator(input.as_str()));
+            .validate(|input: &String| validators::path_exists_validator(input.trim()));
         if let Some(d) = default {
             path = path.default_input(d);
         }
@@ -325,7 +345,7 @@ impl YubihsmUi for Cmdline {
             path = path.placeholder(p);
         }
         let input: String = return_or_exit!(path.interact());
-        Ok(input)
+        Ok(input.trim().to_string())
     }
 
 
@@ -342,28 +362,28 @@ impl YubihsmUi for Cmdline {
             .required(required)
             .placeholder(placeholder.unwrap_or("Path to PEM file"))
             .validate(move |input: &String| {
-                let f = if shellexpand::full(input.as_str()).is_ok() {
-                    shellexpand::full(input.as_str()).unwrap().to_string()
+                let f = if shellexpand::full(input.trim()).is_ok() {
+                    shellexpand::full(input.trim()).unwrap().to_string()
                 } else {
                     input.to_string()
                 };
-                validators::pem_certificate_file_validator(f.as_str(), required)
+                validators::pem_certificate_file_validator(f.trim(), required)
             });
         let file_path:String = return_or_exit!(file_path.interact());
-        if let Ok(expanded) = shellexpand::full(file_path.as_str()) {
+        if let Ok(expanded) = shellexpand::full(file_path.trim()) {
             return Ok(expanded.to_string());
         }
-        Ok(file_path)
+        Ok(file_path.trim().to_string())
     }
 
     fn get_asymmetric_import_filepath(&self, prompt: &str, placeholder: Option<&str>) -> Result<String, MgmError> {
         let mut file_path = cliclack::input(prompt)
             .placeholder(placeholder.unwrap_or("Path to PEM file containing asymmetric private key or X509 certificate"))
             .validate(move |input: &String| {
-                let f = if shellexpand::full(input.as_str()).is_ok() {
-                    shellexpand::full(input.as_str()).unwrap().to_string()
+                let f = if shellexpand::full(input.trim()).is_ok() {
+                    shellexpand::full(input.trim()).unwrap().to_string()
                 } else {
-                    input.to_string()
+                    input.trim().to_string()
                 };
 
                 if validators::pem_certificate_file_validator(f.as_str(), true).is_ok() ||
@@ -374,8 +394,8 @@ impl YubihsmUi for Cmdline {
                 }
             });
         let file_path:String = return_or_exit!(file_path.interact());
-        if let Ok(expanded) = shellexpand::full(file_path.as_str()) {
-            return Ok(expanded.to_string());
+        if let Ok(expanded) = shellexpand::full(file_path.trim()) {
+            return Ok(expanded.trim().to_string());
         }
         Ok(file_path)
     }
@@ -384,8 +404,8 @@ impl YubihsmUi for Cmdline {
         let mut file_path = cliclack::input(prompt)
             .placeholder(placeholder.unwrap_or("Path to PEM file"))
             .validate(move |input: &String| {
-                let f = if shellexpand::full(input.as_str()).is_ok() {
-                    shellexpand::full(input.as_str()).unwrap().to_string()
+                let f = if shellexpand::full(input.trim()).is_ok() {
+                    shellexpand::full(input.trim()).unwrap().to_string()
                 } else {
                     input.to_string()
                 };
@@ -395,7 +415,7 @@ impl YubihsmUi for Cmdline {
                 }
             });
         let file_path:String = return_or_exit!(file_path.interact());
-        if let Ok(expanded) = shellexpand::full(file_path.as_str()) {
+        if let Ok(expanded) = shellexpand::full(file_path.trim()) {
             return Ok(expanded.to_string());
         }
         Ok(file_path)
@@ -508,7 +528,7 @@ impl YubihsmUi for Cmdline {
     fn get_split_aes_share(&self, prompt: &str, share_length: Option<u8>) -> Result<String, MgmError> {
         let mut share = cliclack::input(prompt)
             .required(false)
-            .validate(move |input: &String| validators::aes_share_validator(input.as_str(), share_length));
+            .validate(move |input: &String| validators::aes_share_validator(input.trim(), share_length));
         let share = return_or_exit!(share.interact());
         Ok(share)
     }
@@ -712,18 +732,18 @@ impl Cmdline {
 
         if let Some(v) = validator {
             file_path = file_path.validate(move |input: &String| {
-                if let Ok(expanded) = shellexpand::full(input. as_str()) {
-                    v(expanded.as_ref())
+                if let Ok(expanded) = shellexpand::full(input.trim()) {
+                    v(expanded.trim())
                 } else {
-                    v(input.as_str())
+                    v(input.trim())
                 }
             });
         }
         let file_path: String = return_or_exit!(file_path.interact());
-        if let Ok(expanded) = shellexpand::full(file_path.as_str()) {
+        if let Ok(expanded) = shellexpand::full(file_path.trim()) {
             return Ok(expanded.to_string());
         }
-        Ok(file_path)
+        Ok(file_path.trim().to_string())
     }
 
     fn get_resized_table(mut table: Table, columns: usize) -> String {

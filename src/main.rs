@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-extern crate yubihsmrs;
-extern crate tabled;
-
 use clap::Arg;
 use yubihsmrs::YubiHsm;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectType};
