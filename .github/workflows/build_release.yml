@@ -8,7 +8,7 @@ jobs:
     name: Build dist with Linux
     runs-on: ubuntu-latest
     env:
-      VERSION: 0.3.0
+      VERSION: 0.4.0
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -31,7 +31,6 @@ jobs:
       matrix:
         environment: [
           "ubuntu:25.10",
-          "ubuntu:25.04",
           "ubuntu:24.04",
           "ubuntu:22.04",
           "debian:13",
@@ -432,7 +431,7 @@ jobs:
           Set-PSDebug -Trace 1
           mkdir -p artifact/bin
           mkdir -p artifact/lib
-          cp "C:\Program Files\Yubico\YubiHSM Shell\bin\libyubihsm*.dll" artifact/bin/
+          cp "C:\Program Files\Yubico\YubiHSM Shell\bin\*.dll" artifact/bin/
           cp "C:\Program Files\Yubico\YubiHSM Shell\lib\libyubihsm*.lib" artifact/lib/
 
           C:/vcpkg/vcpkg.exe install openssl:x64-windows

@@ -1,8 +1,6 @@
 #!/bin/bash
 # Script to produce the source distribution package
 
-
-
 if [ "$#" -lt 1 ]; then
     echo "This script produces a source distribution package"
     echo ""

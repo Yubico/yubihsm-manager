@@ -1,5 +1,5 @@
 Name:           yubihsm-manager
-Version:        0.2.0
+Version:        0.4.0
 Release:        1%{?dist}
 Summary:        Command line tool for YubiHSM 2
 License:        Apache-2.0
@@ -20,5 +20,5 @@ install -m 0755 $BIN_DIR/yubihsm-manager %{buildroot}/usr/bin/yubihsm-manager
 /usr/bin/yubihsm-manager
 
 %changelog
-* Mon Nov 03 2025 Your Name <your@email.com> - 0.2.0-1
-- Build on Fedora 43
+* Mon Mar 02 2026 Aveen Ismail <aveen.ismail@yubico.com> - 0.4.0-1
+- Add scripting functionality
