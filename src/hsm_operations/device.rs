@@ -16,9 +16,9 @@
 
 use yubihsmrs::object::{ObjectCapability, ObjectDescriptor};
 use yubihsmrs::Session;
-use crate::hsm_operations::error::MgmError;
-use crate::hsm_operations::common::get_authorized_commands;
-use crate::hsm_operations::types::{MgmCommand, MgmCommandType};
+use crate::common::error::MgmError;
+use crate::common::util::get_authorized_commands;
+use crate::common::types::{MgmCommand, MgmCommandType};
 
 pub struct DeviceOperations;
 

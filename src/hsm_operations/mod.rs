@@ -14,11 +14,6 @@
  * limitations under the License.
  */
 
-pub mod error;
-pub mod validators;
-pub mod common;
-pub mod types;
-pub mod algorithms;
 pub mod main_ops;
 pub mod asym;
 pub mod sym;
@@ -26,3 +21,6 @@ pub mod auth;
 pub mod wrap;
 pub mod ksp;
 pub mod device;
+#[cfg(test)]
+#[cfg(feature = "device-tests")]
+mod tests;

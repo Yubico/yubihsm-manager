@@ -1,0 +1,161 @@
+name: "Tests on Linux, MacOS and Windows"
+
+on: [push]
+
+jobs:
+
+  ubuntu:
+    name: Runs tests on Linux
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: clone repository
+        uses: actions/checkout@v4
+        with:
+          path: yubihsm-manager
+
+      - name: install dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -x
+          export DEBIAN_FRONTEND=noninteractive
+
+          sudo apt-get update && sudo apt-get dist-upgrade -y
+          sudo apt-get install -y build-essential      \
+                                  chrpath              \
+                                  cmake                \
+                                  pkg-config           \
+                                  gengetopt            \
+                                  help2man             \
+                                  libedit-dev          \
+                                  libcurl4-openssl-dev \
+                                  liblzma-dev          \
+                                  libssl-dev           \
+                                  libseccomp-dev       \
+                                  libusb-1.0.0-dev     \
+                                  dh-exec              \
+                                  git-buildpackage     \
+                                  curl                 \
+                                  libpcsclite-dev      \
+                                  file                 \
+                                  curl                 \
+                                  jq                   \
+                                  zlib1g-dev
+
+          curl -o rustup.sh https://sh.rustup.rs
+          bash ./rustup.sh -y
+          export PATH=$PATH:$HOME/.cargo/bin
+          cargo install cargo-deb
+
+
+      - name: install libyubihsm
+        working-directory: yubihsm-manager
+        env:
+          LIBYUBIHSM_TAG: ${{ matrix.libyubihsm_tag }}
+        run: |
+          set -x
+
+          cd ..
+
+          #git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
+          git clone https://github.com/Yubico/yubihsm-shell.git
+          cd yubihsm-shell
+
+          # ubuntu 24.04 and newer come with _FORTIFY_SOURCE already set
+          sed -i 's/add_definitions (-D_FORTIFY_SOURCE=2)/add_definitions (-D_FORTIFY_SOURCE=3)/' cmake/SecurityFlags.cmake
+
+          # Set PCSC flags
+          #sed -i 's/#SET(CMAKE_C_FLAGS/SET(CMAKE_C_FLAGS/' ykhsmauth/CMakeLists.txt
+
+          mkdir build
+          cd build
+          cmake -DWITHOUT_YKYH=1 -DBUILD_ONLY_LIB=ON -DENABLE_CERT_COMPRESS=OFF -DWITHOUT_MANPAGES=1 .. 
+          cmake --build .
+ 
+
+      - name: Build yubihsm-manager
+        working-directory: yubihsm-manager
+        env:
+          PLATFORM: ${{ env.PLATFORM }}
+        run: |
+          set -x -e
+
+          export PATH=$PATH:$HOME/.cargo/bin
+          export YUBIHSM_LIB_DIR=$GITHUB_WORKSPACE/yubihsm-shell/build/lib
+          cargo build
+          
+          export LD_LIBRARY_PATH=$GITHUB_WORKSPACE/yubihsm-shell/build/lib
+          ./target/debug/yubihsm-manager --version
+          ./target/debug/yubihsm-manager --help
+
+      - name: Run status tests
+        working-directory: yubihsm-manager
+        run: |
+          set -x -e
+          export PATH=$PATH:$HOME/.cargo/bin
+          export LD_LIBRARY_PATH=$GITHUB_WORKSPACE/yubihsm-shell/build/lib
+          
+          cargo test
+
+  Windows:
+    name: Windows
+    runs-on: windows-latest
+    env:
+      LIBYUBIHSM_VERSION: 2.7.0
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # downloads and build yubihsm-shell from source release on dev.y.c
+      - name: install yubihsm-shell
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-PSDebug -Trace 1
+
+          cd ..
+          Invoke-WebRequest -Uri https://developers.yubico.com/yubihsm-shell/Releases/yubihsm-shell-$env:LIBYUBIHSM_VERSION-win64.msi -OutFile yubihsm-shell.msi -UseBasicParsing
+
+          $log = "$env:GITHUB_WORKSPACE\install.log"
+          $procMain = Start-Process "msiexec" "/i `"yubihsm-shell.msi`" /qn /l*! `"$log`"" -NoNewWindow -PassThru
+          $procMain.WaitForExit()
+
+      - name: Build yubihsm-manager
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-PSDebug -Trace 1
+          mkdir -p manager/bin
+          mkdir -p manager/lib
+          cp "C:\Program Files\Yubico\YubiHSM Shell\bin\libyubihsm*.dll" manager/bin/
+          cp "C:\Program Files\Yubico\YubiHSM Shell\lib\libyubihsm*.lib" manager/lib/
+
+          C:/vcpkg/vcpkg.exe install openssl:x64-windows
+          $env:OPENSSL_DIR="C:/vcpkg/packages/openssl_x64-windows"
+
+          rustup target add x86_64-pc-windows-msvc
+          rustup default stable-x86_64-pc-windows-msvc
+
+          $env:RUST_BACKTRACE=1
+          #$env:YUBIHSM_LIB_DIR="C:\Program Files\Yubico\YubiHSM Shell\lib"
+          #$env:PATH+=";C:\Program Files\Yubico\YubiHSM Shell\bin;C:/vcpkg/packages/openssl_x64-windows/bin"
+          $env:YUBIHSM_LIB_DIR="$env:GITHUB_WORKSPACE/manager/lib"
+          $env:PATH+=";$env:GITHUB_WORKSPACE/manager/bin;C:/vcpkg/packages/openssl_x64-windows/bin"
+          cargo.exe update
+          cargo.exe build
+          
+          ./target/debug/yubihsm-manager.exe --version
+          ./target/debug/yubihsm-manager.exe --help
+
+      - name: run static tests
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-PSDebug -Trace 1
+
+          $env:OPENSSL_DIR="C:/vcpkg/packages/openssl_x64-windows"
+          $env:RUST_BACKTRACE=1
+          $env:YUBIHSM_LIB_DIR="$env:GITHUB_WORKSPACE/manager/lib"
+          $env:PATH+=";$env:GITHUB_WORKSPACE/manager/bin;C:/vcpkg/packages/openssl_x64-windows/bin"
+          cargo.exe test
+

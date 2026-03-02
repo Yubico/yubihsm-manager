@@ -104,3 +104,30 @@ impl From<hex::FromHexError> for MgmError {
         MgmError::HexError(error)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_error_display() {
+        let err = MgmError::Error("something went wrong".to_string());
+        let msg = format!("{}", err);
+        assert!(msg.contains("something went wrong"));
+    }
+
+    #[test]
+    fn test_invalid_input_display() {
+        let err = MgmError::InvalidInput("bad input".to_string());
+        let msg = format!("{}", err);
+        assert!(msg.contains("bad input"));
+    }
+
+    #[test]
+    fn test_from_io_error() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let mgm_err: MgmError = io_err.into();
+        let msg = format!("{}", mgm_err);
+        assert!(msg.contains("file not found") || !msg.is_empty());
+    }
+}

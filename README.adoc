@@ -37,6 +37,37 @@ $ ./target/debug/yubihsm-manager
 
 Note that on Windows, the libyubihsm.dll need to be in PATH
 
+==== Run tests
+
+To run automated test that do not require a YubiHSM device to be connected, run:
+
+```
+$ cargo test
+```
+
+To run tests that require a YubiHSM device to be connected, and run:
+
+```
+$ cargo test --features device-tests -- --test-threads=1
+```
+
+Note that the `test-threads` needs to be set to `1` because only one operation can be run in the YubiHSM at a time.
+
+To run individual tests, run:
+
+```
+$ cargo test <TEST_NAME>
+```
+
+or for tests that require a YubiHSM device to be connected, run:
+
+```
+$ cargo test --features device-tests -- --test-threads=1 <TEST_NAME>
+```
+
+where TEST_NAME is the path to the test. For example `common::validators` or `hsm_operations::tests::wrap_tests`
+
+
 == License
 
 ....

@@ -45,5 +45,9 @@ tabled = "0.12.2"
 crossterm = "0.26.1"
 yubihsmrs = { git = "https://github.com/Yubico/yubihsmrs.git", branch = "yubihsm-manager" }
 
+[features]
+device-tests = []
+
 [dev-dependencies]
 tempfile = "3.3.0"
+assert_matches = "1.5.0"

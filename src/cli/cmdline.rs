@@ -20,11 +20,11 @@ use tabled::{Table, builder::Builder, settings::{Width, Modify, Style, object::C
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
 use crate::traits::ui_traits::YubihsmUi;
 use crate::traits::ui_traits::ProgressBarHandler;
-use crate::hsm_operations::error::MgmError;
-use crate::hsm_operations::common;
-use crate::hsm_operations::validators;
-use crate::hsm_operations::types::{MgmCommand, SelectionItem, NewObjectSpec};
-use crate::hsm_operations::algorithms::MgmAlgorithm;
+use crate::common::error::MgmError;
+use crate::common::util;
+use crate::common::validators;
+use crate::common::types::{MgmCommand, SelectionItem, NewObjectSpec};
+use crate::common::algorithms::MgmAlgorithm;
 
 macro_rules! return_or_exit {
     ( $e:expr) => {
@@ -66,7 +66,7 @@ impl YubihsmUi for Cmdline {
             .placeholder(format!("Default is {} for device generated ID", default).as_str())
             .validate(|input: &String| validators::object_id_validator(input));
         let id:String = return_or_exit!(id.interact());
-        common::get_id_from_string(id.as_str())
+        util::get_id_from_string(id.as_str())
     }
 
     fn get_object_id(&self) -> Result<u16, MgmError> {
@@ -74,7 +74,7 @@ impl YubihsmUi for Cmdline {
             .placeholder("Object ID in range [0, 65535]")
             .validate(|input: &String| validators::object_id_validator(input));
         let id:String = return_or_exit!(id.interact());
-        common::get_id_from_string(id.as_str())
+        util::get_id_from_string(id.as_str())
     }
 
     fn get_password(&self, prompt: &str, confirm: bool) -> Result<String, MgmError> {

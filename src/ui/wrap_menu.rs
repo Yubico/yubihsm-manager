@@ -24,18 +24,18 @@ use crate::ui::helper_operations::{display_object_properties, get_new_spec_table
 use crate::ui::device_menu::DeviceMenu;
 use crate::ui::asym_menu::AsymmetricMenu;
 use crate::traits::operation_traits::YubihsmOperations;
-use crate::hsm_operations::error::MgmError;
-use crate::hsm_operations::types::{MgmCommandType, NewObjectSpec, SelectionItem};
-use crate::hsm_operations::validators::{aes_key_validator, pem_private_rsa_file_validator, pem_public_rsa_file_validator};
-use crate::hsm_operations::algorithms::MgmAlgorithm;
+use crate::common::error::MgmError;
+use crate::common::types::{MgmCommandType, NewObjectSpec, SelectionItem};
+use crate::common::validators::{aes_key_validator, pem_private_rsa_file_validator, pem_public_rsa_file_validator};
+use crate::common::algorithms::MgmAlgorithm;
+use crate::common::util::get_delegated_capabilities;
 use crate::hsm_operations::asym::AsymmetricOperations;
 use crate::hsm_operations::sym::SymmetricOperations;
 use crate::hsm_operations::wrap::{WrapKeyType, WrapOperations, WrapOpSpec, WrapType};
-use crate::hsm_operations::common::get_delegated_capabilities;
 use crate::ui::helper_io::{get_path, get_pem_from_file, write_bytes_to_file};
 use crate::script::script_recorder::SessionRecorder;
-use crate::script::script_common;
-use crate::script::script_common::{RecordableObjectSpec, RecordedOperation, RedactMode};
+use crate::script::script_types;
+use crate::script::script_types::{RecordableObjectSpec, RecordedOperation, RedactMode};
 
 static WRAP_HEADER: &str = "Wrap keys";
 
@@ -86,7 +86,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
     }
 
     fn import_full_key(&self, session: &Session, recorder: &Option<SessionRecorder>,  authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        let mut new_key = NewObjectSpec::empty();
+        let mut new_key = NewObjectSpec::new();
 
 
         let mut input = self.ui.get_string_input(
@@ -255,7 +255,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
 
         if let Some(rec) = recorder {
             let d = if rec.mode == RedactMode::All {
-                script_common::REDACTED.to_string()
+                script_types::REDACTED.to_string()
             } else {
                 dir
             };
@@ -317,7 +317,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                     wrap_op.wrap_type = WrapType::Key;
 
                     let algo = self.ui.select_algorithm(
-                        &WrapOperations::get_unwrapped_key_algorithms(),
+                        &WrapOperations::get_rsa_unwrapped_key_algorithms(),
                         None,
                         Some("Select wrapped key algorithm"))?;
                     let caps = if SymmetricOperations::is_aes_algorithm(&algo) {
@@ -326,7 +326,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                         AsymmetricOperations.get_applicable_capabilities(&wrapkey, None, Some(algo))?
                     };
 
-                    let mut new_key = NewObjectSpec::empty();
+                    let mut new_key = NewObjectSpec::new();
                     new_key.algorithm = algo;
                     new_key.object_type = if SymmetricOperations::is_aes_algorithm(&algo) {
                         ObjectType::SymmetricKey
@@ -382,7 +382,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
 
     fn record_import_wrapkey(&self, recorder: &Option<SessionRecorder>, spec: &NewObjectSpec, filename: Option<String>, n_threshold: u8, n_shares: u8) -> Result<(), MgmError> {
         if let Some(rec) = recorder {
-            let value = get_script_input_data(rec, spec, filename)?;
+            let value = get_script_input_data(&rec.mode, spec, filename)?;
             rec.record(RecordedOperation::ImportWrapKey { spec: RecordableObjectSpec::from(spec), value, n_threshold, n_shares })?;
         }
         Ok(())
@@ -391,7 +391,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
     fn record_import_wrapped(&self, recorder: &Option<SessionRecorder>, wrapping_spec: &WrapOpSpec, filepath: &str, new_key_spec: Option<&NewObjectSpec>) -> Result<(), MgmError> {
         if let Some(rec) = recorder {
             let fp = if rec.mode == RedactMode::All {
-                script_common::REDACTED
+                script_types::REDACTED
             } else {
                 filepath
             };

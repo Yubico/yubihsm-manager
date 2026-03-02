@@ -16,21 +16,17 @@
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
-use crate::hsm_operations::common::{get_delegated_capabilities, get_authorized_commands};
-use crate::hsm_operations::algorithms::MgmAlgorithm;
-use crate::hsm_operations::types::MgmCommand;
-use crate::hsm_operations::error::MgmError;
-use crate::hsm_operations::types::NewObjectSpec;
+use crate::common::util::get_delegated_capabilities;
+use crate::common::algorithms::MgmAlgorithm;
+use crate::common::types::MgmCommand;
+use crate::common::error::MgmError;
+use crate::common::types::NewObjectSpec;
 
 pub trait YubihsmOperations {
 
-    fn context_name(&self) -> &'static str;
+    fn context(&self) -> &'static str;
 
-    fn get_commands(&self) -> Vec<MgmCommand>;
-    fn get_authorized_commands(&self, authkey: &ObjectDescriptor) -> Vec<MgmCommand> {
-        let commands = self.get_commands();
-        get_authorized_commands(authkey, &commands)
-    }
+    fn get_authorized_commands(&self, authkey: &ObjectDescriptor) -> Vec<MgmCommand>;
 
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError>;
     fn get_generation_algorithms(&self) -> Vec<MgmAlgorithm>;

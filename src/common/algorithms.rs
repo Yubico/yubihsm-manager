@@ -236,3 +236,36 @@ impl MgmAlgorithm {
         algos
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── MgmAlgorithm::from round-trip ──
+
+    #[test]
+    fn test_from_roundtrip() {
+        let algo = ObjectAlgorithm::Rsa2048;
+        let mgm = MgmAlgorithm::from(algo);
+        assert_eq!(mgm.algorithm(), algo);
+    }
+
+    #[test]
+    fn test_from_roundtrip_ec() {
+        let algo = ObjectAlgorithm::EcP256;
+        let mgm = MgmAlgorithm::from(algo);
+        assert_eq!(mgm.algorithm(), algo);
+    }
+
+    // ── extract_algorithms ──
+
+    #[test]
+    fn test_extract_rsa_algorithms() {
+        let extracted = MgmAlgorithm::extract_algorithms(&MgmAlgorithm::RSA_KEY_ALGORITHMS);
+        assert_eq!(extracted.len(), 3);
+        assert!(extracted.contains(&ObjectAlgorithm::Rsa2048));
+        assert!(extracted.contains(&ObjectAlgorithm::Rsa3072));
+        assert!(extracted.contains(&ObjectAlgorithm::Rsa4096));
+    }
+
+}

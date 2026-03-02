@@ -15,9 +15,9 @@
  */
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
-use crate::hsm_operations::error::MgmError;
-use crate::hsm_operations::types::{MgmCommand, SelectionItem};
-use crate::hsm_operations::algorithms::MgmAlgorithm;
+use crate::common::error::MgmError;
+use crate::common::types::{MgmCommand, SelectionItem};
+use crate::common::algorithms::MgmAlgorithm;
 
 pub trait YubihsmUi {
 

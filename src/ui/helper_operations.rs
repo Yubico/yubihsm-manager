@@ -19,12 +19,12 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
-use crate::hsm_operations::error::MgmError;
-use crate::hsm_operations::types::{MgmCommand, NewObjectSpec};
-use crate::hsm_operations::common::get_delegated_capabilities;
+use crate::common::error::MgmError;
+use crate::common::types::{MgmCommand, NewObjectSpec};
+use crate::common::util::get_delegated_capabilities;
 use crate::script::script_recorder::SessionRecorder;
-use crate::script::script_common;
-use crate::script::script_common::{RecordableObjectSpec, RecordedOperation, RedactMode};
+use crate::script::script_types;
+use crate::script::script_types::{RecordableObjectSpec, RecordedOperation, RedactMode};
 
 static ESC_HELP_TEXT: &str = "Pressing 'Esc' will always cancel current operation and return to previous menu";
 
@@ -115,7 +115,7 @@ pub fn delete_objects(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, y
                     rec.record(RecordedOperation::DeleteObject {
                         object_id: object.id,
                         object_type: object.object_type,
-                        context: yh_operation.context_name().to_string(),
+                        context: yh_operation.context().to_string(),
                     })?;
                 }
             },
@@ -131,7 +131,7 @@ pub fn generate_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, 
                        session: &Session,
                        authkey: &ObjectDescriptor,
                        object_type: ObjectType) -> Result<(), MgmError> {
-    let mut new_key = NewObjectSpec::empty();
+    let mut new_key = NewObjectSpec::new();
     new_key.object_type = object_type;
     new_key.algorithm = ui.select_algorithm(
         &yh_operation.get_generation_algorithms(),
@@ -166,7 +166,7 @@ pub fn generate_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, 
     if let Some(rec) = recorder {
         rec.record(RecordedOperation::GenerateObject {
             spec: RecordableObjectSpec::from(&new_key),
-            context: yh_operation.context_name().to_string()
+            context: yh_operation.context().to_string()
         })?;
     }
 
@@ -180,7 +180,7 @@ pub fn import_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh
                      object_algorithm: ObjectAlgorithm,
                      data: Vec<Vec<u8>>,
                     filename: Option<String>) -> Result<(), MgmError> {
-    let mut new_key = NewObjectSpec::empty();
+    let mut new_key = NewObjectSpec::new();
     new_key.object_type = object_type;
     new_key.algorithm = object_algorithm;
     new_key.data.extend(data);
@@ -206,14 +206,14 @@ pub fn import_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh
     ui.display_success_message(
         format!("Imported {} object with ID 0x{:04x} into the YubiHSM", new_key.object_type, new_key.id).as_str());
 
-    record_import_object_operation(recorder, &new_key, yh_operation.context_name().to_string(), filename)?;
+    record_import_object_operation(recorder, &new_key, yh_operation.context().to_string(), filename)?;
 
     Ok(())
 }
 
-pub fn get_script_input_data(recorder: &SessionRecorder, new_key: &NewObjectSpec, filename: Option<String>) -> Result<String, MgmError> {
-    let data = match recorder.mode {
-        RedactMode::All | RedactMode::Sensitive => script_common::REDACTED.to_string(),
+pub fn get_script_input_data(redact_mode: &RedactMode, new_key: &NewObjectSpec, filename: Option<String>) -> Result<String, MgmError> {
+    let data = match redact_mode {
+        RedactMode::All | RedactMode::Sensitive => script_types::REDACTED.to_string(),
         RedactMode::None => {
             if let Some(filename) = filename {
                 filename
@@ -227,7 +227,7 @@ pub fn get_script_input_data(recorder: &SessionRecorder, new_key: &NewObjectSpec
 
 pub fn record_import_object_operation(recorder: &Option<SessionRecorder>, new_key: &NewObjectSpec, context: String, filename: Option<String>) -> Result<(), MgmError> {
     if let Some(rec) = recorder {
-        let data = get_script_input_data(rec, new_key, filename)?;
+        let data = get_script_input_data(&rec.mode, new_key, filename)?;
         rec.record(RecordedOperation::ImportObject { spec: RecordableObjectSpec::from(new_key), value: data, context })?;
     }
     Ok(())
@@ -257,4 +257,93 @@ pub fn display_wrapkey_shares(ui: &impl YubihsmUi, shares: Vec<String>) -> Resul
 
     ui.clear_screen();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::script::script_types::RedactMode;
+    use crate::common::types::NewObjectSpec;
+    use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectType};
+
+    fn make_spec_with_data(data: Vec<u8>) -> NewObjectSpec {
+        let spec = NewObjectSpec {
+            id: 0x0001,
+            object_type: ObjectType::AsymmetricKey,
+            label: "key".to_string(),
+            algorithm: ObjectAlgorithm::Rsa2048,
+            domains: vec![ObjectDomain::One],
+            capabilities: vec![ObjectCapability::SignPkcs],
+            delegated_capabilities: vec![],
+            data: vec![data],
+        };
+        spec
+    }
+
+    // ════════════════════════════════════════════��═
+    //  get_aes_keylen_from_algorithm
+    // ══════════════════════════════════════════════
+
+    #[test]
+    fn test_aes_keylen() {
+        assert_eq!(get_aes_keylen_from_algorithm(ObjectAlgorithm::Aes128).unwrap(), 16);
+        assert_eq!(get_aes_keylen_from_algorithm(ObjectAlgorithm::Aes128CcmWrap).unwrap(), 16);
+        assert_eq!(get_aes_keylen_from_algorithm(ObjectAlgorithm::Aes192).unwrap(), 24);
+        assert_eq!(get_aes_keylen_from_algorithm(ObjectAlgorithm::Aes192CcmWrap).unwrap(), 24);
+        assert_eq!(get_aes_keylen_from_algorithm(ObjectAlgorithm::Aes256).unwrap(), 32);
+        assert_eq!(get_aes_keylen_from_algorithm(ObjectAlgorithm::Aes256CcmWrap).unwrap(), 32);
+        assert!(get_aes_keylen_from_algorithm(ObjectAlgorithm::Aes128YubicoAuthentication).is_err());
+        assert!(get_aes_keylen_from_algorithm(ObjectAlgorithm::Rsa2048).is_err());
+    }
+
+    // ══════════════════════════════════════════════
+    //  get_script_input_data — redaction modes
+    // ══════════════════════════════════════════════
+
+    #[test]
+    fn test_script_input_data_sensitive_mode_no_filename() {
+        let spec = make_spec_with_data(vec![0xDE, 0xAD, 0xBE, 0xEF]);
+        let result = get_script_input_data(&RedactMode::Sensitive, &spec, None).unwrap();
+        assert_eq!(result, script_types::REDACTED);
+    }
+
+    #[test]
+    fn test_script_input_data_sensitive_mode_with_filename() {
+        let spec = make_spec_with_data(vec![0xDE, 0xAD]);
+        let result = get_script_input_data(&RedactMode::Sensitive, &spec, Some("/path/to/key.pem".to_string())).unwrap();
+        assert_eq!(result, script_types::REDACTED);
+    }
+
+    #[test]
+    fn test_script_input_data_all_mode() {
+        let spec = make_spec_with_data(vec![0xDE, 0xAD]);
+        let result = get_script_input_data(&RedactMode::All, &spec, None).unwrap();
+        assert_eq!(result, script_types::REDACTED);
+    }
+
+    #[test]
+    fn test_script_input_data_none_mode_no_filename() {
+        let spec = make_spec_with_data(vec![0xDE, 0xAD, 0xBE, 0xEF]);
+        let result = get_script_input_data(&RedactMode::None, &spec, None).unwrap();
+        assert_eq!(result, "deadbeef"); // hex-encoded
+    }
+
+    #[test]
+    fn test_script_input_data_none_mode_with_filename() {
+        let spec = make_spec_with_data(vec![0xDE, 0xAD]);
+        let result = get_script_input_data(&RedactMode::None, &spec, Some("/path/to/key.pem".to_string())).unwrap();
+        // When filename is provided in None mode, the filename is returned instead of hex data
+        assert_eq!(result, "/path/to/key.pem");
+    }
+
+    // ══════════════════════════════════════════════
+    //  record_import_object_operation — with None recorder
+    // ══════════════════════════════════════════════
+
+    #[test]
+    fn test_record_import_none_recorder() {
+        let spec = make_spec_with_data(vec![0x01, 0x02]);
+        // Should be a no-op when recorder is None
+        assert!(record_import_object_operation(&None, &spec, "asym".to_string(), None).is_ok());
+    }
 }

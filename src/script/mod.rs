@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-pub mod script_common;
+pub mod script_types;
 pub mod script_recorder;
 pub mod script_runner;
 pub mod backend_json;
+pub mod script_test;
