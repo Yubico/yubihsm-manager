@@ -4,401 +4,397 @@ on: [push]
 
 jobs:
 
-#  source:
-#    name: Build dist with Linux
-#    runs-on: ubuntu-latest
-#    env:
-#      VERSION: 0.4.0
-#    steps:
-#      - name: checkout
-#        uses: actions/checkout@v4
-#      - name: Create tar.gz
-#        run: |
-#          set -x
-#          ./resources/release/make_src_dist.sh $VERSION
-#          mkdir $GITHUB_WORKSPACE/artifact
-#          mv $GITHUB_WORKSPACE/../yubihsm-manager-$VERSION.tar.gz $GITHUB_WORKSPACE/artifact/
-#      - name: Upload artifact
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: yubihsm-manager-src
-#          path: artifact
-#
-#
-#  debian_based:
-#    strategy:
-#      fail-fast: false
-#      matrix:
-#        environment: [
-#          "ubuntu:25.10",
-#          "ubuntu:24.04",
-#          "ubuntu:22.04",
-#          "debian:13",
-#          "debian:12",
-#        ]
-#        libyubihsm_tag : [ "2.7.0" ]
-#
-#    name: build on ${{ matrix.environment }}
-#    runs-on: ubuntu-latest
-#    container: ${{ matrix.environment }}
-#
-#    steps:
-#
-#      - name: clone repository
-#        uses: actions/checkout@v4
-#        with:
-#          path: yubihsm-manager
-#
-#      - name: extract platform name
-#        env:
-#          DOCKER_IMAGE: ${{ matrix.environment }}
-#        run: |
-#          # Remove everything from DOCKER_IMAGE that is not a letter or a number
-#          PLATFORM=$(echo -n "$DOCKER_IMAGE" | sed -E 's/[^a-zA-Z0-9]//g')
-#          echo "PLATFORM=$PLATFORM" >> $GITHUB_ENV
-#
-#      - name: install dependencies
-#        env:
-#          DEBIAN_FRONTEND: noninteractive
-#        run: |
-#          set -x
-#          export DEBIAN_FRONTEND=noninteractive
-#
-#          apt-get update && apt-get dist-upgrade -y
-#          apt-get install -y build-essential      \
-#                                  chrpath              \
-#                                  cmake                \
-#                                  pkg-config           \
-#                                  gengetopt            \
-#                                  help2man             \
-#                                  libedit-dev          \
-#                                  libcurl4-openssl-dev \
-#                                  liblzma-dev          \
-#                                  libssl-dev           \
-#                                  libseccomp-dev       \
-#                                  libusb-1.0.0-dev     \
-#                                  dh-exec              \
-#                                  git-buildpackage     \
-#                                  curl                 \
-#                                  libpcsclite-dev      \
-#                                  file                 \
-#                                  curl                 \
-#                                  jq                   \
-#                                  zlib1g-dev
-#
-#          curl -o rustup.sh https://sh.rustup.rs
-#          bash ./rustup.sh -y
-#          export PATH=$PATH:$HOME/.cargo/bin
-#          cargo install cargo-deb
-#
-#
-#      - name: install libyubihsm
-#        working-directory: yubihsm-manager
-#        env:
-#          LIBYUBIHSM_TAG: ${{ matrix.libyubihsm_tag }}
-#          PLATFORM: ${{ env.PLATFORM }}
-#        run: |
-#          set -x
-#
-#          echo "platform = $PLATFORM"
-#
-#          cd ..
-#
-#          git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
-#          #git clone https://github.com/Yubico/yubihsm-shell.git
-#          cd yubihsm-shell
-#
-#          if [ "$PLATFORM" = "ubuntu2404" ] || [ "$PLATFORM" = "ubuntu2504" ] || [ "$PLATFORM" = "ubuntu2510" ]; then
-#            # ubuntu 24.04 and newer come with _FORTIFY_SOURCE already set
-#            sed -i 's/add_definitions (-D_FORTIFY_SOURCE=2)/add_definitions (-D_FORTIFY_SOURCE=3)/' cmake/SecurityFlags.cmake
-#          fi
-#
-#          if [ "$PLATFORM" = "ubuntu2504" ] || [ "$PLATFORM" = "debian13" ] || [ "$PLATFORM" = "ubuntu2510" ]; then
-#            # Set PCSC flags
-#            sed -i 's/#SET(CMAKE_C_FLAGS/SET(CMAKE_C_FLAGS/' ykhsmauth/CMakeLists.txt
-#          fi
-#
-#          if [ "$PLATFORM" = "debian11" ]; then
-#            dpkg-buildpackage -b --no-sign
-#          else
-#            dpkg-buildpackage
-#          fi
-#          dpkg -i ../libyubihsm*_amd64.deb
-#
-#      - name: Build installer
-#        working-directory: yubihsm-manager
-#        env:
-#          PLATFORM: ${{ env.PLATFORM }}
-#        run: |
-#          set -x -e
-#          OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
-#          mkdir -p $OUTPUT
-#
-#          #cd ..
-#          export PATH=$PATH:$HOME/.cargo/bin
-#          #if [[ ! -x $(command -v rustc) ]]; then
-#          #  curl -o rustup.sh https://sh.rustup.rs
-#          #  bash ./rustup.sh -y
-#          #fi
-#          #cargo install cargo-deb
-#
-#          #YUBIHSM_LIB_DIR=$(dpkg -L libyubihsm1 | grep -e "libyubihsm.so.2$" | xargs dirname) cargo build --release
-#          YUBIHSM_LIB_DIR=/usr/lib/x86_64-linux-gnu  cargo build --release
-#          strip --strip-all target/release/yubihsm-manager
-#          cargo deb --no-build
-#          #cp target/debian/*.deb $OUTPUT/
-#
-#          dpkg -i target/debian/*.deb
-#          yubihsm-manager --version
-#          yubihsm-manager --help
-#
-#      - name: Pack artifact
-#        working-directory: yubihsm-manager
-#        env:
-#          PLATFORM: ${{ env.PLATFORM }}
-#        run: |
-#          set -x -e
-#          OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
-#
-#          cp target/debian/*.deb $OUTPUT/
-#          cp $GITHUB_WORKSPACE/libyubihsm1_*.deb $OUTPUT/
-#          cp $GITHUB_WORKSPACE/libyubihsm-http1_*.deb $OUTPUT/
-#          cp $GITHUB_WORKSPACE/libyubihsm-usb1_*.deb $OUTPUT/
-#
-#          cd $OUTPUT/
-#          rm -f yubihsm-manager-$PLATFORM-amd64.tar.gz
-#          tar -C .. -zcvf ../yubihsm-manager-$PLATFORM-amd64.tar.gz yubihsm-manager
-#          rm -f *.deb
-#          rm -rf ../yubihsm-manager
-#
-#      - name: upload artifacts
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: "yubihsm-manager-${{ env.PLATFORM }}-amd64"
-#          path: ${{ env.PLATFORM }}
-#
-#  redhat_based:
-#    strategy:
-#      fail-fast: false
-#      matrix:
-#        environment: [
-#          "fedora:43",
-#          "fedora:42",
-#        ]
-#
-#    name: build on ${{ matrix.environment }}
-#    runs-on: ubuntu-latest
-#    container: ${{ matrix.environment }}
-#
-#    steps:
-#
-#      - name: clone the repository
-#        uses: actions/checkout@v4
-#        with:
-#          path: yubihsm-manager
-#
-#      - name: extract platform name
-#        env:
-#          DOCKER_IMAGE: ${{ matrix.environment }}
-#        run: |
-#          # Remove everything from DOCKER_IMAGE that is not a letter or a number
-#          PLATFORM=$(echo -n "$DOCKER_IMAGE" | sed -E 's/[^a-zA-Z0-9]//g')
-#          echo "PLATFORM=$PLATFORM" >> $GITHUB_ENV
-#
-#      - name: install dependencies
-#        env:
-#          PLATFORM: ${{ env.PLATFORM }}
-#        run: |
-#          dnf -y update
-#          dnf -y install  binutils         \
-#                          gcc              \
-#                          gcc-c++          \
-#                          git              \
-#                          chrpath          \
-#                          cmake            \
-#                          gengetopt        \
-#                          openssl-devel    \
-#                          libedit-devel    \
-#                          libcurl-devel    \
-#                          rpmdevtools      \
-#                          pcsc-lite-devel  \
-#                          libusb1-devel    \
-#                          help2man         \
-#                          zlib-devel
-#
-#          curl -o rustup.sh https://sh.rustup.rs
-#          bash ./rustup.sh -y
-#
-#      - name: install libyubihsm
-#        run: |
-#          git clone https://github.com/Yubico/yubihsm-shell.git
-#          # Set PCSC flags
-#          sed -i 's/#SET(CMAKE_C_FLAGS/SET(CMAKE_C_FLAGS/' yubihsm-shell/ykhsmauth/CMakeLists.txt
-#
-#          export INPUT=$GITHUB_WORKSPACE/yubihsm-shell
-#          export CMAKE="cmake"
-#
-#          RPM_DIR=$GITHUB_WORKSPACE/rpmbuild
-#          mkdir -p $RPM_DIR/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-#          echo '%_topdir %(echo $HOME)/rpmbuild' > $GITHUB_WORKSPACE/.rpmmacros
-#          cp yubihsm-shell/resources/release/linux/yubihsm-shell.spec $RPM_DIR/SPECS/
-#          QA_SKIP_BUILD_ROOT=1 QA_RPATHS=$(( 0x0001|0x0010 )) rpmbuild -bb $RPM_DIR/SPECS/yubihsm-shell.spec
-#          yum install -y /github/home/rpmbuild/RPMS/x86_64/yubihsm-devel-*.rpm
-#
-#      - name: build release binary
-#        working-directory: yubihsm-manager
-#        env:
-#          PLATFORM: ${{ env.PLATFORM }}
-#        run: |
-#
-#          export PATH=$PATH:~/.cargo/bin
-#          if [[ ! -x $(command -v rustc) ]]; then
-#            curl -o rustup.sh https://sh.rustup.rs
-#            bash ./rustup.sh -y
-#          fi
-#
-#          set -x
-#
-#          OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
-#          mkdir -p $OUTPUT
-#          cp /github/home/rpmbuild/RPMS/x86_64/yubihsm-devel*.rpm $OUTPUT/
-#
-#          YUBIHSM_LIB_DIR=/usr/lib64 cargo build --release
-#
-#          if [ $PLATFORM == "fedora43" ]; then
-#            export BIN_DIR=$GITHUB_WORKSPACE/yubihsm-manager/target/release
-#            rpmbuild -bb resources/release/linux/yubihsm-manager.spec
-#            cp /github/home/rpmbuild/RPMS/x86_64/yubihsm-manager-*.rpm $OUTPUT/
-#          else
-#            cargo install cargo-rpm
-#            cargo rpm init
-#            YUBIHSM_LIB_DIR=/usr/lib64 cargo rpm build
-#            cp target/release/rpmbuild/RPMS/x86_64/*.rpm $OUTPUT/
-#          fi
-#
-#          yum install -y $OUTPUT/yubihsm-manager-*.rpm
-#          yubihsm-manager --version
-#          yubihsm-manager --help
-#
-#      - name: Pack artifact
-#        working-directory: yubihsm-manager
-#        env:
-#          PLATFORM: ${{ env.PLATFORM }}
-#        run: |
-#          cd $GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
-#          rm -f yubihsm-manager-$PLATFORM-amd64.tar.gz
-#          tar -C .. -zcvf ../yubihsm-manager-$PLATFORM-amd64.tar.gz yubihsm-manager
-#          rm -f *.deb
-#          rm -rf ../yubihsm-manager
-#
-#      - name: upload artifacts
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: "yubihsm-manager-${{ env.PLATFORM }}-amd64"
-#          path: ${{ env.PLATFORM }}
-#
-  MacOS-Build:
-    name: MacOS
-    runs-on: ${{ matrix.os }}
+  source:
+    name: Build dist with Linux
+    runs-on: ubuntu-latest
+    env:
+      VERSION: 0.4.0
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: Create tar.gz
+        run: |
+          set -x
+          ./resources/release/make_src_dist.sh $VERSION
+          mkdir $GITHUB_WORKSPACE/artifact
+          mv $GITHUB_WORKSPACE/../yubihsm-manager-$VERSION.tar.gz $GITHUB_WORKSPACE/artifact/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yubihsm-manager-src
+          path: artifact
+
+
+  debian_based:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-latest-large
-            arch: amd
-          - os: macos-latest-xlarge
-            arch: arm
-    env:
-      VERSION: 0.4.0
-      LIBYUBIHSM_VERSION: 2.7.2
+        environment: [
+          "ubuntu:25.10",
+          "ubuntu:24.04",
+          "ubuntu:22.04",
+          "debian:13",
+          "debian:12",
+        ]
+        libyubihsm_tag : [ "2.7.2" ]
+        version: [ "0.4.0" ]
+
+    name: build on ${{ matrix.environment }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.environment }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
 
-      # download yubihsm-shell installer from dev.y.c and install it
-      - name: install yubihsm-shell
+      - name: clone repository
+        uses: actions/checkout@v4
+        with:
+          path: yubihsm-manager
+
+      - name: extract platform name
+        env:
+          DOCKER_IMAGE: ${{ matrix.environment }}
         run: |
-          set -e -o pipefail
+          # Remove everything from DOCKER_IMAGE that is not a letter or a number
+          PLATFORM=$(echo -n "$DOCKER_IMAGE" | sed -E 's/[^a-zA-Z0-9]//g')
+          echo "PLATFORM=$PLATFORM" >> $GITHUB_ENV
+
+      - name: install dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
           set -x
-          mkdir -p $GITHUB_WORKSPACE/artifact/usr/local/bin
-          mkdir -p $GITHUB_WORKSPACE/artifact/usr/local/lib
-          
-          brew update
-          brew install gengetopt help2man zlib
-          brew reinstall openssl@3
+          export DEBIAN_FRONTEND=noninteractive
+
+          apt-get update && apt-get dist-upgrade -y
+          apt-get install -y build-essential      \
+                                  chrpath              \
+                                  cmake                \
+                                  pkg-config           \
+                                  gengetopt            \
+                                  help2man             \
+                                  libedit-dev          \
+                                  libcurl4-openssl-dev \
+                                  liblzma-dev          \
+                                  libssl-dev           \
+                                  libseccomp-dev       \
+                                  libusb-1.0.0-dev     \
+                                  dh-exec              \
+                                  git-buildpackage     \
+                                  curl                 \
+                                  libpcsclite-dev      \
+                                  file                 \
+                                  curl                 \
+                                  jq                   \
+                                  zlib1g-dev
+
+          curl -o rustup.sh https://sh.rustup.rs
+          bash ./rustup.sh -y
+          export PATH=$PATH:$HOME/.cargo/bin
+          cargo install cargo-deb
+
+
+      - name: install libyubihsm
+        working-directory: yubihsm-manager
+        env:
+          LIBYUBIHSM_TAG: ${{ matrix.libyubihsm_tag }}
+          PLATFORM: ${{ env.PLATFORM }}
+        run: |
+          set -x
+
+          echo "platform = $PLATFORM"
 
           cd ..
-          curl -L --max-redirs 2 -o yubihsm-shell-installer.pkg https://developers.yubico.com/yubihsm-shell/Releases/yubihsm-shell-$LIBYUBIHSM_VERSION-mac-universal.pkg
-          sudo installer -verbose -pkg yubihsm-shell-installer.pkg -target /
 
-          cp /usr/local/lib/libyubihsm*.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
-          cp /usr/local/lib/libusb-1.0.0.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
-          cp /usr/local/lib/libz.1.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
-          cp /usr/local/lib/libcrypto.3.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
+          git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
+          #git clone https://github.com/Yubico/yubihsm-shell.git
+          cd yubihsm-shell
 
-
-
-          #git clone --branch $LIBYUBIHSM_VERSION --single-branch https://github.com/Yubico/yubihsm-shell.git
-          #cd yubihsm-shell/resources/release/macos
-          #chmod +x make_release_binaries.sh
-          #./make_release_binaries.sh x64 $VERSION $GITHUB_WORKSPACE/yubihsm-shell
-          #cp yubihsm-shell-darwin-x64-$VERSION/lib/libyubihsm*.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
-          #cp yubihsm-shell-darwin-x64-$VERSION/lib/libusb-1.0.0.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
-          #cp yubihsm-shell-darwin-x64-$VERSION/lib/libz.1.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
-          #cp yubihsm-shell-darwin-x64-$VERSION/lib/libcrypto.3.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
-
-      - name: Build yubihsm-manager
-        env:
-          ARCH: ${{ matrix.arch }}
-        run: |
-          set -e -o pipefail
-          set -x
-
-          if [ "$ARCH" == "amd" ]; then
-            BREW_LIB="/usr/local/opt"
-            BREW_CELLAR="/usr/local/Cellar"
-          elif [ "$ARCH" == "arm" ]; then
-            BREW_LIB="/opt/homebrew/opt"
-            BREW_CELLAR="/opt/homebrew/Cellar"
+          if [ "$PLATFORM" = "ubuntu2404" ] || [ "$PLATFORM" = "ubuntu2504" ] || [ "$PLATFORM" = "ubuntu2510" ]; then
+            # ubuntu 24.04 and newer come with _FORTIFY_SOURCE already set
+            sed -i 's/add_definitions (-D_FORTIFY_SOURCE=2)/add_definitions (-D_FORTIFY_SOURCE=3)/' cmake/SecurityFlags.cmake
           fi
 
-          cd ..
-          #brew install libusb
+          if [ "$PLATFORM" = "ubuntu2504" ] || [ "$PLATFORM" = "debian13" ] || [ "$PLATFORM" = "ubuntu2510" ]; then
+            # Set PCSC flags
+            sed -i 's/#SET(CMAKE_C_FLAGS/SET(CMAKE_C_FLAGS/' ykhsmauth/CMakeLists.txt
+          fi
+
+          if [ "$PLATFORM" = "debian11" ]; then
+            dpkg-buildpackage -b --no-sign
+          else
+            dpkg-buildpackage
+          fi
+          dpkg -i ../libyubihsm*_amd64.deb
+
+      - name: Build installer
+        working-directory: yubihsm-manager
+        env:
+          PLATFORM: ${{ env.PLATFORM }}
+        run: |
+          set -x -e
+          OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
+          mkdir -p $OUTPUT
+
+          #cd ..
+          export PATH=$PATH:$HOME/.cargo/bin
+          #if [[ ! -x $(command -v rustc) ]]; then
+          #  curl -o rustup.sh https://sh.rustup.rs
+          #  bash ./rustup.sh -y
+          #fi
+          #cargo install cargo-deb
+
+          #YUBIHSM_LIB_DIR=$(dpkg -L libyubihsm1 | grep -e "libyubihsm.so.2$" | xargs dirname) cargo build --release
+          YUBIHSM_LIB_DIR=/usr/lib/x86_64-linux-gnu  cargo build --release
+          strip --strip-all target/release/yubihsm-manager
+          cargo deb --no-build
+          #cp target/debian/*.deb $OUTPUT/
+
+          dpkg -i target/debian/*.deb
+          yubihsm-manager --version
+          yubihsm-manager --help
+
+      - name: Pack artifact
+        working-directory: yubihsm-manager
+        env:
+          PLATFORM: ${{ env.PLATFORM }}
+          VERSION: ${{ matrix.version }}
+        run: |
+          set -x -e
+          OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
+
+          cp target/debian/*.deb $OUTPUT/
+          cp $GITHUB_WORKSPACE/libyubihsm1_*.deb $OUTPUT/
+          cp $GITHUB_WORKSPACE/libyubihsm-http1_*.deb $OUTPUT/
+          cp $GITHUB_WORKSPACE/libyubihsm-usb1_*.deb $OUTPUT/
+
+          cd $OUTPUT/
+          rm -f yubihsm-manager-$PLATFORM-amd64.tar.gz
+          tar -C .. -zcvf ../yubihsm-manager-$VERSION-$PLATFORM-amd64.tar.gz yubihsm-manager
+          rm -f *.deb
+          rm -rf ../yubihsm-manager
+
+      - name: upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: "yubihsm-manager-${{ env.PLATFORM }}-amd64"
+          path: ${{ env.PLATFORM }}
+
+  redhat_based:
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [
+          "fedora:43",
+          "fedora:42",
+        ]
+        libyubihsm_tag: [ "2.7.2" ]
+        version: [ "0.4.0" ]
+
+    name: build on ${{ matrix.environment }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.environment }}
+
+    steps:
+
+      - name: clone the repository
+        uses: actions/checkout@v4
+        with:
+          path: yubihsm-manager
+
+      - name: extract platform name
+        env:
+          DOCKER_IMAGE: ${{ matrix.environment }}
+        run: |
+          # Remove everything from DOCKER_IMAGE that is not a letter or a number
+          PLATFORM=$(echo -n "$DOCKER_IMAGE" | sed -E 's/[^a-zA-Z0-9]//g')
+          echo "PLATFORM=$PLATFORM" >> $GITHUB_ENV
+
+      - name: install dependencies
+        env:
+          PLATFORM: ${{ env.PLATFORM }}
+        run: |
+          dnf -y update
+          dnf -y install  binutils         \
+                          gcc              \
+                          gcc-c++          \
+                          git              \
+                          chrpath          \
+                          cmake            \
+                          gengetopt        \
+                          openssl-devel    \
+                          libedit-devel    \
+                          libcurl-devel    \
+                          rpmdevtools      \
+                          pcsc-lite-devel  \
+                          libusb1-devel    \
+                          help2man         \
+                          zlib-devel
+
+          curl -o rustup.sh https://sh.rustup.rs
+          bash ./rustup.sh -y
+
+      - name: install libyubihsm
+        env:
+          LIBYUBIHSM_TAG: ${{ matrix.libyubihsm_tag }}
+        run: |
+          git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
+          # Set PCSC flags
+          sed -i 's/#SET(CMAKE_C_FLAGS/SET(CMAKE_C_FLAGS/' yubihsm-shell/ykhsmauth/CMakeLists.txt
+
+          export INPUT=$GITHUB_WORKSPACE/yubihsm-shell
+          export CMAKE="cmake"
+
+          RPM_DIR=$GITHUB_WORKSPACE/rpmbuild
+          mkdir -p $RPM_DIR/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+          echo '%_topdir %(echo $HOME)/rpmbuild' > $GITHUB_WORKSPACE/.rpmmacros
+          cp yubihsm-shell/resources/release/linux/yubihsm-shell.spec $RPM_DIR/SPECS/
+          QA_SKIP_BUILD_ROOT=1 QA_RPATHS=$(( 0x0001|0x0010 )) rpmbuild -bb $RPM_DIR/SPECS/yubihsm-shell.spec
+          yum install -y /github/home/rpmbuild/RPMS/x86_64/yubihsm-devel-*.rpm
+
+      - name: build release binary
+        working-directory: yubihsm-manager
+        env:
+          PLATFORM: ${{ env.PLATFORM }}
+        run: |
+
           export PATH=$PATH:~/.cargo/bin
           if [[ ! -x $(command -v rustc) ]]; then
             curl -o rustup.sh https://sh.rustup.rs
             bash ./rustup.sh -y
           fi
 
-          cd yubihsm-manager
-          RUSTFLAGS="-C link-args=-Wl"  YUBIHSM_LIB_DIR=$GITHUB_WORKSPACE/artifact/usr/local/lib cargo build --release
-          strip -u -r target/release/yubihsm-manager
+          set -x
 
-          install target/release/yubihsm-manager $GITHUB_WORKSPACE/artifact/usr/local/bin/
-          
-          cd $GITHUB_WORKSPACE/artifact/usr/local
-          
-          cp $BREW_LIB/openssl@3/lib/libssl.3.dylib lib/
-          chmod +w lib/libssl.3.dylib
-          install_name_tool -id @rpath/libssl.3.dylib lib/libssl.3.dylib
-          install_name_tool -change $BREW_CELLAR/openssl@3/3.6.1/lib/libcrypto.3.dylib @rpath/libcrypto.3.dylib lib/libssl.3.dylib
-          otool -L lib/libssl.3.dylib
-          
-          install_name_tool -change $BREW_LIB/openssl@3/lib/libcrypto.3.dylib @rpath/libcrypto.3.dylib bin/yubihsm-manager
-          install_name_tool -change $BREW_LIB/openssl@3/lib/libssl.3.dylib @rpath/libssl.3.dylib bin/yubihsm-manager
-          otool -L bin/yubihsm-manager
-          otool -l bin/yubihsm-manager | grep LC_RPATH -A 3
+          OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
+          mkdir -p $OUTPUT
+          cp /github/home/rpmbuild/RPMS/x86_64/yubihsm-devel*.rpm $OUTPUT/
 
-          ./bin/yubihsm-manager --version
-          ./bin/yubihsm-manager --help
+          YUBIHSM_LIB_DIR=/usr/lib64 cargo build --release
 
-      - name: Upload artifact
+          if [ $PLATFORM == "fedora43" ]; then
+            export BIN_DIR=$GITHUB_WORKSPACE/yubihsm-manager/target/release
+            rpmbuild -bb resources/release/linux/yubihsm-manager.spec
+            cp /github/home/rpmbuild/RPMS/x86_64/yubihsm-manager-*.rpm $OUTPUT/
+          else
+            cargo install cargo-rpm
+            cargo rpm init
+            YUBIHSM_LIB_DIR=/usr/lib64 cargo rpm build
+            cp target/release/rpmbuild/RPMS/x86_64/*.rpm $OUTPUT/
+          fi
+
+          yum install -y $OUTPUT/yubihsm-manager-*.rpm
+          yubihsm-manager --version
+          yubihsm-manager --help
+
+      - name: Pack artifact
+        working-directory: yubihsm-manager
+        env:
+          PLATFORM: ${{ env.PLATFORM }}
+          VERSION: ${{ matrix.version }}
+        run: |
+          cd $GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
+          rm -f yubihsm-manager-$PLATFORM-amd64.tar.gz
+          tar -C .. -zcvf ../yubihsm-manager-$VERSION-$PLATFORM-amd64.tar.gz yubihsm-manager
+          rm -f *.deb
+          rm -rf ../yubihsm-manager
+
+      - name: upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: yubihsm-manager-macos-${{ matrix.arch }}
-          path: artifact
+          name: "yubihsm-manager-${{ env.PLATFORM }}-amd64"
+          path: ${{ env.PLATFORM }}
 
+#  MacOS-Build:
+#    name: MacOS
+#    runs-on: ${{ matrix.os }}
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#        include:
+#          - os: macos-latest-large
+#            arch: amd
+#          - os: macos-latest-xlarge
+#            arch: arm
+#    env:
+#      VERSION: 0.4.0
+#      LIBYUBIHSM_VERSION: 2.7.2
+#
+#    steps:
+#      - name: Checkout repository
+#        uses: actions/checkout@v4
+#
+#      # download yubihsm-shell installer from dev.y.c and install it
+#      - name: install yubihsm-shell
+#        run: |
+#          set -e -o pipefail
+#          set -x
+#          mkdir -p $GITHUB_WORKSPACE/artifact/usr/local/bin
+#          mkdir -p $GITHUB_WORKSPACE/artifact/usr/local/lib
+#
+#          brew update
+#          brew install gengetopt help2man zlib
+#          brew reinstall openssl@3
+#
+#          cd ..
+#          curl -L --max-redirs 2 -o yubihsm-shell-installer.pkg https://developers.yubico.com/yubihsm-shell/Releases/yubihsm-shell-$LIBYUBIHSM_VERSION-mac-universal.pkg
+#          sudo installer -verbose -pkg yubihsm-shell-installer.pkg -target /
+#
+#          cp /usr/local/lib/libyubihsm*.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
+#          cp /usr/local/lib/libusb-1.0.0.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
+#          cp /usr/local/lib/libz.1.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
+#          cp /usr/local/lib/libcrypto.3.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
+#
+#      - name: Build yubihsm-manager
+#        env:
+#          ARCH: ${{ matrix.arch }}
+#        run: |
+#          set -e -o pipefail
+#          set -x
+#
+#          if [ "$ARCH" == "amd" ]; then
+#            BREW_LIB="/usr/local/opt"
+#            BREW_CELLAR="/usr/local/Cellar"
+#          elif [ "$ARCH" == "arm" ]; then
+#            BREW_LIB="/opt/homebrew/opt"
+#            BREW_CELLAR="/opt/homebrew/Cellar"
+#          fi
+#
+#          cd ..
+#          #brew install libusb
+#          export PATH=$PATH:~/.cargo/bin
+#          if [[ ! -x $(command -v rustc) ]]; then
+#            curl -o rustup.sh https://sh.rustup.rs
+#            bash ./rustup.sh -y
+#          fi
+#
+#          cd yubihsm-manager
+#          RUSTFLAGS="-C link-args=-Wl"  YUBIHSM_LIB_DIR=$GITHUB_WORKSPACE/artifact/usr/local/lib cargo build --release
+#          strip -u -r target/release/yubihsm-manager
+#
+#          install target/release/yubihsm-manager $GITHUB_WORKSPACE/artifact/usr/local/bin/
+#
+#          cd $GITHUB_WORKSPACE/artifact/usr/local
+#
+#          cp $BREW_LIB/openssl@3/lib/libssl.3.dylib lib/
+#          chmod +w lib/libssl.3.dylib
+#          install_name_tool -id @rpath/libssl.3.dylib lib/libssl.3.dylib
+#          install_name_tool -change $BREW_CELLAR/openssl@3/3.6.1/lib/libcrypto.3.dylib @rpath/libcrypto.3.dylib lib/libssl.3.dylib
+#          otool -L lib/libssl.3.dylib
+#
+#          install_name_tool -change $BREW_LIB/openssl@3/lib/libcrypto.3.dylib @rpath/libcrypto.3.dylib bin/yubihsm-manager
+#          install_name_tool -change $BREW_LIB/openssl@3/lib/libssl.3.dylib @rpath/libssl.3.dylib bin/yubihsm-manager
+#          otool -L bin/yubihsm-manager
+#          otool -l bin/yubihsm-manager | grep LC_RPATH -A 3
+#
+#          ./bin/yubihsm-manager --version
+#          ./bin/yubihsm-manager --help
+#
+#      - name: Upload artifact
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: yubihsm-manager-macos-${{ matrix.arch }}
+#          path: artifact
+#
 #  Windows-Build:
 #    name: Windows
 #    runs-on: windows-latest
