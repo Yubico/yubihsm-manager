@@ -1,4 +1,4 @@
-name: "Release binaries for Linux, MacOS and Windows"
+name: "Release builds"
 
 on: [push]
 
@@ -36,7 +36,8 @@ jobs:
           "debian:13",
           "debian:12",
         ]
-        libyubihsm_tag : [ "2.7.0" ]
+        libyubihsm_tag : [ "2.7.2" ]
+        version: [ "0.4.0" ]
 
     name: build on ${{ matrix.environment }}
     runs-on: ubuntu-latest
@@ -156,6 +157,7 @@ jobs:
         working-directory: yubihsm-manager
         env:
           PLATFORM: ${{ env.PLATFORM }}
+          VERSION: ${{ matrix.version }}
         run: |
           set -x -e
           OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
@@ -167,7 +169,7 @@ jobs:
 
           cd $OUTPUT/
           rm -f yubihsm-manager-$PLATFORM-amd64.tar.gz
-          tar -C .. -zcvf ../yubihsm-manager-$PLATFORM-amd64.tar.gz yubihsm-manager
+          tar -C .. -zcvf ../yubihsm-manager-$VERSION-$PLATFORM-amd64.tar.gz yubihsm-manager
           rm -f *.deb
           rm -rf ../yubihsm-manager
 
@@ -185,6 +187,8 @@ jobs:
           "fedora:43",
           "fedora:42",
         ]
+        libyubihsm_tag: [ "2.7.2" ]
+        version: [ "0.4.0" ]
 
     name: build on ${{ matrix.environment }}
     runs-on: ubuntu-latest
@@ -230,8 +234,10 @@ jobs:
           bash ./rustup.sh -y
 
       - name: install libyubihsm
+        env:
+          LIBYUBIHSM_TAG: ${{ matrix.libyubihsm_tag }}
         run: |
-          git clone https://github.com/Yubico/yubihsm-shell.git
+          git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
           # Set PCSC flags
           sed -i 's/#SET(CMAKE_C_FLAGS/SET(CMAKE_C_FLAGS/' yubihsm-shell/ykhsmauth/CMakeLists.txt
 
@@ -284,10 +290,11 @@ jobs:
         working-directory: yubihsm-manager
         env:
           PLATFORM: ${{ env.PLATFORM }}
+          VERSION: ${{ matrix.version }}
         run: |
           cd $GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
           rm -f yubihsm-manager-$PLATFORM-amd64.tar.gz
-          tar -C .. -zcvf ../yubihsm-manager-$PLATFORM-amd64.tar.gz yubihsm-manager
+          tar -C .. -zcvf ../yubihsm-manager-$VERSION-$PLATFORM-amd64.tar.gz yubihsm-manager
           rm -f *.deb
           rm -rf ../yubihsm-manager
 
@@ -309,28 +316,33 @@ jobs:
           - os: macos-latest-xlarge
             arch: arm
     env:
-      LIBYUBIHSM_VERSION: 2.7.0
+      VERSION: 0.4.0
+      LIBYUBIHSM_VERSION: 2.7.2
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # download yubihsm-sdk installer from dev.y.c and install it
+      # download yubihsm-shell installer from dev.y.c and install it
       - name: install yubihsm-shell
         run: |
           set -e -o pipefail
           set -x
-          mkdir -p artifact
+          mkdir -p $GITHUB_WORKSPACE/artifact/usr/local/bin
+          mkdir -p $GITHUB_WORKSPACE/artifact/usr/local/lib
+
+          brew update
+          brew install gengetopt help2man zlib
+          brew reinstall openssl@3
 
           cd ..
-          #curl -L --max-redirs 2 -o yubihsm-sdk-installer.pkg https://developers.yubico.com/YubiHSM2/Releases/yubihsm2-sdk-$YUBIHSMSDK_VERSION-darwin-universal.pkg
-          #sudo installer -verbose -pkg yubihsm-sdk-installer.pkg -target /
+          curl -L --max-redirs 2 -o yubihsm-shell-installer.pkg https://developers.yubico.com/yubihsm-shell/Releases/yubihsm-shell-$LIBYUBIHSM_VERSION-mac-universal.pkg
+          sudo installer -verbose -pkg yubihsm-shell-installer.pkg -target /
 
-          git clone --branch $LIBYUBIHSM_VERSION --single-branch https://github.com/Yubico/yubihsm-shell.git
-          cd yubihsm-shell
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_LIB=ON -DENABLE_CERT_COMPRESS=OFF -DWITHOUT_MANPAGES=1 -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/artifact/usr/local
-          cmake --build build --config Release
-          cmake --install build
+          cp /usr/local/lib/libyubihsm*.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
+          cp /usr/local/lib/libusb-1.0.0.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
+          cp /usr/local/lib/libz.1.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
+          cp /usr/local/lib/libcrypto.3.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
 
       - name: Build yubihsm-manager
         env:
@@ -359,37 +371,18 @@ jobs:
           RUSTFLAGS="-C link-args=-Wl"  YUBIHSM_LIB_DIR=$GITHUB_WORKSPACE/artifact/usr/local/lib cargo build --release
           strip -u -r target/release/yubihsm-manager
 
-          mkdir $GITHUB_WORKSPACE/artifact/usr/local/bin
           install target/release/yubihsm-manager $GITHUB_WORKSPACE/artifact/usr/local/bin/
-          cp $BREW_LIB/openssl@3/lib/libssl.3.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
-          cp $BREW_LIB/openssl@3/lib/libcrypto.3.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
-          cp $BREW_LIB/libusb/lib/libusb-1.0.0.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
 
           cd $GITHUB_WORKSPACE/artifact/usr/local
 
-          chmod +w lib/libcrypto.3.dylib
+          cp $BREW_LIB/openssl@3/lib/libssl.3.dylib lib/
           chmod +w lib/libssl.3.dylib
-          chmod +w lib/libusb-1.0.0.dylib
-
-          install_name_tool -id @loader_path/../lib/libcrypto.3.dylib lib/libcrypto.3.dylib
-          otool -L lib/libcrypto.3.dylib
-
-          install_name_tool -id @loader_path/../lib/libssl.3.dylib lib/libssl.3.dylib
-          install_name_tool -change $BREW_CELLAR/openssl@3/3.6.0/lib/libcrypto.3.dylib @loader_path/../lib/libcrypto.3.dylib lib/libssl.3.dylib
+          install_name_tool -id @rpath/libssl.3.dylib lib/libssl.3.dylib
+          install_name_tool -change $BREW_CELLAR/openssl@3/3.6.1/lib/libcrypto.3.dylib @rpath/libcrypto.3.dylib lib/libssl.3.dylib
           otool -L lib/libssl.3.dylib
 
-          install_name_tool -id @loader_path/../lib/libusb-1.0.0.dylib lib/libusb-1.0.0.dylib
-          otool -L lib/libusb-1.0.0.dylib
-
-          install_name_tool -change $BREW_LIB/openssl@3/lib/libcrypto.3.dylib @loader_path/../lib/libcrypto.3.dylib lib/libyubihsm.$LIBYUBIHSM_VERSION.dylib
-          otool -L lib/libyubihsm.$LIBYUBIHSM_VERSION.dylib
-
-          install_name_tool -change $BREW_LIB/libusb/lib/libusb-1.0.0.dylib  @loader_path/../lib/libusb-1.0.0.dylib lib/libyubihsm_usb.$LIBYUBIHSM_VERSION.dylib
-          otool -L lib/libyubihsm_usb.$LIBYUBIHSM_VERSION.dylib
-
-          #install_name_tool -rpath $GITHUB_WORKSPACE/artifact/usr/local/lib @loader_path/../lib bin/yubihsm-manager
-          install_name_tool -change $BREW_LIB/openssl@3/lib/libcrypto.3.dylib @loader_path/../lib/libcrypto.3.dylib bin/yubihsm-manager
-          install_name_tool -change $BREW_LIB/openssl@3/lib/libssl.3.dylib @loader_path/../lib/libssl.3.dylib bin/yubihsm-manager
+          install_name_tool -change $BREW_LIB/openssl@3/lib/libcrypto.3.dylib @rpath/libcrypto.3.dylib bin/yubihsm-manager
+          install_name_tool -change $BREW_LIB/openssl@3/lib/libssl.3.dylib @rpath/libssl.3.dylib bin/yubihsm-manager
           otool -L bin/yubihsm-manager
           otool -l bin/yubihsm-manager | grep LC_RPATH -A 3
 
@@ -406,11 +399,20 @@ jobs:
     name: Windows
     runs-on: windows-latest
     env:
-      LIBYUBIHSM_VERSION: 2.7.0
+      VERSION: 0.4.0
+      LIBYUBIHSM_VERSION: 2.7.2
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-PSDebug -Trace 1
+
+          C:/vcpkg/vcpkg.exe update
+          C:/vcpkg/vcpkg.exe install openssl:x64-windows
 
       # downloads and build yubihsm-shell from source release on dev.y.c
       - name: install yubihsm-shell
@@ -418,23 +420,34 @@ jobs:
           $ErrorActionPreference = "Stop"
           Set-PSDebug -Trace 1
 
-          cd ..
-          Invoke-WebRequest -Uri https://developers.yubico.com/yubihsm-shell/Releases/yubihsm-shell-$env:LIBYUBIHSM_VERSION-win64.msi -OutFile yubihsm-shell.msi -UseBasicParsing
+          mkdir -p $env:GITHUB_WORKSPACE/artifact/bin
+          mkdir -p $env:GITHUB_WORKSPACE/artifact/lib
 
-          $log = "$env:GITHUB_WORKSPACE\install.log"
-          $procMain = Start-Process "msiexec" "/i `"yubihsm-shell.msi`" /qn /l*! `"$log`"" -NoNewWindow -PassThru
-          $procMain.WaitForExit()
+          $env:OPENSSL_ROOT_DIR ="C:/vcpkg/packages/openssl_x64-windows"
+
+          cd ..
+          #Invoke-WebRequest -Uri https://developers.yubico.com/yubihsm-shell/Releases/yubihsm-shell-$env:LIBYUBIHSM_VERSION-win64.msi -OutFile yubihsm-shell.msi -UseBasicParsing
+          #$log = "$env:GITHUB_WORKSPACE\install.log"
+          #$procMain = Start-Process "msiexec" "/i `"yubihsm-shell.msi`" /qn /l*! `"$log`"" -NoNewWindow -PassThru
+          #$procMain.WaitForExit()
+
+          git clone --branch $env:LIBYUBIHSM_VERSION --single-branch https://github.com/Yubico/yubihsm-shell.git
+          cd yubihsm-shell
+          mkdir build; cd build
+          cmake -S .. -A x64 -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_LIB=ON -DENABLE_CERT_COMPRESS=OFF -DWITHOUT_MANPAGES=1
+          cmake --build . -v --config Release
+
+          cp lib/Release/libyubihsm*.dll $env:GITHUB_WORKSPACE/artifact/bin/
+          cp lib/Release/libyubihsm*.lib $env:GITHUB_WORKSPACE/artifact/lib/
+          cp C:/vcpkg/packages/openssl_x64-windows/bin/libcrypto-3-x64.dll $env:GITHUB_WORKSPACE/artifact/bin/
+          cp C:/vcpkg/packages/openssl_x64-windows/bin/libssl-3-x64.dll $env:GITHUB_WORKSPACE/artifact/bin/
+
 
       - name: Build yubihsm-manager
         run: |
           $ErrorActionPreference = "Stop"
           Set-PSDebug -Trace 1
-          mkdir -p artifact/bin
-          mkdir -p artifact/lib
-          cp "C:\Program Files\Yubico\YubiHSM Shell\bin\*.dll" artifact/bin/
-          cp "C:\Program Files\Yubico\YubiHSM Shell\lib\libyubihsm*.lib" artifact/lib/
 
-          C:/vcpkg/vcpkg.exe install openssl:x64-windows
           $env:OPENSSL_DIR="C:/vcpkg/packages/openssl_x64-windows"
 
           rustup target add x86_64-pc-windows-msvc
@@ -444,7 +457,8 @@ jobs:
           #$env:YUBIHSM_LIB_DIR="C:\Program Files\Yubico\YubiHSM Shell\lib"
           #$env:PATH+=";C:\Program Files\Yubico\YubiHSM Shell\bin;C:/vcpkg/packages/openssl_x64-windows/bin"
           $env:YUBIHSM_LIB_DIR="$env:GITHUB_WORKSPACE/artifact/lib"
-          $env:PATH+=";$env:GITHUB_WORKSPACE/artifact/bin;C:/vcpkg/packages/openssl_x64-windows/bin"
+          #$env:PATH+=";$env:GITHUB_WORKSPACE/artifact/bin;C:/vcpkg/packages/openssl_x64-windows/bin"
+          $env:PATH+=";$env:GITHUB_WORKSPACE/artifact/bin"
           cargo.exe update
           cargo.exe build --release
           install target/release/yubihsm-manager $env:GITHUB_WORKSPACE/artifact/bin
@@ -461,5 +475,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: yubihsm-manager-windows
+          name: yubihsm-manager-${{ env.VERSION }}-win64
           path: artifact
