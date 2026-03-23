@@ -248,7 +248,7 @@ fn main() -> Result<(), MgmError>{
         let script_path = if let Some(sn) = matches.get_one::<String>("script-path") {
             if sn.ends_with(".json") { sn.to_owned() } else { format!("{}.json", sn) }
         } else {
-            format!("yubihsm-manager-{}.json", chrono::Local::now().format("%Y%m%d-%H:%M:%S"))
+            format!("yubihsm-manager-{}.json", chrono::Local::now().format("%Y%m%d-%H%M%S"))
         };
 
         // Currently, only JSON script is supported. If this changes in the future, just add an arm for a new file extension
