@@ -25,13 +25,12 @@ use crate::ui::device_menu::DeviceMenu;
 use crate::ui::auth_menu::AuthenticationMenu;
 use crate::ui::asym_menu::AsymmetricMenu;
 use crate::ui::helper_operations::{list_objects, delete_objects, display_menu_headers, generate_object};
-use crate::cli::cmdline::Cmdline;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::common::error::MgmError;
 use crate::common::types::{SelectionItem, MgmCommandType};
 use crate::hsm_operations::sym::SymmetricOperations;
 use crate::hsm_operations::wrap::WrapOperations;
-use crate::hsm_operations::main_ops::{MgmObjectType, FilterType, MainOperations};
+use crate::hsm_operations::main_ops::{FilterType, MainOperations};
 use crate::hsm_operations::asym::AsymmetricOperations;
 use crate::script::script_recorder::SessionRecorder;
 
@@ -93,7 +92,7 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
             },
             FilterType::Type(_) => {
                 let types = self.ui.select_multiple_items(
-                    &SelectionItem::get_items(&MainOperations::get_search_by_types()),
+                    &MainOperations::get_searchable_types(),
                     &[],
                     false,
                     Some("\nSelect object types:")
@@ -110,47 +109,48 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
     }
 
     fn generate(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        let _type: MgmObjectType = self.ui.select_one_item(
-            &SelectionItem::get_items(&MainOperations::get_generatable_types(authkey)),
+        let _type: ObjectType = self.ui.select_one_item(
+            &MainOperations::get_generatable_types(authkey),
             None,
-            Some("\nSelect object type:")
+            Some("\nSelect type of object to generate:")
         )?;
         match _type {
-            MgmObjectType::Asymmetric => generate_object(&self.ui, recorder, &AsymmetricOperations, session, authkey, ObjectType::AsymmetricKey),
-            MgmObjectType::Symmetric => generate_object(&self.ui, recorder, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey),
-            MgmObjectType::Wrap => generate_object(&self.ui, recorder, &WrapOperations, session, authkey, ObjectType::WrapKey),
-            _ => Ok(())
+            ObjectType::AsymmetricKey => generate_object(&self.ui, recorder, &AsymmetricOperations, session, authkey, ObjectType::AsymmetricKey),
+            ObjectType::SymmetricKey => generate_object(&self.ui, recorder, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey),
+            ObjectType::WrapKey => generate_object(&self.ui, recorder, &WrapOperations, session, authkey, ObjectType::WrapKey),
+            _ => Err(MgmError::Error("Object type out of scope".to_string()))
         }
     }
 
     fn import(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        let _type: MgmObjectType = self.ui.select_one_item(
-            &SelectionItem::get_items(&MainOperations::get_importable_types(authkey)),
+        let _type: ObjectType = self.ui.select_one_item(
+            &MainOperations::get_importable_types(authkey),
             None,
-            Some("\nSelect object type:")
+            Some("\nSelect type or object to import:")
         )?;
         match _type {
-            MgmObjectType::Asymmetric | MgmObjectType::Certificate => AsymmetricMenu::new(Cmdline).import(session, recorder, authkey),
-            MgmObjectType::Symmetric => SymmetricMenu::new(Cmdline).import(session, recorder, authkey),
-            MgmObjectType::Wrap => WrapMenu::new(Cmdline).import(session, recorder, authkey),
-            MgmObjectType::Authentication => AuthenticationMenu::new(Cmdline).exec_command(session, recorder, authkey),
-            _ => Ok(())
+            ObjectType::AsymmetricKey => AsymmetricMenu::new(self.ui.clone()).import(session, recorder, authkey),
+            ObjectType::SymmetricKey => SymmetricMenu::new(self.ui.clone()).import(session, recorder, authkey),
+            ObjectType::WrapKey => WrapMenu::new(self.ui.clone()).import(session, recorder, authkey),
+            ObjectType::AuthenticationKey => AuthenticationMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
+            _ => Err(MgmError::Error("Object type out of scope".to_string()))
         }
     }
 
     fn goto_key(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        let _type: MgmObjectType = self.ui.select_one_item(
-            &SelectionItem::get_items(&MainOperations::get_key_operation_types()),
+        let cmd: MgmCommandType = self.ui.select_one_item(
+            &MainOperations::get_key_operation_types(),
             None,
-            Some("\nSelect object type:")
+            Some("\nSelect key operations:")
         )?;
-        match _type {
-            MgmObjectType::Asymmetric | MgmObjectType::Certificate => AsymmetricMenu::new(Cmdline).exec_command(session, recorder, authkey),
-            MgmObjectType::Symmetric => SymmetricMenu::new(Cmdline).exec_command(session, recorder, authkey),
-            MgmObjectType::Wrap => WrapMenu::new(Cmdline).exec_command(session, recorder, authkey),
-            MgmObjectType::Authentication => AuthenticationMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
-            MgmObjectType::Java => JavaMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
-            MgmObjectType::Ksp => Ksp::new(self.ui.clone()).guided_setup(session, authkey),
+        match cmd {
+            MgmCommandType::GotoAsym => AsymmetricMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
+            MgmCommandType::GotoSym => SymmetricMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
+            MgmCommandType::GotoWrap => WrapMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
+            MgmCommandType::GotoAuth => AuthenticationMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
+            MgmCommandType::GotoJava => JavaMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
+            MgmCommandType::GotoKsp => Ksp::new(self.ui.clone()).guided_setup(session, authkey),
+            _ => Err(MgmError::Error("Operation type out of scope".to_string()))
         }
     }
 }

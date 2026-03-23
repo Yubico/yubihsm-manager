@@ -81,11 +81,11 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
                 SelectionItem {
                     value: AuthenticationType::PasswordDerived,
                     label: "Password derived".to_string(),
-                    hint: "Session keys are derived from a password".to_string() },
+                    description: "Session keys are derived from a password".to_string() },
                 SelectionItem {
                     value: AuthenticationType::Ecp256,
                     label: "EC P256".to_string(),
-                    hint: "Session authenticated using EC key with curve secp256r1".to_string() },
+                    description: "Session authenticated using EC key with curve secp256r1".to_string() },
             ],
             None,
             Some("Select authentication type"))?;
