@@ -20,16 +20,15 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, Obj
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::common::algorithms::MgmAlgorithm;
-use crate::common::types::NewObjectSpec;
 use crate::common::error::MgmError;
-use crate::common::types::{MgmCommand, MgmCommandType};
+use crate::common::types::{NewObjectSpec, MgmCommand, MgmCommandType, SelectionItem};
 use crate::common::util::{get_object_descriptors, get_authorized_commands};
 
 #[derive(Debug, Clone, PartialEq,  Eq)]
 pub enum FilterType {
     Id(u16),
     Label(String),
-    Type(Vec<MgmObjectType>),
+    Type(Vec<ObjectType>),
 }
 
 impl Display for FilterType {
@@ -38,46 +37,6 @@ impl Display for FilterType {
             FilterType::Id(_) => write!(f, "By object ID"),
             FilterType::Label(_) => write!(f, "By object label"),
             FilterType::Type(_) => write!(f, "By object type"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq,  Eq)]
-pub enum MgmObjectType {
-    Asymmetric,
-    Symmetric,
-    Certificate,
-    Wrap,
-    Authentication,
-    Java,
-    Ksp
-}
-
-impl Display for MgmObjectType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            MgmObjectType::Asymmetric => write!(f, "Asymmetric key operations"),
-            MgmObjectType::Symmetric => write!(f, "Symmetric key operations"),
-            MgmObjectType::Certificate => write!(f, "X509Certificate operations"),
-            MgmObjectType::Wrap => write!(f, "Wrap key operations"),
-            MgmObjectType::Authentication => write!(f, "Authentication key operations"),
-            MgmObjectType::Java => write!(f, "Special case: SunPKCS11 compatible key operations"),
-            MgmObjectType::Ksp => write!(f, "Special case: KSP setup"),
-
-        }
-    }
-}
-
-impl From<MgmObjectType> for ObjectType {
-    fn from(mgm_type: MgmObjectType) -> Self {
-        match mgm_type {
-            MgmObjectType::Asymmetric => ObjectType::AsymmetricKey,
-            MgmObjectType::Symmetric => ObjectType::SymmetricKey,
-            MgmObjectType::Certificate => ObjectType::Opaque,
-            MgmObjectType::Wrap => ObjectType::WrapKey,
-            MgmObjectType::Authentication => ObjectType::AuthenticationKey,
-            MgmObjectType::Java => ObjectType::AsymmetricKey,
-            MgmObjectType::Ksp => ObjectType::Any,
         }
     }
 }
@@ -200,8 +159,8 @@ impl MainOperations {
             },
             FilterType::Type(types) => {
                 let mut objects = Self.get_all_objects(session)?;
-                objects.retain(|obj| types.iter().any(|t| <MgmObjectType as Into<ObjectType>>::into(t.to_owned()) == obj.object_type));
-                if types.contains(&MgmObjectType::Certificate) {
+                objects.retain(|obj| types.contains(&obj.object_type));
+                if types.contains(&ObjectType::Opaque) {
                     objects.retain(|obj| obj.object_type != ObjectType::Opaque || obj.algorithm == ObjectAlgorithm::OpaqueX509Certificate);
                 }
                 objects
@@ -230,59 +189,128 @@ impl MainOperations {
         Ok(objects)
     }
 
-    pub fn get_search_by_types() -> Vec<MgmObjectType> {
+    pub fn get_searchable_types() -> Vec<SelectionItem<ObjectType>> {
         vec![
-            MgmObjectType::Asymmetric,
-            MgmObjectType::Symmetric,
-            MgmObjectType::Certificate,
-            MgmObjectType::Authentication,
-            MgmObjectType::Wrap,
+            SelectionItem {
+                value: ObjectType::AsymmetricKey,
+                label: "Asymmetric key".to_string(),
+                description: String::new()
+            },
+             SelectionItem {
+                value: ObjectType::SymmetricKey,
+                label: "Symmetric key".to_string(),
+                description: String::new()
+            }, SelectionItem {
+                value: ObjectType::Opaque,
+                label: "X509Certificate".to_string(),
+                description: String::new()
+            },
+             SelectionItem {
+                value: ObjectType::WrapKey,
+                label: "Wrap key".to_string(),
+                description: String::new()
+            },
+             SelectionItem {
+                value: ObjectType::AuthenticationKey,
+                label: "Authentication key".to_string(),
+                description: String::new()
+            },
         ]
     }
 
-    pub fn get_generatable_types(authkey: &ObjectDescriptor) -> Vec<MgmObjectType> {
+    pub fn get_generatable_types(authkey: &ObjectDescriptor) -> Vec<SelectionItem<ObjectType>> {
         let mut types = Vec::new();
         if authkey.capabilities.contains(&ObjectCapability::GenerateAsymmetricKey) {
-            types.push(MgmObjectType::Asymmetric);
+            types.push(SelectionItem {
+                value: ObjectType::AsymmetricKey,
+                label: "Asymmetric private key".to_string(),
+                description: String::new()
+            });
         }
         if authkey.capabilities.contains(&ObjectCapability::GenerateSymmetricKey) {
-            types.push(MgmObjectType::Symmetric);
+            types.push(SelectionItem {
+                value: ObjectType::SymmetricKey,
+                label: "Symmetric key".to_string(),
+                description: String::new()
+            });
         }
         if authkey.capabilities.contains(&ObjectCapability::GenerateWrapKey) {
-            types.push(MgmObjectType::Wrap);
+            types.push(SelectionItem {
+                value: ObjectType::WrapKey,
+                label: "Wrap key".to_string(),
+                description: String::new()
+            });
         }
         types
     }
 
 
-    pub fn get_importable_types(authkey: &ObjectDescriptor) -> Vec<MgmObjectType> {
+    pub fn get_importable_types(authkey: &ObjectDescriptor) -> Vec<SelectionItem<ObjectType>> {
         let mut types = Vec::new();
-        if authkey.capabilities.contains(&ObjectCapability::PutAsymmetricKey) {
-            types.push(MgmObjectType::Asymmetric);
-        }
-        if authkey.capabilities.contains(&ObjectCapability::PutOpaque) {
-            types.push(MgmObjectType::Certificate);
+        if authkey.capabilities.contains(&ObjectCapability::PutAsymmetricKey) ||
+            authkey.capabilities.contains(&ObjectCapability::PutOpaque) {
+            types.push(SelectionItem {
+                value: ObjectType::AsymmetricKey,
+                label: "Asymmetric object".to_string(),
+                description: "Asymmetric private key or X509Certificate".to_string()
+            });
         }
         if authkey.capabilities.contains(&ObjectCapability::PutSymmetricKey) {
-            types.push(MgmObjectType::Symmetric);
+            types.push(SelectionItem {
+                value: ObjectType::SymmetricKey,
+                label: "Symmetric key".to_string(),
+                description: String::new()
+            });
         }
         if authkey.capabilities.contains(&ObjectCapability::PutWrapKey) {
-            types.push(MgmObjectType::Wrap);
+            types.push(SelectionItem {
+                value: ObjectType::WrapKey,
+                label: "Wrap key".to_string(),
+                description: String::new()
+            });
         }
         if authkey.capabilities.contains(&ObjectCapability::PutAuthenticationKey) {
-            types.push(MgmObjectType::Authentication);
+            types.push(SelectionItem {
+                value: ObjectType::AuthenticationKey,
+                label: "Authentication key".to_string(),
+                description: String::new()
+            });
         }
         types
     }
 
-    pub fn get_key_operation_types() -> Vec<MgmObjectType> {
+    pub fn get_key_operation_types() -> Vec<SelectionItem<MgmCommandType>> {
         vec![
-            MgmObjectType::Asymmetric,
-            MgmObjectType::Symmetric,
-            MgmObjectType::Wrap,
-            MgmObjectType::Authentication,
-            MgmObjectType::Java,
-            MgmObjectType::Ksp,
+            SelectionItem {
+                value: MgmCommandType::GotoAsym,
+                label: "Asymmetric key operations".to_string(),
+                description: "Management and use of asymmetric keys and certificates, including attestation and certificate signing".to_string()
+            },
+             SelectionItem {
+                value: MgmCommandType::GotoSym,
+                label: "Symmetric key operations".to_string(),
+                description: "Management and use of symmetric keys. Require firmware version 2.4 or higher".to_string()
+            },
+            SelectionItem {
+                value: MgmCommandType::GotoWrap,
+                label: "Wrap key operations".to_string(),
+                description: "Management and use of wrap keys, including key export and import".to_string()
+            },
+             SelectionItem {
+                value: MgmCommandType::GotoAuth,
+                label: "Authentication key operations".to_string(),
+                description: "Management of authentication keys (access control)".to_string()
+            },
+            SelectionItem {
+                value: MgmCommandType::GotoJava,
+                label: "Special operations: SunPKCS11".to_string(),
+                description: "Management of keys compatible with SunPKCS11 provider".to_string()
+            },
+            SelectionItem {
+                value: MgmCommandType::GotoKsp,
+                label: "Special operations: KSP setup".to_string(),
+                description: "Guided setup of the YubiHSM for Windows KSP/CNG provider".to_string()
+            },
         ]
     }
 

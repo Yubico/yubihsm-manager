@@ -272,7 +272,7 @@ impl YubihsmUi for Cmdline {
         }
 
         for item in items {
-            selected = selected.item(item.value.to_owned(), item.label.to_owned(), item.hint.to_owned());
+            selected = selected.item(item.value.to_owned(), item.label.to_owned(), item.description.to_owned());
         }
         let selected = return_or_exit!(selected.interact());
         Ok(selected)
@@ -298,7 +298,7 @@ impl YubihsmUi for Cmdline {
         selected = selected.initial_values(preselected_items.to_vec());
 
         for item in available_items {
-            selected = selected.item(item.value.to_owned(), item.label.to_owned(), item.hint.to_owned());
+            selected = selected.item(item.value.to_owned(), item.label.to_owned(), item.description.to_owned());
         }
         let selected = return_or_exit!(selected.interact());
         Ok(selected)

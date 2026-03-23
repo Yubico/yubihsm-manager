@@ -79,14 +79,14 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
             aes_mode.push(SelectionItem {
                 value: AesMode::Ecb,
                 label: "ECB".to_string(),
-                hint: "".to_string() }
+                description: "".to_string() }
             );
         }
         if (enc_mode == EncryptionMode::Encrypt && authkey.capabilities.contains(&ObjectCapability::EncryptCbc)) || (enc_mode == EncryptionMode::Decrypt && authkey.capabilities.contains(&ObjectCapability::DecryptCbc)) {
             aes_mode.push(SelectionItem {
                 value: AesMode::Cbc,
                 label: "CBC".to_string(),
-                hint: "".to_string() }
+                description: "".to_string() }
             );
         }
         let aes_mode = self.ui.select_one_item(

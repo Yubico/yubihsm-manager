@@ -150,7 +150,12 @@ pub enum MgmCommandType {
     BackupDevice,
     RestoreDevice,
     GotoKey,
-    GotoSpecialCase,
+    GotoAsym,
+    GotoSym,
+    GotoWrap,
+    GotoAuth,
+    GotoJava,
+    GotoKsp,
     GotoDevice,
     GetDeviceInfo,
     GetDevicePublicKey,
@@ -222,7 +227,7 @@ impl MgmCommand {
 pub struct SelectionItem<T: Clone + Eq> {
     pub value: T,
     pub label: String,
-    pub hint: String,
+    pub description: String,
 }
 
 impl <T:Clone+Eq+Display> SelectionItem<T> {
@@ -231,7 +236,7 @@ impl <T:Clone+Eq+Display> SelectionItem<T> {
         SelectionItem {
             value: value.clone(),
             label: format!("{}", value),
-            hint: String::new(),
+            description: String::new(),
         }
     }
 
@@ -583,10 +588,10 @@ mod tests {
         let item = SelectionItem {
             value: 42u32,
             label: "forty-two".to_string(),
-            hint: "a hint".to_string() };
+            description: "a hint".to_string() };
         assert_eq!(item.value, 42);
         assert_eq!(item.label, "forty-two");
-        assert_eq!(item.hint, "a hint");
+        assert_eq!(item.description, "a hint");
     }
 
     #[test]
@@ -595,7 +600,7 @@ mod tests {
         let item = SelectionItem::get_item(&"hello".to_string());
         assert_eq!(item.value, "hello");
         assert_eq!(item.label, "hello");
-        assert!(item.hint.is_empty());
+        assert!(item.description.is_empty());
     }
 
     #[test]
