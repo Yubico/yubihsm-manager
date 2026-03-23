@@ -80,7 +80,7 @@ impl MainOperations {
 
     pub const MAIN_CONTEXT: &'static str = "main";
 
-    const COMMANDS: [MgmCommand; 8] = [
+    const COMMANDS: [MgmCommand; 13] = [
         MgmCommand {
             command: MgmCommandType::List,
             label: "List",
@@ -132,15 +132,52 @@ impl MainOperations {
             require_all_capabilities: false,
         },
         MgmCommand {
-            command: MgmCommandType::GotoKey,
-            label: "Goto key operation",
+            command: MgmCommandType::ImportWrapped,
+            label: "Import wrapped object",
+            description: "Import a wrapped object into the YubiHSM",
+            required_capabilities: &[
+                ObjectCapability::ImportWrapped,
+            ],
+            require_all_capabilities: false,
+        },
+        MgmCommand {
+            command: MgmCommandType::GotoAsym,
+            label: "[Asymmetric Key operations]",
+            description: "Manage and use asymmetric keys stored on the YubiHSM",
+            required_capabilities: &[],
+            require_all_capabilities: false,
+        },
+        MgmCommand {
+            command: MgmCommandType::GotoSym,
+            label: "[Symmetric Key operations]",
+            description: "Manage and use symmetric keys stored on the YubiHSM. Rrquires firmware version 2.4 or higher",
+            required_capabilities: &[],
+            require_all_capabilities: false,
+        },
+        MgmCommand {
+            command: MgmCommandType::GotoWrap,
+            label: "[Wrap Key operations]",
+            description: "Manage and use wrap keys stored on the YubiHSM",
+            required_capabilities: &[],
+            require_all_capabilities: false,
+        },
+        MgmCommand {
+            command: MgmCommandType::GotoAuth,
+            label: "[Authentication Key operations]",
+            description: "Manage authentication keys stored on the YubiHSM",
+            required_capabilities: &[],
+            require_all_capabilities: false,
+        },
+        MgmCommand {
+            command: MgmCommandType::GotoSpecialOps,
+            label: "[Special operations]",
             description: "",
             required_capabilities: &[],
             require_all_capabilities: false,
         },
         MgmCommand {
             command: MgmCommandType::GotoDevice,
-            label: "Goto device operations",
+            label: "[Device operations]",
             description: "Get pseudo random number, backup, restore or reset device",
             required_capabilities: &[
                 ObjectCapability::GetPseudoRandom,
@@ -222,6 +259,10 @@ impl MainOperations {
                 label: "Authentication key".to_string(),
                 description: String::new()
             },
+            SelectionItem {
+                value: ObjectType::PublicWrapKey,
+                label: "Public wrap key".to_string(),
+                description: String::new()},
         ]
     }
 
@@ -250,7 +291,6 @@ impl MainOperations {
         }
         types
     }
-
 
     pub fn get_importable_types(authkey: &ObjectDescriptor) -> Vec<SelectionItem<ObjectType>> {
         let mut types = Vec::new();
@@ -287,39 +327,18 @@ impl MainOperations {
         types
     }
 
-    pub fn get_key_operation_types() -> Vec<SelectionItem<MgmCommandType>> {
+    pub fn get_special_ops() -> Vec<SelectionItem<MgmCommandType>> {
         vec![
             SelectionItem {
-                value: MgmCommandType::GotoAsym,
-                label: "Asymmetric key operations".to_string(),
-                description: "Management and use of asymmetric keys and certificates, including attestation and certificate signing".to_string()
+                value: MgmCommandType::GotoSpecialJava,
+                label: "SunPKCS11".to_string(),
+                description: "Manage asymmetric keys with properties compatible with SunPKCS11 provider in Java".to_string()
             },
              SelectionItem {
-                value: MgmCommandType::GotoSym,
-                label: "Symmetric key operations".to_string(),
-                description: "Management and use of symmetric keys. Require firmware version 2.4 or higher".to_string()
-            },
-            SelectionItem {
-                value: MgmCommandType::GotoWrap,
-                label: "Wrap key operations".to_string(),
-                description: "Management and use of wrap keys, including key export and import".to_string()
-            },
-             SelectionItem {
-                value: MgmCommandType::GotoAuth,
-                label: "Authentication key operations".to_string(),
-                description: "Management of authentication keys (access control)".to_string()
-            },
-            SelectionItem {
-                value: MgmCommandType::GotoJava,
-                label: "Special operations: SunPKCS11".to_string(),
-                description: "Management of keys compatible with SunPKCS11 provider".to_string()
-            },
-            SelectionItem {
-                value: MgmCommandType::GotoKsp,
-                label: "Special operations: KSP setup".to_string(),
+                value: MgmCommandType::GotoSpecialKsp,
+                label: "KSP setup".to_string(),
                 description: "Guided setup of the YubiHSM for Windows KSP/CNG provider".to_string()
             },
         ]
     }
-
 }

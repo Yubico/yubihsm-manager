@@ -272,7 +272,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         Ok(())
     }
 
-    fn import_wrapped(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    pub fn import_wrapped(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let filepath = self.ui.get_path_input(
             "Enter absolute path to wrapped object file:",
             true,
