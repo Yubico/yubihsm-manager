@@ -90,6 +90,10 @@ pub fn get_aes_keylen_from_algorithm(object_algorithm: ObjectAlgorithm) -> Resul
 }
 
 pub fn delete_objects(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh_operation: &dyn YubihsmOperations, session: &Session, available_objects: &[ObjectDescriptor]) -> Result<(), MgmError> {
+    if available_objects.is_empty() {
+        ui.display_info_message("No objects available for deletion by this user");
+        return Ok(());
+    }
     let objects = ui.select_multiple_objects(
         available_objects,
         false,

@@ -214,14 +214,14 @@ impl WrapOperations {
             command: MgmCommandType::Import,
             label: "Import Wrap Key",
             description: "Import a wrap key into the YubiHSM",
-            required_capabilities: &[ObjectCapability::PutWrapKey],
+            required_capabilities: &[ObjectCapability::PutWrapKey, ObjectCapability::PutPublicWrapKey],
             require_all_capabilities: false,
         },
         MgmCommand {
             command: MgmCommandType::Delete,
             label: "Delete",
             description: "Delete a wrap key from the YubiHSM",
-            required_capabilities: &[ObjectCapability::DeleteWrapKey],
+            required_capabilities: &[ObjectCapability::DeleteWrapKey, ObjectCapability::DeletePublicWrapKey],
             require_all_capabilities: false,
         },
         MgmCommand {

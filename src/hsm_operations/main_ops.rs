@@ -105,6 +105,7 @@ impl MainOperations {
                 ObjectCapability::DeleteOpaque,
                 ObjectCapability::DeleteSymmetricKey,
                 ObjectCapability::DeleteWrapKey,
+                ObjectCapability::DeletePublicWrapKey,
                 ObjectCapability::DeleteAuthenticationKey],
             require_all_capabilities: false,
         },
@@ -126,7 +127,8 @@ impl MainOperations {
                 ObjectCapability::PutAsymmetricKey,
                 ObjectCapability::PutOpaque,
                 ObjectCapability::PutSymmetricKey,
-                ObjectCapability::PutWrapKey],
+                ObjectCapability::PutWrapKey,
+                ObjectCapability::PutPublicWrapKey],
             require_all_capabilities: false,
         },
         MgmCommand {
@@ -181,7 +183,7 @@ impl MainOperations {
                     ObjectType::Opaque => authkey.capabilities.contains(&ObjectCapability::DeleteOpaque),
                     ObjectType::SymmetricKey => authkey.capabilities.contains(&ObjectCapability::DeleteSymmetricKey),
                     ObjectType::WrapKey => authkey.capabilities.contains(&ObjectCapability::DeleteWrapKey),
-                    ObjectType::PublicWrapKey => authkey.capabilities.contains(&ObjectCapability::DeleteWrapKey),
+                    ObjectType::PublicWrapKey => authkey.capabilities.contains(&ObjectCapability::DeletePublicWrapKey),
                     ObjectType::AuthenticationKey => authkey.capabilities.contains(&ObjectCapability::DeleteAuthenticationKey),
                     _ => false,
                 }
@@ -208,6 +210,11 @@ impl MainOperations {
              SelectionItem {
                 value: ObjectType::WrapKey,
                 label: "Wrap key".to_string(),
+                description: String::new()
+            },
+            SelectionItem {
+                value: ObjectType::PublicWrapKey,
+                label: "Public wrap key".to_string(),
                 description: String::new()
             },
              SelectionItem {
@@ -262,7 +269,8 @@ impl MainOperations {
                 description: String::new()
             });
         }
-        if authkey.capabilities.contains(&ObjectCapability::PutWrapKey) {
+        if authkey.capabilities.contains(&ObjectCapability::PutWrapKey) ||
+            authkey.capabilities.contains(&ObjectCapability::PutPublicWrapKey) {
             types.push(SelectionItem {
                 value: ObjectType::WrapKey,
                 label: "Wrap key".to_string(),

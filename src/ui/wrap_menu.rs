@@ -211,6 +211,10 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         };
 
         let exportable_objects = WrapOperations::get_exportable_objects(session, &wrapkey, wrap_type)?;
+        if exportable_objects.is_empty() {
+            self.ui.display_info_message("No objects available for export by this user");
+            return Ok(());
+        }
         let export_objects = self.ui.select_multiple_objects(
             &exportable_objects,
             false,

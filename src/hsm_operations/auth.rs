@@ -186,7 +186,7 @@ impl AuthenticationOperations {
         ObjectCapability::ExportableUnderWrap,
     ];
 
-    pub const KEY_ADMIN_CAPABILITIES: [ObjectCapability; 12] = [
+    pub const KEY_ADMIN_CAPABILITIES: [ObjectCapability; 14] = [
         ObjectCapability::GenerateAsymmetricKey,
         ObjectCapability::PutAsymmetricKey,
         ObjectCapability::DeleteAsymmetricKey,
@@ -197,7 +197,9 @@ impl AuthenticationOperations {
         ObjectCapability::DeleteSymmetricKey,
         ObjectCapability::GenerateWrapKey,
         ObjectCapability::PutWrapKey,
+        ObjectCapability::PutPublicWrapKey,
         ObjectCapability::DeleteWrapKey,
+        ObjectCapability::DeletePublicWrapKey,
         ObjectCapability::ExportableUnderWrap,
     ];
 

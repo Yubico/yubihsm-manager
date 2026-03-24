@@ -105,8 +105,8 @@ jobs:
 
           cd ..
 
-          git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
-          #git clone https://github.com/Yubico/yubihsm-shell.git
+          #git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
+          git clone https://github.com/Yubico/yubihsm-shell.git
           cd yubihsm-shell
 
           if [ "$PLATFORM" = "ubuntu2404" ] || [ "$PLATFORM" = "ubuntu2504" ] || [ "$PLATFORM" = "ubuntu2510" ]; then
@@ -237,7 +237,8 @@ jobs:
         env:
           LIBYUBIHSM_TAG: ${{ matrix.libyubihsm_tag }}
         run: |
-          git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
+          #git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
+          git clone https://github.com/Yubico/yubihsm-shell.git
           # Set PCSC flags
           sed -i 's/#SET(CMAKE_C_FLAGS/SET(CMAKE_C_FLAGS/' yubihsm-shell/ykhsmauth/CMakeLists.txt
 
@@ -325,6 +326,8 @@ jobs:
 
       # download yubihsm-shell installer from dev.y.c and install it
       - name: install yubihsm-shell
+        env:
+          ARCH: ${{ matrix.arch }}
         run: |
           set -e -o pipefail
           set -x
@@ -335,14 +338,31 @@ jobs:
           brew install gengetopt help2man zlib
           brew reinstall openssl@3
 
-          cd ..
-          curl -L --max-redirs 2 -o yubihsm-shell-installer.pkg https://developers.yubico.com/yubihsm-shell/Releases/yubihsm-shell-$LIBYUBIHSM_VERSION-mac-universal.pkg
-          sudo installer -verbose -pkg yubihsm-shell-installer.pkg -target /
+          #cd ..
+          #curl -L --max-redirs 2 -o yubihsm-shell-installer.pkg https://developers.yubico.com/yubihsm-shell/Releases/yubihsm-shell-$LIBYUBIHSM_VERSION-mac-universal.pkg
+          #sudo installer -verbose -pkg yubihsm-shell-installer.pkg -target /
 
-          cp /usr/local/lib/libyubihsm*.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
-          cp /usr/local/lib/libusb-1.0.0.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
-          cp /usr/local/lib/libz.1.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
-          cp /usr/local/lib/libcrypto.3.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
+          #cp /usr/local/lib/libyubihsm*.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
+          #cp /usr/local/lib/libusb-1.0.0.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
+          #cp /usr/local/lib/libz.1.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
+          #cp /usr/local/lib/libcrypto.3.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
+          
+          echo "GITHUB_WORKSPACE : $GITHUB_WORKSPACE"
+          echo "HOME : $HOME"
+          git clone https://github.com/Yubico/yubihsm-shell.git
+          cd yubihsm-shell
+          pwd
+          cd resources/release/macos/shell
+          ./make_release_binaries.sh $ARCH $LIBYUBIHSM_VERSION $GITHUB_WORKSPACE/yubihsm-shell
+          ls
+          ls yubihsm-shell-darwin-$ARCH-$LIBYUBIHSM_VERSION
+          #cp -r $GITHUB_WORKSPACE/release/macos/shell/yubihsm-shell-darwin-$ARCH-$LIBYUBIHSM_VERSION $GITHUB_WORKSPACE/artifact/usr/local/lib/
+          cp yubihsm-shell-darwin-$ARCH-$LIBYUBIHSM_VERSION/usr/local/lib/libyubihsm*.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
+          cp yubihsm-shell-darwin-$ARCH-$LIBYUBIHSM_VERSION/usr/local/lib/libusb-1.0.0.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
+          cp yubihsm-shell-darwin-$ARCH-$LIBYUBIHSM_VERSION/usr/local/lib/libz.1.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
+          cp yubihsm-shell-darwin-$ARCH-$LIBYUBIHSM_VERSION/usr/local/lib/libcrypto.3.dylib $GITHUB_WORKSPACE/artifact/usr/local/lib/
+          cd $GITHUB_WORKSPACE
+          rm -rf yubihsm-shell
 
       - name: Build yubihsm-manager
         env:
@@ -431,7 +451,8 @@ jobs:
           #$procMain = Start-Process "msiexec" "/i `"yubihsm-shell.msi`" /qn /l*! `"$log`"" -NoNewWindow -PassThru
           #$procMain.WaitForExit()
 
-          git clone --branch $env:LIBYUBIHSM_VERSION --single-branch https://github.com/Yubico/yubihsm-shell.git
+          #git clone --branch $env:LIBYUBIHSM_VERSION --single-branch https://github.com/Yubico/yubihsm-shell.git
+          git clone https://github.com/Yubico/yubihsm-shell.git
           cd yubihsm-shell
           mkdir build; cd build
           cmake -S .. -A x64 -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_LIB=ON -DENABLE_CERT_COMPRESS=OFF -DWITHOUT_MANPAGES=1
