@@ -17,14 +17,15 @@
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
+use crate::traits::command_traits::Command;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::helper_operations::{delete_objects, display_object_properties, get_new_spec_table, list_objects};
 use crate::ui::helper_operations::{display_menu_headers, get_script_input_data};
 use crate::common::error::MgmError;
-use crate::common::types::{MgmCommandType, NewObjectSpec, SelectionItem};
+use crate::common::types::{NewObjectSpec, SelectionItem};
 use crate::common::util::get_delegated_capabilities;
 use crate::hsm_operations::asym::AsymmetricOperations;
-use crate::hsm_operations::auth::{AuthenticationOperations, AuthenticationType, UserType};
+use crate::hsm_operations::auth::{AuthCommand, AuthenticationOperations, AuthenticationType, UserType};
 use crate::ui::helper_io::get_pem_from_file;
 use crate::script::script_recorder::SessionRecorder;
 use crate::script::script_types::{RecordableObjectSpec, RecordedOperation};
@@ -47,19 +48,18 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
                                  "Authentication key operations allow you to setup users by managing authentication keys stored on the YubiHSM")?;
 
             let cmd = self.ui.select_command(
-                &AuthenticationOperations.get_authorized_commands(authkey))?;
-            display_menu_headers(&self.ui, &[crate::MAIN_HEADER, AUTH_HEADER, cmd.label], cmd.description)?;
+                &AuthCommand::authorized_commands(authkey))?;
+            display_menu_headers(&self.ui, &[crate::MAIN_HEADER, AUTH_HEADER, cmd.label()], cmd.description())?;
 
-            let res = match cmd.command {
-                MgmCommandType::List => list_objects(&self.ui, &AuthenticationOperations, session),
-                MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &AuthenticationOperations, session),
-                MgmCommandType::Delete => delete_objects(&self.ui, recorder, &AuthenticationOperations, session, &AuthenticationOperations.get_all_objects(session)?),
-                MgmCommandType::SetupUser => self.create_authkey(session, recorder, authkey, UserType::KeyUser),
-                MgmCommandType::SetupAdmin => self.create_authkey(session, recorder, authkey, UserType::KeyAdmin),
-                MgmCommandType::SetupAuditor => self.create_authkey(session, recorder, authkey, UserType::Auditor),
-                MgmCommandType::SetupCustomUser => self.create_authkey(session, recorder, authkey, UserType::CustomUser),
-                MgmCommandType::Exit => std::process::exit(0),
-                _ => unreachable!()
+            let res = match cmd {
+                AuthCommand::List => list_objects(&self.ui, &AuthenticationOperations, session),
+                AuthCommand::GetKeyProperties => display_object_properties(&self.ui, &AuthenticationOperations, session),
+                AuthCommand::Delete => delete_objects(&self.ui, recorder, &AuthenticationOperations, session, &AuthenticationOperations.get_all_objects(session)?),
+                AuthCommand::SetupUser => self.create_authkey(session, recorder, authkey, UserType::KeyUser),
+                AuthCommand::SetupAdmin => self.create_authkey(session, recorder, authkey, UserType::KeyAdmin),
+                AuthCommand::SetupAuditor => self.create_authkey(session, recorder, authkey, UserType::Auditor),
+                AuthCommand::SetupCustomUser => self.create_authkey(session, recorder, authkey, UserType::CustomUser),
+                AuthCommand::Exit => std::process::exit(0),
             };
 
             if let Err(err) = res {

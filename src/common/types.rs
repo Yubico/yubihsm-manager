@@ -19,7 +19,8 @@ use std::fmt::Display;
 use serde::{Serialize, Deserialize};
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
 use crate::common::algorithms;
-use crate::common::util::contains_all;
+
+pub const EXIT_LABEL: &str = "Exit YubiHSM Manager";
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct NewObjectSpec {
@@ -124,99 +125,6 @@ impl NewObjectSpec {
     }
 }
 
-
-#[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
-pub enum MgmCommandType {
-    #[default]
-    List,
-    Search,
-    GetKeyProperties,
-    Generate,
-    Import,
-    Delete,
-    GetPublicKey,
-    GetCertificate,
-    Sign,
-    Encrypt,
-    Decrypt,
-    DeriveEcdh,
-    SetupUser,
-    SetupAdmin,
-    SetupAuditor,
-    SetupCustomUser,
-    SignAttestationCert,
-    ExportWrapped,
-    ImportWrapped,
-    BackupDevice,
-    RestoreDevice,
-    GotoAsym,
-    GotoSym,
-    GotoWrap,
-    GotoAuth,
-    GotoSpecialJava,
-    GotoSpecialKsp,
-    GotoSpecialOps,
-    GotoDevice,
-    GetDeviceInfo,
-    GetDevicePublicKey,
-    GetRandom,
-    Reset,
-    Exit,
-}
-
-#[derive(Clone, Debug, Copy, PartialEq,  Eq, Default)]
-pub struct MgmCommand {
-    pub command: MgmCommandType,
-    pub label: &'static str,
-    pub description: &'static str,
-    pub required_capabilities: &'static [ObjectCapability],
-    pub require_all_capabilities: bool,
-}
-
-impl MgmCommand {
-
-    pub const EXIT_COMMAND: MgmCommand = MgmCommand {
-        command: MgmCommandType::Exit,
-        label: "Exit YubiHSM Manager",
-        description: "",
-        required_capabilities: &[],
-        require_all_capabilities: false,
-    };
-
-    pub fn new(
-        command: MgmCommandType,
-        label: &'static str,
-        description: &'static str,
-        required_capabilities: &'static [ObjectCapability],
-        require_all_capabilities: bool,
-    ) -> Self {
-        Self {
-            command,
-            label,
-            description,
-            required_capabilities,
-            require_all_capabilities,
-        }
-    }
-
-    pub fn is_authkey_authorized(&self, authkey: &ObjectDescriptor) -> bool {
-        if self.required_capabilities.is_empty() {
-            return true;
-        }
-        if self.require_all_capabilities {
-            contains_all(&authkey.capabilities, &self.required_capabilities)
-        } else {
-            self.required_capabilities.iter().any(|cap| authkey.capabilities.contains(cap))
-        }
-    }
-
-    pub fn contains_command(
-        commands: &[MgmCommand],
-        commands_to_check: &MgmCommandType,
-    ) -> bool {
-        commands.iter().any(|cmd| cmd.command == *commands_to_check)
-    }
-}
 
 
 

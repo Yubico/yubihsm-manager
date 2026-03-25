@@ -14,14 +14,66 @@
  * limitations under the License.
  */
 
+use strum_macros::EnumIter;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
-use crate::common::types::NewObjectSpec;
+use crate::traits::command_traits::Command;
+use crate::common::types::{NewObjectSpec, EXIT_LABEL};
 use crate::common::error::MgmError;
 use crate::common::algorithms::MgmAlgorithm;
-use crate::common::types::{MgmCommand, MgmCommandType};
-use crate::common::util::{get_object_descriptors, get_delegated_capabilities, get_authorized_commands};
+use crate::common::util::{get_object_descriptors, get_delegated_capabilities};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter)]
+pub enum AuthCommand {
+    List,
+    GetKeyProperties,
+    Delete,
+    SetupUser,
+    SetupAdmin,
+    SetupAuditor,
+    SetupCustomUser,
+    Exit
+}
+
+impl Command for AuthCommand {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::List => "List",
+            Self::GetKeyProperties => "Get object properties",
+            Self::Delete => "Delete",
+            Self::SetupUser => "Setup keys user",
+            Self::SetupAdmin => "Setup keys admin",
+            Self::SetupAuditor => "Setup auditor user",
+            Self::SetupCustomUser => "Setup custom user",
+            Self::Exit => EXIT_LABEL,
+        }
+    }
+
+    fn description(&self) -> &'static str {
+        match self {
+            Self::List => "List all authentication keys stored in the YubiHSM",
+            Self::GetKeyProperties => "Get properties of an authentication key stored on the YubiHSM",
+            Self::Delete => "Delete authentication keys from the YubiHSM",
+            Self::SetupUser => "Can only use (a)symmetric keys and wrap keys stored on the YubiHSM",
+            Self::SetupAdmin => "Can only manage (a)symmetric keys and wrap keys stored on the YubiHSM",
+            Self::SetupAuditor => "Can only perform audit functions on the YubiHSM",
+            Self::SetupCustomUser => "Custom user based on the current user's privileges",
+            Self::Exit => "",
+        }
+    }
+
+    fn required_capabilities(&self) -> &'static [ObjectCapability] {
+        match self {
+            Self::List | Self::GetKeyProperties | Self::Exit => &[],
+            Self::Delete => &[ObjectCapability::DeleteAuthenticationKey],
+            Self::SetupUser => &[ObjectCapability::PutAuthenticationKey],
+            Self::SetupAdmin => &[ObjectCapability::PutAuthenticationKey],
+            Self::SetupAuditor => &[ObjectCapability::PutAuthenticationKey],
+            Self::SetupCustomUser => &[ObjectCapability::PutAuthenticationKey],
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UserType {
@@ -46,11 +98,6 @@ impl YubihsmOperations for AuthenticationOperations {
     fn context(&self) -> &'static str {
         AuthenticationOperations::AUTH_CONTEXT
     }
-
-    fn get_authorized_commands(&self, authkey: &ObjectDescriptor) -> Vec<MgmCommand> {
-        get_authorized_commands(authkey, &Self::COMMANDS)
-    }
-
 
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
         let keys = session.list_objects_with_filter(
@@ -114,59 +161,6 @@ impl YubihsmOperations for AuthenticationOperations {
 impl AuthenticationOperations {
 
     pub const AUTH_CONTEXT: &'static str = "auth";
-
-    const COMMANDS: [MgmCommand; 8] = [
-        MgmCommand {
-            command: MgmCommandType::List,
-            label: "List",
-            description: "List all authentication keys stored in the YubiHSM",
-            required_capabilities: &[],
-            require_all_capabilities: false
-        },
-        MgmCommand {
-            command: MgmCommandType::GetKeyProperties,
-            label: "Get object properties",
-            description: "Get properties of an authentication key stored on the YubiHSM",
-            required_capabilities: &[],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::Delete,
-            label: "Delete",
-            description: "Delete an authentication key from the YubiHSM",
-            required_capabilities: &[ObjectCapability::DeleteAuthenticationKey],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::SetupUser,
-            label: "Setup keys user",
-            description: "Can only use (a)symmetric keys and wrap keys stored on the YubiHSM",
-            required_capabilities: &[ObjectCapability::PutAuthenticationKey],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::SetupAdmin,
-            label: "Setup keys admin",
-            description: "Can only manage (a)symmetric keys and wrap keys stored on the YubiHSM",
-            required_capabilities: &[ObjectCapability::PutAuthenticationKey],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::SetupAuditor,
-            label: "Setup auditor user",
-            description: "Can only perform audit functions on the YubiHSM",
-            required_capabilities: &[ObjectCapability::PutAuthenticationKey],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::SetupCustomUser,
-            label: "Setup custom user",
-            description: "Can have all capabilities of the current user",
-            required_capabilities: &[ObjectCapability::PutAuthenticationKey],
-            require_all_capabilities: false,
-        },
-        MgmCommand::EXIT_COMMAND,
-    ];
 
     pub const KEY_USER_CAPABILITIES: [ObjectCapability; 15] = [
         ObjectCapability::SignPkcs,

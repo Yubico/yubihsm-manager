@@ -20,7 +20,6 @@ use std::str::FromStr;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::common::error::MgmError;
-use crate::common::types::MgmCommand;
 use crate::common::validators::object_id_validator;
 
 
@@ -48,17 +47,6 @@ pub fn contains_all(set: &[ObjectCapability], subset: &[ObjectCapability]) -> bo
         }
     }
     true
-}
-
-pub fn get_authorized_commands(
-    authkey: &ObjectDescriptor,
-    commands: &[MgmCommand],
-) -> Vec<MgmCommand> {
-    let mut authorized_commands = commands.to_vec();
-    authorized_commands.retain(|cmd| {
-        cmd.is_authkey_authorized(authkey)
-    });
-    authorized_commands
 }
 
 pub fn get_object_descriptors(session: &Session, handlers: &[ObjectHandle]) -> Result<Vec<ObjectDescriptor>, MgmError> {

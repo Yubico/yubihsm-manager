@@ -15,8 +15,9 @@
  */
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
+use crate::traits::command_traits::Command;
 use crate::common::error::MgmError;
-use crate::common::types::{MgmCommand, SelectionItem};
+use crate::common::types::SelectionItem;
 use crate::common::algorithms::MgmAlgorithm;
 
 pub trait YubihsmUi {
@@ -33,7 +34,7 @@ pub trait YubihsmUi {
                                   available_capabilities: &[ObjectCapability],
                                   prompt: Option<&str>) -> Result<Vec<ObjectCapability>, MgmError>;
 
-    fn select_command(&self, available_commands: &[MgmCommand]) -> Result<MgmCommand, MgmError>;
+    fn select_command<C: Command>(&self, available_commands: &[C]) -> Result<C, MgmError>;
     fn select_algorithm(&self,
                         available_algorithms: &[MgmAlgorithm],
                         default_algorithm: Option<ObjectAlgorithm>,

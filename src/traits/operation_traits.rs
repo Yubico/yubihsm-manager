@@ -18,15 +18,12 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, Obj
 use yubihsmrs::Session;
 use crate::common::util::get_delegated_capabilities;
 use crate::common::algorithms::MgmAlgorithm;
-use crate::common::types::MgmCommand;
 use crate::common::error::MgmError;
 use crate::common::types::NewObjectSpec;
 
 pub trait YubihsmOperations {
 
     fn context(&self) -> &'static str;
-
-    fn get_authorized_commands(&self, authkey: &ObjectDescriptor) -> Vec<MgmCommand>;
 
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError>;
     fn get_generation_algorithms(&self) -> Vec<MgmAlgorithm>;

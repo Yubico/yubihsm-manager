@@ -15,5 +15,6 @@
  */
 
 pub mod operation_traits;
+pub mod command_traits;
 pub mod ui_traits;
 pub mod script_traits;

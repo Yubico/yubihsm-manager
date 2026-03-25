@@ -20,7 +20,7 @@ use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::common::error::MgmError;
-use crate::common::types::{MgmCommand, NewObjectSpec};
+use crate::common::types::{NewObjectSpec, EXIT_LABEL};
 use crate::common::util::get_delegated_capabilities;
 use crate::script::script_recorder::SessionRecorder;
 use crate::script::script_types;
@@ -29,7 +29,7 @@ use crate::script::script_types::{RecordableObjectSpec, RecordedOperation, MaskL
 static ESC_HELP_TEXT: &str = "Pressing 'Esc' will always cancel current operation and return to previous menu";
 
 pub fn display_menu_headers(ui: &impl YubihsmUi, menu_headers:&[&str], description: &str) -> Result<(), MgmError> {
-    if menu_headers.last() == Some(&MgmCommand::EXIT_COMMAND.label) {
+    if menu_headers.last() == Some(&EXIT_LABEL) {
         return Ok(());
     }
      let headers = menu_headers.join(" > ");
