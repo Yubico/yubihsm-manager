@@ -30,7 +30,7 @@ use crate::common::error::MgmError;
 use crate::common::types::SelectionItem;
 use crate::hsm_operations::sym::SymmetricOperations;
 use crate::hsm_operations::wrap::WrapOperations;
-use crate::hsm_operations::main_ops::{MainCommand, SpecialOpCommand, FilterType, MainOperations};
+use crate::hsm_operations::main_ops::{MainCommand, SpecialOpCommand, FilterType, MainOperations, ImportableType};
 use crate::hsm_operations::asym::AsymmetricOperations;
 use crate::script::script_recorder::SessionRecorder;
 
@@ -63,7 +63,6 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
                 MainCommand::Delete => delete_objects(&self.ui, recorder, &MainOperations, session, &MainOperations::get_objects_for_delete(session, authkey)?),
                 MainCommand::Generate => self.generate(session, recorder, authkey),
                 MainCommand::Import => self.import(session, recorder, authkey),
-                MainCommand::ImportWrapped => WrapMenu::new(self.ui.clone()).import_wrapped(session, recorder, authkey),
                 MainCommand::GotoAsym => AsymmetricMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
                 MainCommand::GotoSym => SymmetricMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
                 MainCommand::GotoWrap => WrapMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
@@ -127,17 +126,21 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
     }
 
     fn import(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        let _type: ObjectType = self.ui.select_one_item(
+        let _type: ImportableType = self.ui.select_one_item(
             &MainOperations::get_importable_types(authkey),
             None,
             Some("\nSelect type of object to import:")
         )?;
         match _type {
-            ObjectType::AsymmetricKey => AsymmetricMenu::new(self.ui.clone()).import(session, recorder, authkey),
-            ObjectType::SymmetricKey => SymmetricMenu::new(self.ui.clone()).import(session, recorder, authkey),
-            ObjectType::WrapKey => WrapMenu::new(self.ui.clone()).import(session, recorder, authkey),
-            ObjectType::AuthenticationKey => AuthenticationMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
-            _ => Err(MgmError::Error("Selected object type out of scope".to_string()))
+            ImportableType::ObjectType(t) => {
+                match t {
+                    ObjectType::AsymmetricKey => AsymmetricMenu::new(self.ui.clone()).import(session, recorder, authkey),
+                    ObjectType::SymmetricKey => SymmetricMenu::new(self.ui.clone()).import(session, recorder, authkey),
+                    ObjectType::WrapKey => WrapMenu::new(self.ui.clone()).import(session, recorder, authkey),
+                    _ => Err(MgmError::Error("Selected object type out of scope".to_string()))
+                }
+            }
+            ImportableType::Wrapped => WrapMenu::new(self.ui.clone()).import_wrapped(session, recorder, authkey),
         }
     }
 

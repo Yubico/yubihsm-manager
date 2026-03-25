@@ -33,7 +33,6 @@ pub enum MainCommand {
     Delete,
     Generate,
     Import,
-    ImportWrapped,
     GotoAsym,
     GotoSym,
     GotoWrap,
@@ -52,7 +51,6 @@ impl Command for MainCommand {
             Self::Delete => "Delete",
             Self::Generate => "Generate",
             Self::Import => "Import",
-            Self::ImportWrapped => "Import wrapped object",
             Self::GotoAsym => "[Asymmetric Key operations]",
             Self::GotoSym => "[Symmetric Key operations]",
             Self::GotoWrap => "[Wrap Key operations]",
@@ -70,7 +68,6 @@ impl Command for MainCommand {
             Self::Delete => "Delete an object from the YubiHSM",
             Self::Generate => "Generate a new key inside the YubiHSM",
             Self::Import => "Import an object into the YubiHSM",
-            Self::ImportWrapped => "Import a wrapped object into the YubiHSM",
             Self::GotoAsym => "Manage and use asymmetric keys stored on the YubiHSM",
             Self::GotoSym => "Manage and use symmetric keys stored on the YubiHSM. Rrquires firmware version 2.3.1 or higher",
             Self::GotoWrap => "Manage and use wrap keys stored on the YubiHSM",
@@ -100,8 +97,8 @@ impl Command for MainCommand {
                 ObjectCapability::PutOpaque,
                 ObjectCapability::PutSymmetricKey,
                 ObjectCapability::PutWrapKey,
-                ObjectCapability::PutPublicWrapKey],
-            Self::ImportWrapped => &[ObjectCapability::ImportWrapped],
+                ObjectCapability::PutPublicWrapKey,
+                ObjectCapability::ImportWrapped],
             Self::GotoAsym | Self::GotoSym | Self::GotoWrap | Self::GotoAuth | Self::GotoSpecialOps => &[],
             Self::GotoDevice => &[
                 ObjectCapability::GetPseudoRandom,
@@ -152,6 +149,12 @@ impl Display for FilterType {
             FilterType::Type(_) => write!(f, "By object type"),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq,  Eq)]
+pub enum ImportableType {
+    ObjectType(ObjectType),
+    Wrapped,
 }
 
 pub struct MainOperations;
@@ -291,19 +294,19 @@ impl MainOperations {
         types
     }
 
-    pub fn get_importable_types(authkey: &ObjectDescriptor) -> Vec<SelectionItem<ObjectType>> {
+    pub fn get_importable_types(authkey: &ObjectDescriptor) -> Vec<SelectionItem<ImportableType>> {
         let mut types = Vec::new();
         if authkey.capabilities.contains(&ObjectCapability::PutAsymmetricKey) ||
             authkey.capabilities.contains(&ObjectCapability::PutOpaque) {
             types.push(SelectionItem {
-                value: ObjectType::AsymmetricKey,
+                value: ImportableType::ObjectType(ObjectType::AsymmetricKey),
                 label: "Asymmetric object".to_string(),
                 description: "Asymmetric private key or X509Certificate".to_string()
             });
         }
         if authkey.capabilities.contains(&ObjectCapability::PutSymmetricKey) {
             types.push(SelectionItem {
-                value: ObjectType::SymmetricKey,
+                value: ImportableType::ObjectType(ObjectType::SymmetricKey),
                 label: "Symmetric key".to_string(),
                 description: String::new()
             });
@@ -311,15 +314,15 @@ impl MainOperations {
         if authkey.capabilities.contains(&ObjectCapability::PutWrapKey) ||
             authkey.capabilities.contains(&ObjectCapability::PutPublicWrapKey) {
             types.push(SelectionItem {
-                value: ObjectType::WrapKey,
+                value: ImportableType::ObjectType(ObjectType::WrapKey),
                 label: "Wrap key".to_string(),
                 description: String::new()
             });
         }
-        if authkey.capabilities.contains(&ObjectCapability::PutAuthenticationKey) {
+        if authkey.capabilities.contains(&ObjectCapability::ImportWrapped) {
             types.push(SelectionItem {
-                value: ObjectType::AuthenticationKey,
-                label: "Authentication key".to_string(),
+                value: ImportableType::Wrapped,
+                label: "Wrapped Object".to_string(),
                 description: String::new()
             });
         }
