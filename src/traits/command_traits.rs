@@ -46,3 +46,99 @@ pub trait Command: Copy + Eq + IntoEnumIterator {
             .collect()
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use yubihsmrs::object::ObjectType;
+    use super::*;
+    use strum_macros::EnumIter;
+// ══════════════════════════════════════════════
+//  MgmCommand::is_authkey_authorized
+// ══════════════════════════════════════════════
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter)]
+    enum TestCommand {
+        List,
+        Generate,
+        Sign,
+    }
+
+    impl Command for TestCommand {
+        fn label(&self) -> &'static str {
+            unimplemented!()
+        }
+
+        fn description(&self) -> &'static str {
+            unimplemented!()
+        }
+
+        fn required_capabilities(&self) -> &'static [ObjectCapability] {
+            match self {
+                Self::List => &[],
+                Self::Generate => &[
+                    ObjectCapability::GenerateAsymmetricKey,
+                    ObjectCapability::SignPkcs,
+                ],
+                Self::Sign => &[
+                    ObjectCapability::SignPkcs,
+                    ObjectCapability::SignPss,
+                    ObjectCapability::SignEcdsa,
+                ],
+            }
+        }
+
+        fn require_all_capabilities(&self) -> bool {
+            match self {
+                Self::List => false,
+                Self::Generate => true,
+                Self::Sign => false,
+            }
+        }
+    }
+
+    fn make_authkey_desc(caps: Vec<ObjectCapability>) -> ObjectDescriptor {
+        let mut desc = ObjectDescriptor::new();
+        desc.id = 1;
+        desc.object_type = ObjectType::AuthenticationKey;
+        desc.capabilities = caps;
+        desc
+    }
+
+    #[test]
+    fn test_authz_no_required_caps_always_true() {
+        let authkey = make_authkey_desc(vec![]);
+        assert!(TestCommand::List.is_authorized(&authkey));
+    }
+
+    #[test]
+    fn test_authz_require_all_has_all() {
+        let authkey = make_authkey_desc(vec![
+            ObjectCapability::GenerateAsymmetricKey,
+            ObjectCapability::SignPkcs,
+            ObjectCapability::ExportWrapped, // extra cap is fine
+        ]);
+        assert!(TestCommand::Generate.is_authorized(&authkey));
+    }
+
+    #[test]
+    fn test_authz_require_all_missing_one() {
+        // Missing SignPkcs
+        let authkey = make_authkey_desc(vec![ObjectCapability::GenerateAsymmetricKey]);
+        assert!(!TestCommand::Generate.is_authorized(&authkey));
+    }
+
+    #[test]
+    fn test_authz_require_any_has_one() {
+        // Only has SignPss — that's enough with require_all=false
+        let authkey = make_authkey_desc(vec![ObjectCapability::SignPss]);
+        assert!(TestCommand::Sign.is_authorized(&authkey));
+    }
+
+    #[test]
+    fn test_authz_require_any_has_none() {
+        // Has completely unrelated capabilities
+        let authkey = make_authkey_desc(vec![ObjectCapability::ExportWrapped]);
+        assert!(!TestCommand::Sign.is_authorized(&authkey));
+    }
+}
