@@ -21,22 +21,22 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectH
 use crate::common::types::NewObjectSpec;
 use crate::hsm_operations::wrap::WrapOpSpec;
 
-pub const REDACTED: &str = "<REDACTED>";
+pub const PROMPT: &str = "<PROMPT>";
 
 #[derive(Clone, Debug, PartialEq, Eq, Default, clap::ValueEnum)]
-pub enum RedactMode {
+pub enum MaskLevel {
     #[default]
     Sensitive,
     All,
     None,
 }
 
-impl Display for RedactMode {
+impl Display for MaskLevel {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            RedactMode::Sensitive => write!(f, "sensitive"),
-            RedactMode::All => write!(f, "all"),
-            RedactMode::None => write!(f, "none"),
+            MaskLevel::Sensitive => write!(f, "sensitive"),
+            MaskLevel::All => write!(f, "all"),
+            MaskLevel::None => write!(f, "none"),
         }
     }
 }
@@ -214,12 +214,12 @@ mod tests {
     }
 
     // ══════════════════════════════════════════════
-    //  RedactMode
+    //  MaskLevel
     // ══════════════════════════════════════════════
 
     #[test]
-    fn test_redact_mode_default() {
-        assert_eq!(RedactMode::default(), RedactMode::Sensitive);
+    fn test_mask_level_default() {
+        assert_eq!(MaskLevel::default(), MaskLevel::Sensitive);
     }
 
     // ══════════════════════════════════════════════

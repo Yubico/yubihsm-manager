@@ -29,7 +29,7 @@ use crate::hsm_operations::wrap::{WrapKeyType, WrapOperations, WrapOpSpec, WrapT
 use crate::ui::helper_io::{get_path, write_bytes_to_file};
 use crate::script::script_recorder::SessionRecorder;
 use crate::script::script_types;
-use crate::script::script_types::{RecordedOperation, RedactMode};
+use crate::script::script_types::{RecordedOperation, MaskLevel};
 
 static DEVICE_HEADER: &str = "YubiHSM Device Operations";
 
@@ -133,8 +133,8 @@ impl<T: YubihsmUi> DeviceMenu<T> {
         }
 
         if let Some(rec) = recorder {
-            let d = if rec.mode == RedactMode::All {
-                script_types::REDACTED.to_string()
+            let d = if rec.mask == MaskLevel::All {
+                script_types::PROMPT.to_string()
             } else {
                 dir
             };
@@ -214,8 +214,8 @@ impl<T: YubihsmUi> DeviceMenu<T> {
         }
 
         if let Some(rec) = recorder {
-            let d = if rec.mode == RedactMode::All {
-                script_types::REDACTED.to_string()
+            let d = if rec.mask == MaskLevel::All {
+                script_types::PROMPT.to_string()
             } else {
                 dir
             };
