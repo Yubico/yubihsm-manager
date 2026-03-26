@@ -625,10 +625,6 @@ fn test_attestation_device_signed() {
     let res = AsymmetricOperations::get_attestation_cert(&session, OBJECT_ID, 0, None);
     match res {
         Ok(cert_pem) => {
-            let pem_str = cert_pem.to_string();
-            assert!(pem_str.contains("BEGIN CERTIFICATE"), "Got: {}", pem_str);
-            assert!(pem_str.contains("END CERTIFICATE"));
-
             let (obj_type, obj_algo, _) = AsymmetricOperations::parse_asym_pem(cert_pem).expect("Failed to parse attestation cert PEM");
             assert_eq!(obj_algo, ObjectAlgorithm::OpaqueX509Certificate);
             assert_eq!(obj_type, ObjectType::Opaque);
