@@ -315,7 +315,11 @@ fn test_aes_wrap_export_without_exportable_capability_fails() {
 // ════════════════════════════════════════════════════════════════
 #[test]
 fn test_rsa_wrap_object() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 4, 0) {
+        eprintln!("Skipping RSA wrap test: requires firmware 2.4.0 or later");
+        return;
+    }
 
     // Generate RSA wrap key pair (private + public)
     let wrap_id = generate_rsa_wrap_key_pair(&session);
@@ -359,7 +363,11 @@ fn test_rsa_wrap_object() {
 // ════════════════════════════════════════════════════════════════
 #[test]
 fn test_rsa_wrap_key() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 4, 0) {
+        eprintln!("Skipping RSA wrap test: requires firmware 2.4.0 or later");
+        return;
+    }
 
     // Generate RSA wrap key pair (private + public)
     let wrap_id = generate_rsa_wrap_key_pair(&session);

@@ -50,7 +50,11 @@ pub fn make_sym_spec(
 
 #[test]
 fn test_generate_aes128() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping Symmetric Key test: requires firmware 2.3.0 or later");
+        return;
+    }
     let spec = make_sym_spec(
         0, "test-aes128", ObjectAlgorithm::Aes128,
         vec![ObjectCapability::EncryptEcb, ObjectCapability::DecryptEcb,
@@ -68,7 +72,11 @@ fn test_generate_aes128() {
 
 #[test]
 fn test_generate_aes192() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping Symmetric Key test: requires firmware 2.3.0 or later");
+        return;
+    }
     let spec = make_sym_spec(
         0, "test-aes192", ObjectAlgorithm::Aes192,
         vec![ObjectCapability::EncryptCbc, ObjectCapability::DecryptCbc,
@@ -86,7 +94,11 @@ fn test_generate_aes192() {
 
 #[test]
 fn test_generate_aes256() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping Symmetric Key test: requires firmware 2.3.0 or later");
+        return;
+    }
     let spec = make_sym_spec(
         0, "test-aes256", ObjectAlgorithm::Aes256,
         vec![ObjectCapability::EncryptEcb, ObjectCapability::DecryptEcb,
@@ -105,7 +117,11 @@ fn test_generate_aes256() {
 
 #[test]
 fn test_generate_duplicate_id_fails() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping Symmetric Key test: requires firmware 2.3.0 or later");
+        return;
+    }
     let mut spec = make_sym_spec(
         0, "test-dup-sym", ObjectAlgorithm::Aes256,
         vec![ObjectCapability::EncryptEcb], vec![]
@@ -125,7 +141,11 @@ fn test_generate_duplicate_id_fails() {
 
 #[test]
 fn test_import_aes128() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping Symmetric Key test: requires firmware 2.3.0 or later");
+        return;
+    }
     let key_bytes = vec![0x42u8; 16]; // 128-bit key
     let spec = make_sym_spec(
         0, "test-import-aes128", ObjectAlgorithm::Aes128,
@@ -144,7 +164,11 @@ fn test_import_aes128() {
 
 #[test]
 fn test_import_aes192() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping Symmetric Key test: requires firmware 2.3.0 or later");
+        return;
+    }
     let key_bytes = vec![0x42u8; 24]; // 192-bit key
     let spec = make_sym_spec(
         0, "test-import-aes192", ObjectAlgorithm::Aes192,
@@ -163,7 +187,11 @@ fn test_import_aes192() {
 
 #[test]
 fn test_import_aes256() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping Symmetric Key test: requires firmware 2.3.0 or later");
+        return;
+    }
     let key_bytes = vec![0xABu8; 32]; // 256-bit key
     let spec = make_sym_spec(
         0, "test-import-aes256", ObjectAlgorithm::Aes256,
@@ -182,7 +210,11 @@ fn test_import_aes256() {
 
 #[test]
 fn test_import_wrong_keylen_fails() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping Symmetric Key test: requires firmware 2.3.0 or later");
+        return;
+    }
     let key_bytes = vec![0xFFu8; 17]; // invalid: not 16, 24, or 32
     let spec = make_sym_spec(
         0, "test-import-bad", ObjectAlgorithm::Aes128,
@@ -216,7 +248,11 @@ fn make_op_spec(
 
 #[test]
 fn test_ecb_encrypt_decrypt_roundtrip_aes256() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping Symmetric Key test: requires firmware 2.3.0 or later");
+        return;
+    }
     let spec = make_sym_spec(
         0, "test-ecb-rt", ObjectAlgorithm::Aes256,
         vec![ObjectCapability::EncryptEcb, ObjectCapability::DecryptEcb,
@@ -248,7 +284,11 @@ fn test_ecb_encrypt_decrypt_roundtrip_aes256() {
 
 #[test]
 fn test_ecb_multi_block() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping Symmetric Key test: requires firmware 2.3.0 or later");
+        return;
+    }
     let spec = make_sym_spec(
         0, "test-ecb-multi", ObjectAlgorithm::Aes256,
         vec![ObjectCapability::EncryptEcb, ObjectCapability::DecryptEcb,
@@ -281,7 +321,11 @@ fn test_ecb_multi_block() {
 
 #[test]
 fn test_cbc_encrypt_decrypt_roundtrip_aes256() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping Symmetric Key test: requires firmware 2.3.0 or later");
+        return;
+    }
     let spec = make_sym_spec(
         0, "test-cbc-rt", ObjectAlgorithm::Aes256,
         vec![ObjectCapability::EncryptCbc, ObjectCapability::DecryptCbc,
@@ -312,7 +356,11 @@ fn test_cbc_encrypt_decrypt_roundtrip_aes256() {
 
 #[test]
 fn test_cbc_multi_block() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping Symmetric Key test: requires firmware 2.3.0 or later");
+        return;
+    }
     let spec = make_sym_spec(
         0, "test-cbc-multi", ObjectAlgorithm::Aes256,
         vec![ObjectCapability::EncryptCbc, ObjectCapability::DecryptCbc,
@@ -341,7 +389,11 @@ fn test_cbc_multi_block() {
 
 #[test]
 fn test_cbc_wrong_iv_produces_wrong_plaintext() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping Symmetric Key test: requires firmware 2.3.0 or later");
+        return;
+    }
     let spec = make_sym_spec(
         0, "test-cbc-wrongiv", ObjectAlgorithm::Aes256,
         vec![ObjectCapability::EncryptCbc, ObjectCapability::DecryptCbc,
@@ -378,7 +430,11 @@ fn test_cbc_wrong_iv_produces_wrong_plaintext() {
 
 #[test]
 fn test_import_known_key_ecb_matches_openssl() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping Symmetric Key test: requires firmware 2.3.0 or later");
+        return;
+    }
     let key_bytes = vec![0x01u8; 32]; // known AES-256 key
     let spec = make_sym_spec(
         0, "test-ecb-ossl", ObjectAlgorithm::Aes256,
@@ -418,7 +474,11 @@ fn test_import_known_key_ecb_matches_openssl() {
 
 #[test]
 fn test_import_known_key_cbc_matches_openssl() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping Symmetric Key test: requires firmware 2.3.0 or later");
+        return;
+    }
     let key_bytes = vec![0x02u8; 32];
     let iv = vec![0x03u8; 16];
     let spec = make_sym_spec(
@@ -457,7 +517,11 @@ fn test_import_known_key_cbc_matches_openssl() {
 
 #[test]
 fn test_get_all_sym_objects() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping Symmetric Key test: requires firmware 2.3.0 or later");
+        return;
+    }
     let spec = make_sym_spec(
         0, "test-list-sym", ObjectAlgorithm::Aes256,
         vec![ObjectCapability::EncryptEcb, ObjectCapability::ExportableUnderWrap], vec![]
@@ -496,7 +560,11 @@ fn test_get_all_sym_objects() {
 
 #[test]
 fn test_get_operation_keys_encrypt_ecb() {
-    let (_h, session) = open_session();
+    let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping Symmetric Key test: requires firmware 2.3.0 or later");
+        return;
+    }
     let spec = make_sym_spec(
         0, "test-opkeys-ecb", ObjectAlgorithm::Aes256,
         vec![ObjectCapability::EncryptEcb, ObjectCapability::ExportableUnderWrap], vec![]

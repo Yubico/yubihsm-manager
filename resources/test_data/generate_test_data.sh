@@ -1,6 +1,6 @@
 #!/bin/bash
-TEST_DIR = "test_data"
 
+TEST_DIR="test_data"
 mkdir -p $TEST_DIR
 
 # RSA 2048 private key
@@ -16,6 +16,7 @@ openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out $TEST_DIR/ec
 openssl pkey -in $TEST_DIR/ecp256_private.pem -pubout -out $TEST_DIR/ecp256_public.pem 2>/dev/null
 
 # EC P384 public key (for negative tests)
+mkdir $TEST_DIR/tmp
 openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-384 -out $TEST_DIR/tmp/ecp384_priv.pem 2>/dev/null
 openssl pkey -in $TEST_DIR/tmp/ecp384_priv.pem -pubout -out $TEST_DIR/ecp384_public.pem 2>/dev/null
 rm $TEST_DIR/tmp/ecp384_priv.pem
@@ -27,5 +28,5 @@ openssl req -new -x509 -key $TEST_DIR/ecp256_private.pem -out $TEST_DIR/x509_cer
 # SunPKCS11 combo file: private key + cert
 cat $TEST_DIR/ecp256_private.pem $TEST_DIR/x509_cert.pem > $TEST_DIR/sunpkcs11_combo.pem
 
-WD = $(pwd)
+WD=$(pwd)
 echo "Test data generated in $WD/$TEST_DIR"
