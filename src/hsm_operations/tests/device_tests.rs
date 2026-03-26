@@ -38,6 +38,10 @@ fn test_get_device_info() {
 #[test]
 fn test_get_device_pubkey() {
     let (hsm, _) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping device public key test: requires firmware 2.3.0 or later");
+        return;
+    }
     let pubkey = hsm.get_device_pubkey().expect("get_device_pubkey failed");
     assert_eq!(pubkey.len(), 65, "Should be 65 bytes (uncompressed EcP256)");
     assert!(AsymmetricOperations::get_pubkey_pem(ObjectAlgorithm::EcP256, &pubkey).is_ok());

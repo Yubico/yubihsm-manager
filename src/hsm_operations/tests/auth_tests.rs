@@ -176,6 +176,10 @@ fn generate_local_ecp256_keypair() -> (Vec<u8>, Vec<u8>) {
 #[test]
 fn test_import_ecp256_auth_key() {
     let (hsm, session) = open_session();
+    if !is_firmware_compatible(&hsm, 2, 3, 0) {
+        eprintln!("Skipping EC P256 auth key import test: requires firmware 2.3.0 or later");
+        return;
+    }
 
     let (privkey, pubkey) = generate_local_ecp256_keypair();
     let spec = make_auth_ecp256_import_spec(

@@ -45,3 +45,10 @@ pub fn open_session() -> (YubiHsm, Session) {
                    .expect("Failed to open session — check authkey/password");
     (h, session)
 }
+
+pub fn is_firmware_compatible(hsm: &YubiHsm, major: u8, minor: u8, patch: u8) -> bool {
+    match hsm.get_device_info() {
+        Ok(info) => (info.major(), info.minor(), info.patch()) >= (major, minor, patch),
+        Err(_) => false,
+    }
+}
