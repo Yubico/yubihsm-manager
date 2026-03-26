@@ -11,7 +11,7 @@ jobs:
     steps:
 
       - name: clone repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: yubihsm-manager
 
@@ -164,7 +164,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # downloads and build yubihsm-shell from source release on dev.y.c
       - name: install yubihsm-shell
@@ -222,7 +222,7 @@ jobs:
 
     steps:
       - name: clone repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: yubihsm-manager
 

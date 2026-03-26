@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use std::convert::TryFrom;
 use super::utils::*;
 use yubihsmrs::object::*;
 use crate::hsm_operations::asym::AsymmetricOperations;
@@ -614,6 +615,7 @@ fn test_derive_ecdh_ecp256() {
 #[test]
 fn test_attestation_device_signed() {
     let (_h, session) = open_session();
+
     let spec = make_asym_spec(
         OBJECT_ID, "test-attest-dev", ObjectAlgorithm::EcP256,
         vec![ObjectCapability::SignEcdsa, ObjectCapability::SignAttestationCertificate,
@@ -644,10 +646,12 @@ fn test_attestation_selfsigned() {
     );
     AsymmetricOperations.generate(&session, &spec).expect("Failed to generate key for attestation test");
 
-    let cert_pem = AsymmetricOperations::get_attestation_cert(&session, OBJECT_ID, OBJECT_ID, None).expect("Failed to get self-signed attestation cert");
-    let pem_str = cert_pem.to_string();
-    assert!(pem_str.contains("BEGIN CERTIFICATE"), "Got: {}", pem_str);
-    assert!(pem_str.contains("END CERTIFICATE"));
+    let temp_cert = generate_local_self_signed_cert_der();
+    let temp_cert: Vec<u8> = openssl::x509::X509::from_der(temp_cert.as_slice()).expect("Failed to parse X509Certificate DER bytes")
+        .to_pem().expect("Failed to convert X509Certificate to PEM string");
+    let temp_cert = Pem::try_from(temp_cert.as_slice()).expect("Failed to parse PEM from PEM string");
+
+    let cert_pem = AsymmetricOperations::get_attestation_cert(&session, OBJECT_ID, OBJECT_ID, Some(temp_cert)).expect("Failed to get self-signed attestation cert");
 
     let (obj_type, obj_algo, _) = AsymmetricOperations::parse_asym_pem(cert_pem).expect("Failed to parse attestation cert PEM");
     assert_eq!(obj_algo, ObjectAlgorithm::OpaqueX509Certificate);
