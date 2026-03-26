@@ -35,7 +35,7 @@ use crate::hsm_operations::wrap::{WrapKeyType, WrapOperations, WrapOpSpec, WrapT
 use crate::ui::helper_io::{get_path, get_pem_from_file, write_bytes_to_file};
 use crate::script::script_recorder::SessionRecorder;
 use crate::script::script_types;
-use crate::script::script_types::{RecordableObjectSpec, RecordedOperation, RedactMode};
+use crate::script::script_types::{RecordableObjectSpec, RecordedOperation, MaskLevel};
 
 static WRAP_HEADER: &str = "Wrap keys";
 
@@ -256,8 +256,8 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         }
 
         if let Some(rec) = recorder {
-            let d = if rec.mode == RedactMode::All {
-                script_types::REDACTED.to_string()
+            let d = if rec.mask == MaskLevel::All {
+                script_types::PROMPT.to_string()
             } else {
                 dir
             };
@@ -383,7 +383,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
 
     fn record_import_wrapkey(&self, recorder: &Option<SessionRecorder>, spec: &NewObjectSpec, filename: Option<String>, n_threshold: u8, n_shares: u8) -> Result<(), MgmError> {
         if let Some(rec) = recorder {
-            let value = get_script_input_data(&rec.mode, spec, filename)?;
+            let value = get_script_input_data(&rec.mask, spec, filename)?;
             rec.record(RecordedOperation::ImportWrapKey { spec: RecordableObjectSpec::from(spec), value, n_threshold, n_shares })?;
         }
         Ok(())
@@ -391,8 +391,8 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
 
     fn record_import_wrapped(&self, recorder: &Option<SessionRecorder>, wrapping_spec: &WrapOpSpec, filepath: &str, new_key_spec: Option<&NewObjectSpec>) -> Result<(), MgmError> {
         if let Some(rec) = recorder {
-            let fp = if rec.mode == RedactMode::All {
-                script_types::REDACTED
+            let fp = if rec.mask == MaskLevel::All {
+                script_types::PROMPT
             } else {
                 filepath
             };

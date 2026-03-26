@@ -26,7 +26,7 @@ use ui::helper_io::get_pem_from_file;
 use cli::cmdline::Cmdline;
 use script::script_recorder::SessionRecorder;
 use script::script_runner::ScriptRunner;
-use script::script_types::{RedactMode, SessionScript};
+use script::script_types::{MaskLevel, SessionScript};
 use traits::script_traits::ScriptBackend;
 use ui::asym_menu::AsymmetricMenu;
 use ui::auth_menu::AuthenticationMenu;
@@ -70,10 +70,10 @@ fn main() -> Result<(), MgmError>{
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .subcommand(clap::Command::new("get-device-info").about("Display YubiHSM device info"))
         .subcommand(clap::Command::new("get-device-publickey").about("Display YubiHSM device public key"))
-        .subcommand(clap::Command::new("asym").about("Manage asymmetric keys"))
-        .subcommand(clap::Command::new("sym").about("Manage symmetric keys"))
+        .subcommand(clap::Command::new("asym").about("Manage and use asymmetric keys"))
+        .subcommand(clap::Command::new("sym").about("Manage and use symmetric keys"))
         .subcommand(clap::Command::new("auth").about("Manage authentication keys (aka users)"))
-        .subcommand(clap::Command::new("wrap").about("Manage wrap keys"))
+        .subcommand(clap::Command::new("wrap").about("Manage and use wrap keys"))
         .subcommand(clap::Command::new("reset").about("Reset YubiHSM2 device"))
         .subcommand(clap::Command::new("ksp").about("Setup KSP user for Windows CNG provider"))
         .subcommand(clap::Command::new("sunpkcs11").about("Manage asymmetric keys compatible with JAVA SunPKCS11 provider"))
@@ -108,7 +108,7 @@ fn main() -> Result<(), MgmError>{
         .arg(Arg::new("record")
             .long("record")
             .short('r')
-            .help("Record session operations in a script for later execution. Use the --redact option to redact sensitive values in the recorded script")
+            .help("Record session operations in a script for later execution.")
             .num_args(0)
             .default_value("false")
             .action(clap::ArgAction::SetTrue)
@@ -124,20 +124,20 @@ fn main() -> Result<(), MgmError>{
         .arg(Arg::new("script-path")
             .long("script-path")
             .short('s')
-            .help("Path to the new script file. Default is './yubihsm-manager_<timestamp>.json' where <timestamp> is the current date and time. This option is used when recording a session to specify the name of the recorded script file, and is ignored when executing a script")
+            .help("Path to a new script file. Use with --record. './yubihsm-manager_<timestamp>.json' if not set")
             .value_name("script_name")
             .num_args(1)
             .help_heading("Scripting"))
-        .arg(Arg::new("redact")
-            .long("redact")
-            .help("Redact sensitive values when recording a script. Default is only sensitive input (aka. object values) is redacted. Redacted data will be prompted for when executing a script. Use --redact=all to redact all values, and --redact=none to have all values written in plain text.")
-            .value_parser(clap::builder::EnumValueParser::<RedactMode>::new())
+        .arg(Arg::new("mask")
+            .long("mask")
+            .help("Set masking level for recorded script. Masked values are prompted during script execution.")
+            .value_parser(clap::builder::EnumValueParser::<MaskLevel>::new())
             .default_value("sensitive")
             .requires("record")
             .help_heading("Scripting"))
         .arg(Arg::new("continue-on-error")
             .long("continue-on-error")
-            .help("If an error occurs during script execution, print out a warning and continue executing the next operation. Default is to exit on error.")
+            .help("Warn and skip failed operations during script execution instead of exiting.")
             .num_args(0)
             .default_value("false")
             .action(clap::ArgAction::SetTrue)
@@ -260,12 +260,12 @@ fn main() -> Result<(), MgmError>{
         };
 
         YubihsmUi::display_info_message(&ui, "Starting session recording...");
-        let mode = matches.get_one::<RedactMode>("redact").cloned().unwrap_or_default();  // defaults to RedactMode::Sensitive
+        let mask_level = matches.get_one::<MaskLevel>("mask").cloned().unwrap_or_default();  // defaults to MaskLevel::Sensitive
         Some(SessionRecorder::new(
             connector.clone(),
             authkey,
             script_path.to_owned(),
-            mode,
+            mask_level,
             backend,
         ))
     } else {

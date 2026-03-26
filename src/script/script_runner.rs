@@ -159,7 +159,7 @@ impl ScriptRunner {
                                 "Cannot execute import of {:?} 0x{:04x}: Object type and/or algorithm are not of an asymmetric object.",
                                 spec.object_type, spec.id)));
                         }
-                        if data == script_types::REDACTED {
+                        if data == script_types::PROMPT {
                             let prompt = if new_spec.algorithm == ObjectAlgorithm::OpaqueX509Certificate {
                                 "Enter path to PEM file containing an X509 certificate:".to_string()
                             } else {
@@ -189,7 +189,7 @@ impl ScriptRunner {
                                 spec.object_type, spec.id)));
                         }
 
-                        let pems = if data == script_types::REDACTED {
+                        let pems = if data == script_types::PROMPT {
                             let fp = ui.get_sunpkcs11_import_filepath(
                                 "Enter absolute path to PEM file containing private key and X509Certificate (Only the first object of its type will be imported):",
                                 None)?;
@@ -220,7 +220,7 @@ impl ScriptRunner {
                                 spec.object_type, spec.id)));
                         }
 
-                        if data == script_types::REDACTED {
+                        if data == script_types::PROMPT {
                             let keylen = get_aes_keylen_from_algorithm(new_spec.algorithm)?;
                             let k = ui.get_aes_key_params_hex(format!("Enter AES key of length {} bytes in HEX format:", keylen).as_str(), keylen)?;
                             new_spec.data.push(k);
@@ -229,7 +229,7 @@ impl ScriptRunner {
                         }
                         SymmetricOperations.import(session, &new_spec)?;
                     }
-                    other => return Err(MgmError::Error(format!("Import operation not supported in '{:?}' context: unknown properties of redacted data.", other))),
+                    other => return Err(MgmError::Error(format!("Import operation not supported in '{:?}' context: unknown properties of masked data.", other))),
                 }
                 Ok(())
             },
@@ -247,7 +247,7 @@ impl ScriptRunner {
                 let wrapkey_type = WrapOperations::get_wrapkey_type(new_spec.object_type, new_spec.algorithm)?;
                 match wrapkey_type {
                     WrapKeyType::Aes => {
-                        if key == script_types::REDACTED {
+                        if key == script_types::PROMPT {
                             let kl = get_aes_keylen_from_algorithm(new_spec.algorithm)?;
                             let k = ui.get_aes_key_params_hex(format!("Enter Wrap Key of length {} bytes in HEX format:", kl).as_str(), kl)?;
                             new_spec.data.push(k);
@@ -256,7 +256,7 @@ impl ScriptRunner {
                         }
                     },
                     WrapKeyType::Rsa | WrapKeyType::RsaPublic => {
-                        if key == script_types::REDACTED {
+                        if key == script_types::PROMPT {
                             let filepath = if wrapkey_type == WrapKeyType::Rsa {
                                 ui.get_asymmetric_import_params_filepath(
                                     format!("Enter path to PEM file containing an {} private key:", new_spec.algorithm).as_str(), None, ObjectType::AsymmetricKey, new_spec.algorithm)?
@@ -305,14 +305,14 @@ impl ScriptRunner {
                                                  if spec.algorithm == ObjectAlgorithm::Aes128YubicoAuthentication { "Derived password" } else { "ECP256 public key" }));
                 let mut new_spec: NewObjectSpec = spec.into();
                 if new_spec.algorithm == ObjectAlgorithm::Aes128YubicoAuthentication {
-                    if credential == script_types::REDACTED {
+                    if credential == script_types::PROMPT {
                         let pwd = ui.get_password("Enter user password:", true)?;
                         new_spec.data.push(pwd.as_bytes().to_vec());
                     } else {
                        new_spec.data.push(hex::decode(credential)?);
                     }
                 } else if new_spec.algorithm == ObjectAlgorithm::Ecp256YubicoAuthentication {
-                    if credential == script_types::REDACTED {
+                    if credential == script_types::PROMPT {
                         let filepath = ui.get_asymmetric_import_params_filepath(
                             "Enter path to PEM file containing an ECP256 public key:", None, ObjectType::PublicKey, ObjectAlgorithm::EcP256)?;
                         let pubkey = get_pem_from_file(&filepath)?[0].to_owned();
@@ -339,7 +339,7 @@ impl ScriptRunner {
             RecordedOperation::BackupDevice { wrap_spec, objects, destination_directory} => {
                 ui.display_info_message(&format!("{} Export wrapped objects using WrapKey 0x{:04x}", step, wrap_spec.wrapkey_id));
 
-                let dir = if destination_directory == script_types::REDACTED {
+                let dir = if destination_directory == script_types::PROMPT {
                     ui.get_path_input(
                         "Enter path to backup directory:",
                         false,
@@ -363,7 +363,7 @@ impl ScriptRunner {
 
             RecordedOperation::ImportWrapped { wrap_spec, wrapped_filepath, new_key_spec } => {
                 ui.display_info_message(&format!("{} Import wrapped object using WrapKey 0x{:04x}", step, wrap_spec.wrapkey_id));
-                let wrapped = if wrapped_filepath == script_types::REDACTED {
+                let wrapped = if wrapped_filepath == script_types::PROMPT {
                     ui.get_path_input(
                         "Enter absolute path to wrapped object file:",
                         true,
@@ -384,7 +384,7 @@ impl ScriptRunner {
 
             RecordedOperation::RestoreDevice { wrap_spec, source_directory } => {
                 ui.display_info_message(&format!("{} Restore device using WrapKey 0x{:04x}", step, wrap_spec.wrapkey_id));
-                let dir = if source_directory == script_types::REDACTED {
+                let dir = if source_directory == script_types::PROMPT {
                     ui.get_path_input(
                         "Enter path to backup directory:",
                         false,
@@ -460,7 +460,7 @@ mod tests {
     use crate::script::backend_json::JsonBackend;
     use crate::script::script_types::{RecordableObjectSpec, RecordedOperation, SessionInfo, SessionScript};
     use crate::script::script_recorder::SessionRecorder;
-    use crate::script::script_types::RedactMode;
+    use crate::script::script_types::MaskLevel;
     use crate::hsm_operations::wrap::{WrapKeyType, WrapOpSpec, WrapType};
     use yubihsmrs::object::{
         ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectHandle, ObjectType,
@@ -781,7 +781,7 @@ mod tests {
             "yhusb://serial=E2E00000".to_string(),
             1,
             path.to_str().unwrap().to_string(),
-            RedactMode::Sensitive,
+            MaskLevel::Sensitive,
             Box::new(JsonBackend),
         );
         let op = RecordedOperation::GenerateObject {
@@ -806,7 +806,7 @@ mod tests {
             "yhusb://serial=DIVERSE1".to_string(),
             42,
             path.to_str().unwrap().to_string(),
-            RedactMode::None,
+            MaskLevel::None,
             Box::new(JsonBackend),
         );
 
@@ -871,7 +871,7 @@ mod tests {
                 "yhusb://serial=DROP0001".to_string(),
                 7,
                 path.to_str().unwrap().to_string(),
-                RedactMode::All,
+                MaskLevel::All,
                 Box::new(JsonBackend),
             );
             rec.record(RecordedOperation::GenerateObject {
@@ -895,7 +895,7 @@ mod tests {
             "yhusb://serial=INCR0001".to_string(),
             1,
             path.to_str().unwrap().to_string(),
-            RedactMode::Sensitive,
+            MaskLevel::Sensitive,
             Box::new(JsonBackend),
         );
 

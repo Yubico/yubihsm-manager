@@ -18,13 +18,13 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use crate::common::error::MgmError;
 use crate::traits::script_traits::ScriptBackend;
-use crate::script::script_types::{RecordedOperation, RedactMode, SessionInfo};
+use crate::script::script_types::{RecordedOperation, MaskLevel, SessionInfo};
 
 /// Accumulates recorded operations and writes them to a script file
 pub struct SessionRecorder {
     session_into: SessionInfo,
     pub script_path: PathBuf,
-    pub mode: RedactMode,
+    pub mask: MaskLevel,
     backend: Box<dyn ScriptBackend>,
     operations: RefCell<Vec<RecordedOperation>>,
 }
@@ -34,12 +34,12 @@ impl SessionRecorder {
         connector: String,
         auth_key_id: u16,
         script_path: String,
-        mode: RedactMode,
+        mask: MaskLevel,
         backend: Box<dyn ScriptBackend>) -> Self {
         Self {
             session_into: SessionInfo { connector, auth_key_id },
             script_path: PathBuf::from(script_path),
-            mode,
+            mask,
             backend,
             operations: RefCell::new(Vec::new()),
         }
@@ -78,7 +78,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
     use crate::script::backend_json::JsonBackend;
-    use crate::script::script_types::{RecordableObjectSpec, RedactMode};
+    use crate::script::script_types::{RecordableObjectSpec, MaskLevel};
     use crate::traits::script_traits::ScriptBackend;
     use crate::script::script_recorder::SessionRecorder;
     use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectType};
@@ -89,7 +89,7 @@ mod tests {
             "yhusb://serial=11111111".to_string(),
             1,
             path.to_str().unwrap().to_string(),
-            RedactMode::Sensitive,
+            MaskLevel::Sensitive,
             Box::new(JsonBackend),
         )
     }
@@ -126,7 +126,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let rec = make_recorder(&dir);
         assert_eq!(rec.operation_count(), 0);
-        assert_eq!(rec.mode, RedactMode::Sensitive);
+        assert_eq!(rec.mask, MaskLevel::Sensitive);
     }
 
     // ══════════════════════════════════════════════
@@ -191,7 +191,7 @@ mod tests {
                 "yhusb://serial=00000000".to_string(),
                 1,
                 path.to_str().unwrap().to_string(),
-                RedactMode::Sensitive,
+                MaskLevel::Sensitive,
                 Box::new(JsonBackend),
             );
             // rec is dropped here with 0 operations

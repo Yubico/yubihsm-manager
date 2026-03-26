@@ -24,7 +24,7 @@ use crate::common::types::{MgmCommand, NewObjectSpec};
 use crate::common::util::get_delegated_capabilities;
 use crate::script::script_recorder::SessionRecorder;
 use crate::script::script_types;
-use crate::script::script_types::{RecordableObjectSpec, RecordedOperation, RedactMode};
+use crate::script::script_types::{RecordableObjectSpec, RecordedOperation, MaskLevel};
 
 static ESC_HELP_TEXT: &str = "Pressing 'Esc' will always cancel current operation and return to previous menu";
 
@@ -212,10 +212,10 @@ pub fn import_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh
     Ok(())
 }
 
-pub fn get_script_input_data(redact_mode: &RedactMode, new_key: &NewObjectSpec, filename: Option<String>) -> Result<String, MgmError> {
-    let data = match redact_mode {
-        RedactMode::All | RedactMode::Sensitive => script_types::REDACTED.to_string(),
-        RedactMode::None => {
+pub fn get_script_input_data(mask_level: &MaskLevel, new_key: &NewObjectSpec, filename: Option<String>) -> Result<String, MgmError> {
+    let data = match mask_level {
+        MaskLevel::All | MaskLevel::Sensitive => script_types::PROMPT.to_string(),
+        MaskLevel::None => {
             if let Some(filename) = filename {
                 filename
             } else {
@@ -228,7 +228,7 @@ pub fn get_script_input_data(redact_mode: &RedactMode, new_key: &NewObjectSpec, 
 
 pub fn record_import_object_operation(recorder: &Option<SessionRecorder>, new_key: &NewObjectSpec, context: String, filename: Option<String>) -> Result<(), MgmError> {
     if let Some(rec) = recorder {
-        let data = get_script_input_data(&rec.mode, new_key, filename)?;
+        let data = get_script_input_data(&rec.mask, new_key, filename)?;
         rec.record(RecordedOperation::ImportObject { spec: RecordableObjectSpec::from(new_key), value: data, context })?;
     }
     Ok(())
@@ -263,7 +263,7 @@ pub fn display_wrapkey_shares(ui: &impl YubihsmUi, shares: Vec<String>) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::script::script_types::RedactMode;
+    use crate::script::script_types::MaskLevel;
     use crate::common::types::NewObjectSpec;
     use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectType};
 
@@ -298,41 +298,41 @@ mod tests {
     }
 
     // ══════════════════════════════════════════════
-    //  get_script_input_data — redaction modes
+    //  get_script_input_data — masking levels
     // ══════════════════════════════════════════════
 
     #[test]
     fn test_script_input_data_sensitive_mode_no_filename() {
         let spec = make_spec_with_data(vec![0xDE, 0xAD, 0xBE, 0xEF]);
-        let result = get_script_input_data(&RedactMode::Sensitive, &spec, None).unwrap();
-        assert_eq!(result, script_types::REDACTED);
+        let result = get_script_input_data(&MaskLevel::Sensitive, &spec, None).unwrap();
+        assert_eq!(result, script_types::PROMPT);
     }
 
     #[test]
     fn test_script_input_data_sensitive_mode_with_filename() {
         let spec = make_spec_with_data(vec![0xDE, 0xAD]);
-        let result = get_script_input_data(&RedactMode::Sensitive, &spec, Some("/path/to/key.pem".to_string())).unwrap();
-        assert_eq!(result, script_types::REDACTED);
+        let result = get_script_input_data(&MaskLevel::Sensitive, &spec, Some("/path/to/key.pem".to_string())).unwrap();
+        assert_eq!(result, script_types::PROMPT);
     }
 
     #[test]
     fn test_script_input_data_all_mode() {
         let spec = make_spec_with_data(vec![0xDE, 0xAD]);
-        let result = get_script_input_data(&RedactMode::All, &spec, None).unwrap();
-        assert_eq!(result, script_types::REDACTED);
+        let result = get_script_input_data(&MaskLevel::All, &spec, None).unwrap();
+        assert_eq!(result, script_types::PROMPT);
     }
 
     #[test]
     fn test_script_input_data_none_mode_no_filename() {
         let spec = make_spec_with_data(vec![0xDE, 0xAD, 0xBE, 0xEF]);
-        let result = get_script_input_data(&RedactMode::None, &spec, None).unwrap();
+        let result = get_script_input_data(&MaskLevel::None, &spec, None).unwrap();
         assert_eq!(result, "deadbeef"); // hex-encoded
     }
 
     #[test]
     fn test_script_input_data_none_mode_with_filename() {
         let spec = make_spec_with_data(vec![0xDE, 0xAD]);
-        let result = get_script_input_data(&RedactMode::None, &spec, Some("/path/to/key.pem".to_string())).unwrap();
+        let result = get_script_input_data(&MaskLevel::None, &spec, Some("/path/to/key.pem".to_string())).unwrap();
         // When filename is provided in None mode, the filename is returned instead of hex data
         assert_eq!(result, "/path/to/key.pem");
     }

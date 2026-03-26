@@ -18,7 +18,7 @@
 mod tests {
     use tempfile::TempDir;
     use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDomain, ObjectHandle, ObjectType};
-    use crate::script::script_types::{RecordableObjectSpec, RecordedOperation, RedactMode};
+    use crate::script::script_types::{RecordableObjectSpec, RecordedOperation, MaskLevel};
     use crate::script::backend_json::JsonBackend;
     use crate::script::script_recorder::SessionRecorder;
     use crate::script::script_runner::ScriptRunner;
@@ -51,7 +51,7 @@ mod tests {
             "yhusb://serial=ABCDEF01".to_string(),
             1,
             path.to_str().unwrap().to_string(),
-            RedactMode::None,
+            MaskLevel::None,
             Box::new(JsonBackend),
         );
 
@@ -76,7 +76,7 @@ mod tests {
             "yhusb://serial=VARIANT1".to_string(),
             1,
             path.to_str().unwrap().to_string(),
-            RedactMode::None,
+            MaskLevel::None,
             Box::new(JsonBackend),
         );
 
@@ -180,7 +180,7 @@ mod tests {
             "yhusb://serial=WRAP0001".to_string(),
             1,
             path.to_str().unwrap().to_string(),
-            RedactMode::None,
+            MaskLevel::None,
             Box::new(JsonBackend),
         );
         let wrap_spec = WrapOpSpec {
@@ -237,7 +237,7 @@ mod tests {
             "yhusb://serial=TRUNC001".to_string(),
             1,
             path.to_str().unwrap().to_string(),
-            RedactMode::Sensitive,
+            MaskLevel::Sensitive,
             Box::new(JsonBackend),
         );
         rec.record(RecordedOperation::GenerateObject {
@@ -260,7 +260,7 @@ mod tests {
             "yhusb://serial=TAMPER01".to_string(),
             1,
             path.to_str().unwrap().to_string(),
-            RedactMode::Sensitive,
+            MaskLevel::Sensitive,
             Box::new(JsonBackend),
         );
         rec.record(RecordedOperation::GenerateObject {
