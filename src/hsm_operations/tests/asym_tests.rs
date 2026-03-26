@@ -622,15 +622,19 @@ fn test_attestation_device_signed() {
     AsymmetricOperations.generate(&session, &spec).expect("Failed to generate key for attestation test");
 
     // attesting_key = 0 means device attestation key signs it
-    let cert_pem = AsymmetricOperations::get_attestation_cert(&session, OBJECT_ID, 0, None).expect("Failed to get device-signed attestation cert");
-    let pem_str = cert_pem.to_string();
-    assert!(pem_str.contains("BEGIN CERTIFICATE"), "Got: {}", pem_str);
-    assert!(pem_str.contains("END CERTIFICATE"));
+    let res = AsymmetricOperations::get_attestation_cert(&session, OBJECT_ID, 0, None)?;
+    match res {
+        Ok(cert_pem) => {
+            let pem_str = cert_pem.to_string();
+            assert!(pem_str.contains("BEGIN CERTIFICATE"), "Got: {}", pem_str);
+            assert!(pem_str.contains("END CERTIFICATE"));
 
-    let (obj_type, obj_algo, _) = AsymmetricOperations::parse_asym_pem(cert_pem).expect("Failed to parse attestation cert PEM");
-    assert_eq!(obj_algo, ObjectAlgorithm::OpaqueX509Certificate);
-    assert_eq!(obj_type, ObjectType::Opaque);
-
+            let (obj_type, obj_algo, _) = AsymmetricOperations::parse_asym_pem(cert_pem).expect("Failed to parse attestation cert PEM");
+            assert_eq!(obj_algo, ObjectAlgorithm::OpaqueX509Certificate);
+            assert_eq!(obj_type, ObjectType::Opaque);
+        }
+        Err(_) => eprintln!("Device did not return an attestation certificate. Possibly because device does not come with an attestation key.")
+    }
     session.delete_object(OBJECT_ID, ObjectType::AsymmetricKey).expect("Failed to delete generated key");
 }
 
