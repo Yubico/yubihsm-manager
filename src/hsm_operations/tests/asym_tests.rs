@@ -17,7 +17,7 @@
 use super::utils::*;
 use yubihsmrs::object::*;
 use crate::hsm_operations::asym::AsymmetricOperations;
-use crate::hsm_operations::sym::SymmetricOperations;
+use crate::hsm_operations::wrap::WrapOperations;
 use crate::common::types::NewObjectSpec;
 use crate::traits::operation_traits::YubihsmOperations;
 use openssl::ec::{EcGroup, EcKey};
@@ -622,7 +622,7 @@ fn test_attestation_device_signed() {
     AsymmetricOperations.generate(&session, &spec).expect("Failed to generate key for attestation test");
 
     // attesting_key = 0 means device attestation key signs it
-    let res = AsymmetricOperations::get_attestation_cert(&session, OBJECT_ID, 0, None)?;
+    let res = AsymmetricOperations::get_attestation_cert(&session, OBJECT_ID, 0, None);
     match res {
         Ok(cert_pem) => {
             let pem_str = cert_pem.to_string();
@@ -681,17 +681,17 @@ fn test_get_all_asym_objects() {
     );
     let ed_id = AsymmetricOperations.generate(&session, &ed_spec).expect("Failed to generate ED key for listing test");
 
-     let sym_spec = NewObjectSpec {
+     let wrap_spec = NewObjectSpec {
         id: 0,
         label: "test-list-asym_3".to_string(),
-        object_type: ObjectType::SymmetricKey,
-        algorithm: ObjectAlgorithm::Aes256,
+        object_type: ObjectType::WrapKey,
+        algorithm: ObjectAlgorithm::Aes192CcmWrap,
         domains: vec![ObjectDomain::One],
-        capabilities: vec![ObjectCapability::EncryptCbc, ObjectCapability::DecryptEcb],
+        capabilities: vec![ObjectCapability::ImportWrapped, ObjectCapability::ExportWrapped],
         delegated_capabilities: vec![],
         data: vec![],
     };
-    let sym_id = SymmetricOperations.generate(&session, &sym_spec).expect("Failed to generate symmetric key for listing test");
+    let wrap_id = WrapOperations.generate(&session, &wrap_spec).expect("Failed to generate wrap key for listing test");
 
 
     let objects = AsymmetricOperations.get_all_objects(&session).expect("Failed to get all objects from device");
@@ -702,13 +702,13 @@ fn test_get_all_asym_objects() {
     assert!(objects.iter().any(|o| o.id == ed_id),
             "Generated ED key should appear in get_all_objects"
     );
-    assert!(!objects.iter().any(|o| o.id == sym_id),
-            "Generated symmetric key should not appear in get_all_objects"
+    assert!(!objects.iter().any(|o| o.id == wrap_id),
+            "Generated wrap key should not appear in get_all_objects"
     );
 
     session.delete_object(OBJECT_ID, ObjectType::AsymmetricKey).expect("Failed to delete imported EC key");
     session.delete_object(ed_id, ObjectType::AsymmetricKey).expect("Failed to delete generated ED key");
-    session.delete_object(sym_id, ObjectType::SymmetricKey).expect("Failed to delete generated symmetric key");
+    session.delete_object(wrap_id, ObjectType::WrapKey).expect("Failed to delete generated wrap key");
 }
 
 #[test]
