@@ -11,7 +11,7 @@ jobs:
       VERSION: 0.4.1
     steps:
       - name: checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Create tar.gz
         run: |
           set -x
@@ -19,7 +19,7 @@ jobs:
           mkdir $GITHUB_WORKSPACE/artifact
           mv $GITHUB_WORKSPACE/../yubihsm-manager-$VERSION.tar.gz $GITHUB_WORKSPACE/artifact/
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: yubihsm-manager-src
           path: artifact
@@ -46,7 +46,7 @@ jobs:
     steps:
 
       - name: clone repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: yubihsm-manager
 
@@ -174,7 +174,7 @@ jobs:
           rm -rf ../yubihsm-manager
 
       - name: upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: "yubihsm-manager-${{ env.PLATFORM }}-amd64"
           path: ${{ env.PLATFORM }}
@@ -197,7 +197,7 @@ jobs:
     steps:
 
       - name: clone the repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: yubihsm-manager
 
@@ -300,7 +300,7 @@ jobs:
           rm -rf ../yubihsm-manager
 
       - name: upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: "yubihsm-manager-${{ env.PLATFORM }}-amd64"
           path: ${{ env.PLATFORM }}
@@ -322,7 +322,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # download yubihsm-shell installer from dev.y.c and install it
       - name: install yubihsm-shell
@@ -410,7 +410,7 @@ jobs:
           ./bin/yubihsm-manager --help
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: yubihsm-manager-macos-${{ matrix.arch }}
           path: artifact
@@ -424,7 +424,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
@@ -494,7 +494,7 @@ jobs:
           ./yubihsm-manager.exe --version
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: yubihsm-manager-${{ env.VERSION }}-win64
           path: artifact
