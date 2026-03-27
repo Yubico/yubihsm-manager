@@ -16,13 +16,123 @@
 
 use std::fmt;
 use std::fmt::Display;
+use strum_macros::EnumIter;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
+use crate::traits::command_traits::Command;
 use crate::common::algorithms::MgmAlgorithm;
 use crate::common::error::MgmError;
-use crate::common::types::{NewObjectSpec, MgmCommand, MgmCommandType, SelectionItem};
-use crate::common::util::{get_object_descriptors, get_authorized_commands};
+use crate::common::types::{NewObjectSpec, SelectionItem, EXIT_LABEL};
+use crate::common::util::get_object_descriptors;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter)]
+pub enum MainCommand {
+    List,
+    Search,
+    Delete,
+    Generate,
+    Import,
+    GotoAsym,
+    GotoSym,
+    GotoWrap,
+    GotoAuth,
+    GotoSpecialOps,
+    GotoDevice,
+    Exit,
+}
+
+impl Command for MainCommand {
+
+    fn label(&self) -> &'static str {
+        match self {
+            Self::List => "List",
+            Self::Search => "Search objects",
+            Self::Delete => "Delete",
+            Self::Generate => "Generate",
+            Self::Import => "Import",
+            Self::GotoAsym => "[Asymmetric Key operations]",
+            Self::GotoSym => "[Symmetric Key operations]",
+            Self::GotoWrap => "[Wrap Key operations]",
+            Self::GotoAuth => "[Authentication Key operations]",
+            Self::GotoSpecialOps => "[Special operations]",
+            Self::GotoDevice => "[Device operations]",
+            Self::Exit => EXIT_LABEL,
+        }
+    }
+
+    fn description(&self) -> &'static str {
+        match self {
+            Self::List => "List all objects stored on the YubiHSM",
+            Self::Search => "Search for objects stored on the YubiHSM by ID, type or label",
+            Self::Delete => "Delete an object from the YubiHSM",
+            Self::Generate => "Generate a new key inside the YubiHSM",
+            Self::Import => "Import an object into the YubiHSM",
+            Self::GotoAsym => "Manage and use asymmetric keys stored on the YubiHSM",
+            Self::GotoSym => "Manage and use symmetric keys stored on the YubiHSM. Rrquires firmware version 2.3.1 or higher",
+            Self::GotoWrap => "Manage and use wrap keys stored on the YubiHSM",
+            Self::GotoAuth => "Manage authentication keys stored on the YubiHSM",
+            Self::GotoSpecialOps => "",
+            Self::GotoDevice => "Get pseudo random number, backup, restore or reset device",
+            Self::Exit => "",
+        }
+    }
+
+    fn required_capabilities(&self) -> &'static [ObjectCapability] {
+        match self {
+            Self::List | Self::Search | Self::Exit => &[],
+            Self::Delete => &[
+                ObjectCapability::DeleteAsymmetricKey,
+                ObjectCapability::DeleteOpaque,
+                ObjectCapability::DeleteSymmetricKey,
+                ObjectCapability::DeleteWrapKey,
+                ObjectCapability::DeletePublicWrapKey,
+                ObjectCapability::DeleteAuthenticationKey],
+            Self::Generate => &[
+                ObjectCapability::GenerateAsymmetricKey,
+                ObjectCapability::GenerateSymmetricKey,
+                ObjectCapability::GenerateWrapKey],
+            Self::Import => &[
+                ObjectCapability::PutAsymmetricKey,
+                ObjectCapability::PutOpaque,
+                ObjectCapability::PutSymmetricKey,
+                ObjectCapability::PutWrapKey,
+                ObjectCapability::PutPublicWrapKey,
+                ObjectCapability::ImportWrapped],
+            Self::GotoAsym | Self::GotoSym | Self::GotoWrap | Self::GotoAuth | Self::GotoSpecialOps => &[],
+            Self::GotoDevice => &[
+                ObjectCapability::GetPseudoRandom,
+                ObjectCapability::ExportWrapped,
+                ObjectCapability::ImportWrapped],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter)]
+pub enum SpecialOpCommand {
+    SunPkcs11,
+    Ksp,
+}
+
+impl Command for SpecialOpCommand {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::SunPkcs11 => "SunPKCS11",
+            Self::Ksp => "KSP setup",
+        }
+    }
+
+    fn description(&self) -> &'static str {
+        match self {
+            Self::SunPkcs11 => "Manage asymmetric keys with properties compatible with SunPKCS11 provider in Java",
+            Self::Ksp => "Guided setup of the YubiHSM for Windows KSP/CNG provider",
+        }
+    }
+
+    fn required_capabilities(&self) -> &'static [ObjectCapability] {
+        &[]
+    }
+}
 
 #[derive(Debug, Clone, PartialEq,  Eq)]
 pub enum FilterType {
@@ -41,6 +151,12 @@ impl Display for FilterType {
     }
 }
 
+#[derive(Debug, Clone, PartialEq,  Eq)]
+pub enum ImportableType {
+    ObjectType(ObjectType),
+    Wrapped,
+}
+
 pub struct MainOperations;
 
 impl YubihsmOperations for MainOperations {
@@ -48,11 +164,6 @@ impl YubihsmOperations for MainOperations {
     fn context(&self) -> &'static str {
         MainOperations::MAIN_CONTEXT
     }
-
-    fn get_authorized_commands(&self, authkey: &ObjectDescriptor) -> Vec<MgmCommand> {
-        get_authorized_commands(authkey, &Self::COMMANDS)
-    }
-
 
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
         let objects = session.list_objects()?;
@@ -79,78 +190,6 @@ impl YubihsmOperations for MainOperations {
 impl MainOperations {
 
     pub const MAIN_CONTEXT: &'static str = "main";
-
-    const COMMANDS: [MgmCommand; 8] = [
-        MgmCommand {
-            command: MgmCommandType::List,
-            label: "List",
-            description: "List all objects stored on the YubiHSM",
-            required_capabilities: &[],
-            require_all_capabilities: false
-        },
-        MgmCommand {
-            command: MgmCommandType::Search,
-            label: "Search objects",
-            description: "Search for objects stored on the YubiHSM by ID, type or label",
-            required_capabilities: &[],
-            require_all_capabilities: false
-        },
-        MgmCommand {
-            command: MgmCommandType::Delete,
-            label: "Delete",
-            description: "Delete an object from the YubiHSM",
-            required_capabilities: &[
-                ObjectCapability::DeleteAsymmetricKey,
-                ObjectCapability::DeleteOpaque,
-                ObjectCapability::DeleteOpaque,
-                ObjectCapability::DeleteSymmetricKey,
-                ObjectCapability::DeleteWrapKey,
-                ObjectCapability::DeletePublicWrapKey,
-                ObjectCapability::DeleteAuthenticationKey],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::Generate,
-            label: "Generate",
-            description: "Generate a new key inside the YubiHSM",
-            required_capabilities: &[
-                ObjectCapability::GenerateAsymmetricKey,
-                ObjectCapability::GenerateSymmetricKey,
-                ObjectCapability::GenerateWrapKey],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::Import,
-            label: "Import",
-            description: "Import an object into the YubiHSM",
-            required_capabilities: &[
-                ObjectCapability::PutAsymmetricKey,
-                ObjectCapability::PutOpaque,
-                ObjectCapability::PutSymmetricKey,
-                ObjectCapability::PutWrapKey,
-                ObjectCapability::PutPublicWrapKey],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::GotoKey,
-            label: "Goto key operation",
-            description: "",
-            required_capabilities: &[],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::GotoDevice,
-            label: "Goto device operations",
-            description: "Get pseudo random number, backup, restore or reset device",
-            required_capabilities: &[
-                ObjectCapability::GetPseudoRandom,
-                ObjectCapability::ExportWrapped,
-                ObjectCapability::ImportWrapped
-            ],
-            require_all_capabilities: false,
-        },
-        MgmCommand::EXIT_COMMAND,
-    ];
 
     pub fn get_filtered_objects(session: &Session, filter: FilterType) -> Result<Vec<ObjectDescriptor>, MgmError> {
         let objects =
@@ -222,6 +261,10 @@ impl MainOperations {
                 label: "Authentication key".to_string(),
                 description: String::new()
             },
+            SelectionItem {
+                value: ObjectType::PublicWrapKey,
+                label: "Public wrap key".to_string(),
+                description: String::new()},
         ]
     }
 
@@ -251,20 +294,19 @@ impl MainOperations {
         types
     }
 
-
-    pub fn get_importable_types(authkey: &ObjectDescriptor) -> Vec<SelectionItem<ObjectType>> {
+    pub fn get_importable_types(authkey: &ObjectDescriptor) -> Vec<SelectionItem<ImportableType>> {
         let mut types = Vec::new();
         if authkey.capabilities.contains(&ObjectCapability::PutAsymmetricKey) ||
             authkey.capabilities.contains(&ObjectCapability::PutOpaque) {
             types.push(SelectionItem {
-                value: ObjectType::AsymmetricKey,
+                value: ImportableType::ObjectType(ObjectType::AsymmetricKey),
                 label: "Asymmetric object".to_string(),
                 description: "Asymmetric private key or X509Certificate".to_string()
             });
         }
         if authkey.capabilities.contains(&ObjectCapability::PutSymmetricKey) {
             types.push(SelectionItem {
-                value: ObjectType::SymmetricKey,
+                value: ImportableType::ObjectType(ObjectType::SymmetricKey),
                 label: "Symmetric key".to_string(),
                 description: String::new()
             });
@@ -272,54 +314,33 @@ impl MainOperations {
         if authkey.capabilities.contains(&ObjectCapability::PutWrapKey) ||
             authkey.capabilities.contains(&ObjectCapability::PutPublicWrapKey) {
             types.push(SelectionItem {
-                value: ObjectType::WrapKey,
+                value: ImportableType::ObjectType(ObjectType::WrapKey),
                 label: "Wrap key".to_string(),
                 description: String::new()
             });
         }
-        if authkey.capabilities.contains(&ObjectCapability::PutAuthenticationKey) {
+        if authkey.capabilities.contains(&ObjectCapability::ImportWrapped) {
             types.push(SelectionItem {
-                value: ObjectType::AuthenticationKey,
-                label: "Authentication key".to_string(),
+                value: ImportableType::Wrapped,
+                label: "Wrapped Object".to_string(),
                 description: String::new()
             });
         }
         types
     }
 
-    pub fn get_key_operation_types() -> Vec<SelectionItem<MgmCommandType>> {
+    pub fn get_special_ops() -> Vec<SelectionItem<SpecialOpCommand>> {
         vec![
             SelectionItem {
-                value: MgmCommandType::GotoAsym,
-                label: "Asymmetric key operations".to_string(),
-                description: "Management and use of asymmetric keys and certificates, including attestation and certificate signing".to_string()
+                value: SpecialOpCommand::SunPkcs11,
+                label: SpecialOpCommand::SunPkcs11.label().to_string(),
+                description: SpecialOpCommand::SunPkcs11.description().to_string()
             },
              SelectionItem {
-                value: MgmCommandType::GotoSym,
-                label: "Symmetric key operations".to_string(),
-                description: "Management and use of symmetric keys. Require firmware version 2.4 or higher".to_string()
-            },
-            SelectionItem {
-                value: MgmCommandType::GotoWrap,
-                label: "Wrap key operations".to_string(),
-                description: "Management and use of wrap keys, including key export and import".to_string()
-            },
-             SelectionItem {
-                value: MgmCommandType::GotoAuth,
-                label: "Authentication key operations".to_string(),
-                description: "Management of authentication keys (access control)".to_string()
-            },
-            SelectionItem {
-                value: MgmCommandType::GotoJava,
-                label: "Special operations: SunPKCS11".to_string(),
-                description: "Management of keys compatible with SunPKCS11 provider".to_string()
-            },
-            SelectionItem {
-                value: MgmCommandType::GotoKsp,
-                label: "Special operations: KSP setup".to_string(),
-                description: "Guided setup of the YubiHSM for Windows KSP/CNG provider".to_string()
+                value: SpecialOpCommand::Ksp,
+                label: SpecialOpCommand::Ksp.label().to_string(),
+                description: SpecialOpCommand::Ksp.description().to_string()
             },
         ]
     }
-
 }

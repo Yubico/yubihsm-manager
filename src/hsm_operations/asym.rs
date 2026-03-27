@@ -18,6 +18,7 @@ use std::convert::TryFrom;
 use std::fmt;
 use std::fmt::Display;
 use std::string::ToString;
+use strum_macros::EnumIter;
 use pem::Pem;
 use openssl::pkey;
 use openssl::bn::{BigNum, BigNumContext};
@@ -29,10 +30,83 @@ use openssl::pkey::PKey;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::{YubihsmOperations};
+use crate::traits::command_traits::Command;
 use crate::common::error::MgmError;
 use crate::common::algorithms::MgmAlgorithm;
-use crate::common::util::{get_op_keys, get_object_descriptors, get_authorized_commands};
-use crate::common::types::{MgmCommand, NewObjectSpec, MgmCommandType};
+use crate::common::util::{get_op_keys, get_object_descriptors};
+use crate::common::types::{EXIT_LABEL, NewObjectSpec};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter)]
+pub enum AsymCommand {
+    List,
+    GetKeyProperties,
+    Generate,
+    Import,
+    Delete,
+    GetPublicKey,
+    GetX509Certificate,
+    Sign,
+    Decrypt,
+    DeriveEcdh,
+    SignAttestationCert,
+    Exit,
+}
+
+impl Command for AsymCommand {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::List => "List",
+            Self::GetKeyProperties => "Get Object Properties",
+            Self::Generate => "Generate",
+            Self::Import => "Import",
+            Self::Delete => "Delete",
+            Self::GetPublicKey => "Get Public Key",
+            Self::GetX509Certificate => "Get X509 Certificate",
+            Self::Sign => "Sign",
+            Self::Decrypt => "Decrypt",
+            Self::DeriveEcdh => "Derive ECDH",
+            Self::SignAttestationCert => "Sign Attestation Certificate",
+            Self::Exit => EXIT_LABEL,
+        }
+    }
+
+    fn description(&self) -> &'static str {
+        match self {
+            Self::List => "List all asymmetric keys and X509 certificates stored on the YubiHSM",
+            Self::GetKeyProperties => "Get properties of an asymmetric key or X509 certificate stored on the YubiHSM",
+            Self::Generate => "Generate a new asymmetric key inside the YubiHSM",
+            Self::Import => "Import an asymmetric key or X509 certificate into the YubiHSM",
+            Self::Delete => "Delete asymmetric keys or X509 certificates from the YubiHSM",
+            Self::GetPublicKey => "Retrieve the public key portion of an asymmetric key stored on the YubiHSM",
+            Self::GetX509Certificate => "Retrieve an X509 certificate stored on the YubiHSM",
+            Self::Sign => "Sign data using an asymmetric private key stored on the YubiHSM",
+            Self::Decrypt => "Decrypt data using an asymmetric private key stored on the YubiHSM",
+            Self::DeriveEcdh => "Derive an ECDH shared secret using an EC private key stored on the YubiHSM",
+            Self::SignAttestationCert => "Generate and sign an attestation certificate for a key generated on the YubiHSM",
+            Self::Exit => "",
+        }
+    }
+
+    fn required_capabilities(&self) -> &'static [ObjectCapability] {
+        match self {
+            Self::List | Self::GetKeyProperties | Self::Exit => &[],
+            Self::Generate => &[ObjectCapability::GenerateAsymmetricKey],
+            Self::Import => &[ObjectCapability::PutAsymmetricKey, ObjectCapability::PutOpaque],
+            Self::Delete => &[ObjectCapability::DeleteAsymmetricKey, ObjectCapability::DeleteOpaque],
+            Self::GetPublicKey => &[],
+            Self::GetX509Certificate => &[],
+            Self::Sign => &[ObjectCapability::SignPkcs,
+                ObjectCapability::SignPss,
+                ObjectCapability::SignEcdsa,
+                ObjectCapability::SignEddsa],
+            Self::Decrypt => &[ObjectCapability::DecryptPkcs,
+                ObjectCapability::DecryptOaep],
+            Self::DeriveEcdh => &[ObjectCapability::DeriveEcdh],
+            Self::SignAttestationCert => &[ObjectCapability::SignAttestationCertificate],
+        }
+    }
+}
+
 
 #[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
 pub enum AttestationType {
@@ -58,10 +132,6 @@ impl YubihsmOperations for AsymmetricOperations {
 
     fn context(&self) -> &'static str {
         AsymmetricOperations::ASYM_CONTEXT
-    }
-
-    fn get_authorized_commands(&self, authkey: &ObjectDescriptor) -> Vec<MgmCommand> {
-        get_authorized_commands(authkey, &Self::COMMANDS)
     }
 
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
@@ -148,92 +218,6 @@ impl YubihsmOperations for AsymmetricOperations {
 impl AsymmetricOperations {
 
     pub const ASYM_CONTEXT: &'static str = "asym";
-
-    const COMMANDS: [MgmCommand; 12] =  [
-        MgmCommand {
-            command: MgmCommandType::List,
-            label: "List",
-            description: "List all asymmetric keys and X509 certificates stored on the YubiHSM",
-            required_capabilities: &[],
-            require_all_capabilities: false
-        },
-        MgmCommand {
-            command: MgmCommandType::GetKeyProperties,
-            label: "Get Object Properties",
-            description: "Get properties of an asymmetric key or X509 certificate stored on the YubiHSM",
-            required_capabilities: &[],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::Generate,
-            label: "Generate",
-            description: "Generate a new asymmetric key inside the YubiHSM",
-            required_capabilities: &[ObjectCapability::GenerateAsymmetricKey],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::Import,
-            label: "Import",
-            description: "Import an asymmetric key or X509 certificate into the YubiHSM",
-            required_capabilities: &[ObjectCapability::PutAsymmetricKey, ObjectCapability::PutOpaque],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::Delete,
-            label: "Delete",
-            description: "Delete an asymmetric key or X509 certificate from the YubiHSM",
-            required_capabilities: &[ObjectCapability::DeleteAsymmetricKey,
-                ObjectCapability::DeleteOpaque],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::GetPublicKey,
-            label: "Get Public Key",
-            description: "Retrieve the public key portion of an asymmetric key stored on the YubiHSM",
-            required_capabilities: &[],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::GetCertificate,
-            label: "Get X509 Certificate",
-            description: "Retrieve an X509 certificate stored on the YubiHSM",
-            required_capabilities: &[],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::Sign,
-            label: "Sign",
-            description: "Sign data using an asymmetric private key stored on the YubiHSM",
-            required_capabilities: &[ObjectCapability::SignPkcs,
-                ObjectCapability::SignPss,
-                ObjectCapability::SignEcdsa,
-                ObjectCapability::SignEddsa],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::Decrypt,
-            label: "Decrypt",
-            description: "Decrypt data using an asymmetric private key stored on the YubiHSM",
-            required_capabilities: &[ObjectCapability::DecryptPkcs,
-                ObjectCapability::DecryptOaep],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::DeriveEcdh,
-            label: "Derive ECDH",
-            description: "Derive an ECDH shared secret using an EC private key stored on the YubiHSM",
-            required_capabilities: &[ObjectCapability::DeriveEcdh],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::SignAttestationCert,
-            label: "Sign Attestation Certificate",
-            description: "Generate and sign an attestation certificate for a key generated on the YubiHSM",
-            required_capabilities: &[ObjectCapability::SignAttestationCertificate],
-            require_all_capabilities: false,
-        },
-        MgmCommand::EXIT_COMMAND];
-
 
     const RSA_KEY_CAPABILITIES: [ObjectCapability; 6] = [
         ObjectCapability::SignPkcs,
@@ -672,16 +656,59 @@ impl AsymmetricOperations {
 //       JAVA Special case
 //----------------------------------------------------------
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter)]
+pub enum JavaCommand {
+    List,
+    GetKeyProperties,
+    Generate,
+    Import,
+    Delete,
+    Exit,
+}
+
+impl Command for JavaCommand {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::List => "List",
+            Self::GetKeyProperties => "Get Object Properties",
+            Self::Generate => "Generate",
+            Self::Import => "Import",
+            Self::Delete => "Delete",
+            Self::Exit => EXIT_LABEL,
+        }
+    }
+
+    fn description(&self) -> &'static str {
+        match self {
+            Self::List => "List all SunPKCS11 compatible keys where an asymmetric key and an X509Certificate objects have the same Object ID on the YubiHSM",
+            Self::GetKeyProperties => "Get properties of a SunPKCS11 compatible asymmetric key stored on the YubiHSM",
+            Self::Generate => "Generate a new SunPKCS11 compatible asymmetric key inside the YubiHSM by signing an attestation certificate for the generated key and store it using the same Object ID as the private key",
+            Self::Import => "Import an asymmetric key and an X509 certificate into the YubiHSM using the same Object ID",
+            Self::Delete => "Delete an asymmetric key an the X509 certificate with the same Object ID from the YubiHSM",
+            Self::Exit => "",
+        }
+    }
+
+    fn required_capabilities(&self) -> &'static [ObjectCapability] {
+        match self {
+            Self::List | Self::GetKeyProperties | Self::Exit => &[],
+            Self::Generate => &[ObjectCapability::GenerateAsymmetricKey, ObjectCapability::PutOpaque, ObjectCapability::SignAttestationCertificate],
+            Self::Import => &[ObjectCapability::PutAsymmetricKey, ObjectCapability::PutOpaque],
+            Self::Delete => &[ObjectCapability::DeleteAsymmetricKey, ObjectCapability::DeleteOpaque],
+        }
+    }
+
+    fn require_all_capabilities(&self) -> bool {
+        true
+    }
+}
+
 pub struct JavaOps;
 
 impl YubihsmOperations for JavaOps {
 
     fn context(&self) -> &'static str {
         JavaOps::SUNPKCS11_CONTEXT
-    }
-
-    fn get_authorized_commands(&self, authkey: &ObjectDescriptor) -> Vec<MgmCommand> {
-        get_authorized_commands(authkey, &Self::COMMANDS)
     }
 
     fn get_all_objects(&self, session: &Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
@@ -807,45 +834,6 @@ impl YubihsmOperations for JavaOps {
 impl JavaOps {
 
     pub const SUNPKCS11_CONTEXT: &'static str = "sunpkcs11";
-
-    const COMMANDS: [MgmCommand;6] = [
-        MgmCommand {
-            command: MgmCommandType::List,
-            label: "List",
-            description: "List all SunPKCS11 compatible keys where an asymmetric key and an X509Certificate objects have the same Object ID on the YubiHSM",
-            required_capabilities: &[],
-            require_all_capabilities: false
-        },
-        MgmCommand {
-            command: MgmCommandType::GetKeyProperties,
-            label: "Get Object Properties",
-            description: "Get properties of a SunPKCS11 compatible asymmetric key stored on the YubiHSM",
-            required_capabilities: &[],
-            require_all_capabilities: false,
-        },
-        MgmCommand {
-            command: MgmCommandType::Generate,
-            label: "Generate",
-            description: "Generate a new asymmetric key and an attestation certificate and stores them using the same Object ID inside the YubiHSM",
-            required_capabilities: &[ObjectCapability::GenerateAsymmetricKey, ObjectCapability::PutOpaque, ObjectCapability::SignAttestationCertificate],
-            require_all_capabilities: true,
-        },
-        MgmCommand {
-            command: MgmCommandType::Import,
-            label: "Import",
-            description: "Import an asymmetric key and X509 certificate and stores then using the same Object ID on the YubiHSM",
-            required_capabilities: &[ObjectCapability::PutAsymmetricKey, ObjectCapability::PutOpaque],
-            require_all_capabilities: true,
-        },
-        MgmCommand {
-            command: MgmCommandType::Delete,
-            label: "Delete",
-            description: "Delete an asymmetric key and X509 certificate with the same Object ID from the YubiHSM",
-            required_capabilities: &[ObjectCapability::DeleteAsymmetricKey, ObjectCapability::DeleteOpaque],
-            require_all_capabilities: true,
-        },
-        MgmCommand::EXIT_COMMAND,
-    ];
 
     fn check_free_id(session: &Session, id: u16) -> Result<(), MgmError> {
         if id != 0 && (session.get_object_info(id, ObjectType::AsymmetricKey).is_ok() || session.get_object_info(id, ObjectType::Opaque).is_ok()) {

@@ -19,11 +19,11 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectHandle, ObjectT
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
+use crate::traits::command_traits::Command;
 use crate::ui::helper_operations::display_menu_headers;
 use crate::common::error::MgmError;
 use crate::common::algorithms::MgmAlgorithm;
-use crate::common::types::MgmCommandType;
-use crate::hsm_operations::device::DeviceOperations;
+use crate::hsm_operations::device::{DeviceCommand, DeviceOperations};
 use crate::hsm_operations::sym::SymmetricOperations;
 use crate::hsm_operations::wrap::{WrapKeyType, WrapOperations, WrapOpSpec, WrapType};
 use crate::ui::helper_io::{get_path, write_bytes_to_file};
@@ -48,16 +48,15 @@ impl<T: YubihsmUi> DeviceMenu<T> {
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, DEVICE_HEADER],
                                  "Device operations allow you to do device wide operations such as backup, restore, reset, and getting random bytes.")?;
 
-            let cmd = self.ui.select_command(&DeviceOperations::get_authorized_commands(authkey))?;
-            display_menu_headers(&self.ui, &[crate::MAIN_HEADER, cmd.label], cmd.description)?;
+            let cmd = self.ui.select_command(&DeviceCommand::authorized_commands(authkey))?;
+            display_menu_headers(&self.ui, &[crate::MAIN_HEADER, cmd.label()], cmd.description())?;
 
-            let res = match cmd.command {
-                MgmCommandType::GetRandom => self.get_random(session),
-                MgmCommandType::BackupDevice => self.backup(session, recorder, authkey),
-                MgmCommandType::RestoreDevice => self.restore(session, recorder, authkey),
-                MgmCommandType::Reset => self.reset(session),
-                MgmCommandType::Exit => std::process::exit(0),
-                _ => unreachable!()
+            let res = match cmd {
+                DeviceCommand::GetRandom => self.get_random(session),
+                DeviceCommand::BackupDevice => self.backup(session, recorder, authkey),
+                DeviceCommand::RestoreDevice => self.restore(session, recorder, authkey),
+                DeviceCommand::Reset => self.reset(session),
+                DeviceCommand::Exit => std::process::exit(0),
             };
 
             if let Err(e) = res {

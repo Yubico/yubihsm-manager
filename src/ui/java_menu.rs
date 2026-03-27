@@ -18,13 +18,13 @@ use pem::Pem;
 
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
+use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::ui_traits::YubihsmUi;
+use crate::traits::command_traits::Command;
 use crate::ui::helper_operations::{generate_object, import_object, list_objects};
 use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_object_properties};
-use crate::traits::operation_traits::YubihsmOperations;
 use crate::common::error::MgmError;
-use crate::common::types::MgmCommandType;
-use crate::hsm_operations::asym::{AsymmetricOperations, JavaOps};
+use crate::hsm_operations::asym::{JavaCommand, AsymmetricOperations, JavaOps};
 use crate::ui::helper_io::get_pem_from_file;
 use crate::script::script_recorder::SessionRecorder;
 
@@ -46,17 +46,16 @@ impl<T: YubihsmUi> JavaMenu<T> {
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, JAVA_HEADER],
                                  "SunPKCS11 compatible keys entails that an asymmetric key and its equivalent X509Certificate are store in the device with the same ObjectID")?;
 
-            let cmd = self.ui.select_command(&JavaOps.get_authorized_commands(authkey))?;
-            display_menu_headers(&self.ui, &[crate::MAIN_HEADER, JAVA_HEADER, cmd.label], cmd.description)?;
+            let cmd = self.ui.select_command(&JavaCommand::authorized_commands(authkey))?;
+            display_menu_headers(&self.ui, &[crate::MAIN_HEADER, JAVA_HEADER, cmd.label()], cmd.description())?;
 
-            let res = match cmd.command {
-                MgmCommandType::List => list_objects(&self.ui, &JavaOps, session),
-                MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &JavaOps, session),
-                MgmCommandType::Generate => generate_object(&self.ui, recorder, &JavaOps, session, authkey, ObjectType::AsymmetricKey),
-                MgmCommandType::Import => self.import(session, recorder, authkey),
-                MgmCommandType::Delete => delete_objects(&self.ui, recorder, &JavaOps, session, &JavaOps.get_all_objects(session)?),
-                MgmCommandType::Exit => std::process::exit(0),
-                _ => unreachable!()
+            let res = match cmd {
+                JavaCommand::List => list_objects(&self.ui, &JavaOps, session),
+                JavaCommand::GetKeyProperties => display_object_properties(&self.ui, &JavaOps, session),
+                JavaCommand::Generate => generate_object(&self.ui, recorder, &JavaOps, session, authkey, ObjectType::AsymmetricKey),
+                JavaCommand::Import => self.import(session, recorder, authkey),
+                JavaCommand::Delete => delete_objects(&self.ui, recorder, &JavaOps, session, &JavaOps.get_all_objects(session)?),
+                JavaCommand::Exit => std::process::exit(0),
             };
 
             if let Err(e) = res {

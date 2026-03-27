@@ -16,14 +16,15 @@
 
 use yubihsmrs::object::{ObjectCapability, ObjectDescriptor, ObjectType};
 use yubihsmrs::Session;
+use crate::traits::operation_traits::YubihsmOperations;
+use crate::traits::command_traits::Command;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::helper_operations::{generate_object, import_object, list_objects};
 use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_object_properties};
 use crate::ui::device_menu::DeviceMenu;
-use crate::traits::operation_traits::YubihsmOperations;
 use crate::common::error::MgmError;
-use crate::common::types::{MgmCommandType, SelectionItem};
-use crate::hsm_operations::sym::{AesMode, AesOperationSpec, EncryptionMode, SymmetricOperations};
+use crate::common::types::SelectionItem;
+use crate::hsm_operations::sym::{SymCommand, AesMode, AesOperationSpec, EncryptionMode, SymmetricOperations};
 use crate::ui::helper_io::{get_hex_or_bytes_from_file, write_bytes_to_file, get_path};
 use crate::script::script_recorder::SessionRecorder;
 
@@ -44,20 +45,19 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, SYM_HEADER],
                                  "Symmetric key operations allow you to manage and use symmetric keys stored on the YubiHSM")?;
 
-            let cmd = self.ui.select_command(&SymmetricOperations.get_authorized_commands(authkey))?;
-            display_menu_headers(&self.ui, &[crate::MAIN_HEADER, SYM_HEADER, cmd.label], cmd.description)?;
+            let cmd = self.ui.select_command(&SymCommand::authorized_commands(authkey))?;
+            display_menu_headers(&self.ui, &[crate::MAIN_HEADER, SYM_HEADER, cmd.label()], cmd.description())?;
 
-            let res = match cmd.command {
-                MgmCommandType::List => list_objects(&self.ui, &SymmetricOperations, session),
-                MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &SymmetricOperations, session),
-                MgmCommandType::Generate => generate_object(&self.ui, recorder, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey),
-                MgmCommandType::Import => self.import(session, recorder, authkey),
-                MgmCommandType::Delete => delete_objects(&self.ui, recorder, &SymmetricOperations, session, &SymmetricOperations.get_all_objects(session)?),
-                MgmCommandType::Encrypt => self.operate(session, authkey, EncryptionMode::Encrypt),
-                MgmCommandType::Decrypt => self.operate(session, authkey, EncryptionMode::Decrypt),
-                MgmCommandType::GetRandom => DeviceMenu::new(self.ui.clone()).get_random(session),
-                MgmCommandType::Exit => std::process::exit(0),
-                _ => unreachable!()
+            let res = match cmd {
+                SymCommand::List => list_objects(&self.ui, &SymmetricOperations, session),
+                SymCommand::GetKeyProperties => display_object_properties(&self.ui, &SymmetricOperations, session),
+                SymCommand::Generate => generate_object(&self.ui, recorder, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey),
+                SymCommand::Import => self.import(session, recorder, authkey),
+                SymCommand::Delete => delete_objects(&self.ui, recorder, &SymmetricOperations, session, &SymmetricOperations.get_all_objects(session)?),
+                SymCommand::Encrypt => self.operate(session, authkey, EncryptionMode::Encrypt),
+                SymCommand::Decrypt => self.operate(session, authkey, EncryptionMode::Decrypt),
+                SymCommand::GetRandom => DeviceMenu::new(self.ui.clone()).get_random(session),
+                SymCommand::Exit => std::process::exit(0),
             };
 
             if let Err(e) = res {

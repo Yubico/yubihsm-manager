@@ -18,12 +18,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::str::FromStr;
 use tabled::{Table, builder::Builder, settings::{Width, Modify, Style, object::Columns}};
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
+use crate::traits::command_traits::Command;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::traits::ui_traits::ProgressBarHandler;
 use crate::common::error::MgmError;
 use crate::common::util;
 use crate::common::validators;
-use crate::common::types::{MgmCommand, SelectionItem, NewObjectSpec};
+use crate::common::types::{SelectionItem, NewObjectSpec};
 use crate::common::algorithms::MgmAlgorithm;
 
 macro_rules! return_or_exit {
@@ -174,14 +175,12 @@ impl YubihsmUi for Cmdline {
         Ok(capabilities)
     }
 
-    fn select_command(&self, available_commands: &[MgmCommand]) -> Result<MgmCommand, MgmError> {
+    fn select_command<C: Command>(&self, available_commands: &[C]) -> Result<C, MgmError> {
         let mut cmd_select = cliclack::select("");
         for cmd in available_commands {
-            cmd_select = cmd_select.item(*cmd, cmd.label, cmd.description);
+            cmd_select = cmd_select.item(*cmd, cmd.label(), cmd.description());
         }
-        let cmd_select = return_or_exit!(cmd_select.interact());
-
-        Ok(cmd_select)
+        Ok(return_or_exit!(cmd_select.interact()))
     }
 
     fn select_algorithm(

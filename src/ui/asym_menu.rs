@@ -20,10 +20,11 @@ use crate::ui::helper_operations::{delete_objects, display_object_properties, ge
 use crate::ui::helper_operations::{display_menu_headers};
 use crate::traits::ui_traits::YubihsmUi;
 use crate::traits::operation_traits::YubihsmOperations;
+use crate::traits::command_traits::Command;
 use crate::common::error::MgmError;
-use crate::common::types::{MgmCommandType, SelectionItem};
+use crate::common::types::SelectionItem;
 use crate::hsm_operations::wrap::WrapOperations;
-use crate::hsm_operations::asym::{AsymmetricOperations, AttestationType};
+use crate::hsm_operations::asym::{AsymCommand, AsymmetricOperations, AttestationType};
 use crate::ui::helper_io::{get_hex_or_bytes_from_file, get_pem_from_file, get_string_or_bytes_from_file, write_bytes_to_file, get_path};
 use crate::script::script_recorder::SessionRecorder;
 
@@ -45,23 +46,22 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, ASYM_HEADER],
                                  "Asymmetric key operations allow you to manage and use asymmetric keys and X509 certificates stored on the YubiHSM")?;
 
-            let cmd = self.ui.select_command(&AsymmetricOperations.get_authorized_commands(authkey))?;
-            display_menu_headers(&self.ui, &[crate::MAIN_HEADER, ASYM_HEADER, cmd.label], cmd.description)?;
+            let cmd = self.ui.select_command(&AsymCommand::authorized_commands(authkey))?;
+            display_menu_headers(&self.ui, &[crate::MAIN_HEADER, ASYM_HEADER, cmd.label()], cmd.description())?;
 
-            let res = match cmd.command {
-                MgmCommandType::List => list_objects(&self.ui, &AsymmetricOperations, session),
-                MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &AsymmetricOperations, session),
-                MgmCommandType::Generate => generate_object(&self.ui, recorder, &AsymmetricOperations, session, authkey, ObjectType::AsymmetricKey),
-                MgmCommandType::Import => self.import(session, recorder, authkey),
-                MgmCommandType::Delete => delete_objects(&self.ui, recorder, &AsymmetricOperations, session, &AsymmetricOperations.get_all_objects(session)?),
-                MgmCommandType::GetPublicKey => self.get_public_key(session, ObjectType::AsymmetricKey),
-                MgmCommandType::GetCertificate => self.get_cert(session),
-                MgmCommandType::Sign => self.sign(session, authkey),
-                MgmCommandType::Decrypt => self.decrypt(session, authkey),
-                MgmCommandType::DeriveEcdh => self.derive_ecdh(session, authkey),
-                MgmCommandType::SignAttestationCert => self.sign_attestation(session, authkey),
-                MgmCommandType::Exit => std::process::exit(0),
-                _ => unreachable!()
+            let res = match cmd {
+                AsymCommand::List => list_objects(&self.ui, &AsymmetricOperations, session),
+                AsymCommand::GetKeyProperties => display_object_properties(&self.ui, &AsymmetricOperations, session),
+                AsymCommand::Generate => generate_object(&self.ui, recorder, &AsymmetricOperations, session, authkey, ObjectType::AsymmetricKey),
+                AsymCommand::Import => self.import(session, recorder, authkey),
+                AsymCommand::Delete => delete_objects(&self.ui, recorder, &AsymmetricOperations, session, &AsymmetricOperations.get_all_objects(session)?),
+                AsymCommand::GetPublicKey => self.get_public_key(session, ObjectType::AsymmetricKey),
+                AsymCommand::GetX509Certificate => self.get_cert(session),
+                AsymCommand::Sign => self.sign(session, authkey),
+                AsymCommand::Decrypt => self.decrypt(session, authkey),
+                AsymCommand::DeriveEcdh => self.derive_ecdh(session, authkey),
+                AsymCommand::SignAttestationCert => self.sign_attestation(session, authkey),
+                AsymCommand::Exit => std::process::exit(0),
             };
 
             if let Err(e) = res {

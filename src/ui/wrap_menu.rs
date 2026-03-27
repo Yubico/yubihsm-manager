@@ -18,20 +18,21 @@ use std::fs;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
+use crate::traits::command_traits::Command;
+use crate::traits::operation_traits::YubihsmOperations;
 use crate::cli::cmdline::Cmdline;
 use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_wrapkey_shares, generate_object, list_objects};
 use crate::ui::helper_operations::{display_object_properties, get_new_spec_table, get_script_input_data};
 use crate::ui::device_menu::DeviceMenu;
 use crate::ui::asym_menu::AsymmetricMenu;
-use crate::traits::operation_traits::YubihsmOperations;
 use crate::common::error::MgmError;
-use crate::common::types::{MgmCommandType, NewObjectSpec, SelectionItem};
+use crate::common::types::{NewObjectSpec, SelectionItem};
 use crate::common::validators::{aes_key_validator, pem_private_rsa_file_validator, pem_public_rsa_file_validator};
 use crate::common::algorithms::MgmAlgorithm;
 use crate::common::util::get_delegated_capabilities;
 use crate::hsm_operations::asym::AsymmetricOperations;
 use crate::hsm_operations::sym::SymmetricOperations;
-use crate::hsm_operations::wrap::{WrapKeyType, WrapOperations, WrapOpSpec, WrapType};
+use crate::hsm_operations::wrap::{WrapCommand, WrapKeyType, WrapOperations, WrapOpSpec, WrapType};
 use crate::ui::helper_io::{get_path, get_pem_from_file, write_bytes_to_file};
 use crate::script::script_recorder::SessionRecorder;
 use crate::script::script_types;
@@ -54,21 +55,20 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             display_menu_headers(&self.ui, &[crate::MAIN_HEADER, WRAP_HEADER],
                                  "Wrap key operations allow you to manage and use wrap keys keys stored on the YubiHSM")?;
 
-            let cmd = self.ui.select_command(&WrapOperations.get_authorized_commands(authkey))?;
-            display_menu_headers(&self.ui, &[crate::MAIN_HEADER, WRAP_HEADER, cmd.label], cmd.description)?;
+            let cmd = self.ui.select_command(&WrapCommand::authorized_commands(authkey))?;
+            display_menu_headers(&self.ui, &[crate::MAIN_HEADER, WRAP_HEADER, cmd.label()], cmd.description())?;
 
-            let result = match cmd.command {
-                MgmCommandType::List => list_objects(&self.ui, &WrapOperations, session),
-                MgmCommandType::GetKeyProperties => display_object_properties(&self.ui, &WrapOperations, session),
-                MgmCommandType::Generate => generate_object(&self.ui, recorder, &WrapOperations, session, authkey, ObjectType::WrapKey),
-                MgmCommandType::Import => self.import(session, recorder, authkey),
-                MgmCommandType::Delete => delete_objects(&self.ui, recorder, &WrapOperations, session, &WrapOperations.get_all_objects(session)?),
-                MgmCommandType::GetPublicKey => AsymmetricMenu::new(Cmdline).get_public_key(session, ObjectType::WrapKey),
-                MgmCommandType::ExportWrapped => self.export_wrapped(session, recorder, authkey),
-                MgmCommandType::ImportWrapped => self.import_wrapped(session, recorder, authkey),
-                MgmCommandType::GetRandom => DeviceMenu::new(self.ui.clone()).get_random(session),
-                MgmCommandType::Exit => std::process::exit(0),
-                _ => unreachable!()
+            let result = match cmd {
+                WrapCommand::List => list_objects(&self.ui, &WrapOperations, session),
+                WrapCommand::GetKeyProperties => display_object_properties(&self.ui, &WrapOperations, session),
+                WrapCommand::Generate => generate_object(&self.ui, recorder, &WrapOperations, session, authkey, ObjectType::WrapKey),
+                WrapCommand::Import => self.import(session, recorder, authkey),
+                WrapCommand::Delete => delete_objects(&self.ui, recorder, &WrapOperations, session, &WrapOperations.get_all_objects(session)?),
+                WrapCommand::GetPublicKey => AsymmetricMenu::new(Cmdline).get_public_key(session, ObjectType::WrapKey),
+                WrapCommand::ExportWrapped => self.export_wrapped(session, recorder, authkey),
+                WrapCommand::ImportWrapped => self.import_wrapped(session, recorder, authkey),
+                WrapCommand::GetRandom => DeviceMenu::new(self.ui.clone()).get_random(session),
+                WrapCommand::Exit => std::process::exit(0),
             };
 
             if let Err(err) = result {
@@ -272,7 +272,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         Ok(())
     }
 
-    fn import_wrapped(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
+    pub fn import_wrapped(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let filepath = self.ui.get_path_input(
             "Enter absolute path to wrapped object file:",
             true,

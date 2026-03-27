@@ -20,7 +20,6 @@ use std::str::FromStr;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::common::error::MgmError;
-use crate::common::types::MgmCommand;
 use crate::common::validators::object_id_validator;
 
 
@@ -48,17 +47,6 @@ pub fn contains_all(set: &[ObjectCapability], subset: &[ObjectCapability]) -> bo
         }
     }
     true
-}
-
-pub fn get_authorized_commands(
-    authkey: &ObjectDescriptor,
-    commands: &[MgmCommand],
-) -> Vec<MgmCommand> {
-    let mut authorized_commands = commands.to_vec();
-    authorized_commands.retain(|cmd| {
-        cmd.is_authkey_authorized(authkey)
-    });
-    authorized_commands
 }
 
 pub fn get_object_descriptors(session: &Session, handlers: &[ObjectHandle]) -> Result<Vec<ObjectDescriptor>, MgmError> {
@@ -203,56 +191,5 @@ mod tests {
     fn test_contains_all_empty_set_nonempty_subset() {
         let subset = vec![ObjectCapability::SignPkcs];
         assert!(!contains_all(&[], &subset));
-    }
-
-    // ── get_authorized_commands ──
-
-    #[test]
-    fn test_authorized_commands_no_required_caps() {
-        // Commands with no required capabilities should always be included
-        let cmd = MgmCommand {
-            command: crate::common::types::MgmCommandType::List,
-            label: "List",
-            description: "",
-            required_capabilities: &[],
-            require_all_capabilities: false,
-        };
-        let mut authkey = ObjectDescriptor::new();
-        authkey.capabilities = vec![]; // no caps at all
-
-        let result = get_authorized_commands(&authkey, &[cmd.clone()]);
-        assert_eq!(result.len(), 1);
-    }
-
-    #[test]
-    fn test_authorized_commands_filters_unauthorized() {
-        let cmd = MgmCommand {
-            command: crate::common::types::MgmCommandType::Generate,
-            label: "Generate",
-            description: "",
-            required_capabilities: &[ObjectCapability::GenerateAsymmetricKey],
-            require_all_capabilities: false,
-        };
-        let mut authkey = ObjectDescriptor::new();
-        authkey.capabilities = vec![]; // missing the required cap
-
-        let result = get_authorized_commands(&authkey, &[cmd]);
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_authorized_commands_includes_authorized() {
-        let cmd = MgmCommand {
-            command: crate::common::types::MgmCommandType::Generate,
-            label: "Generate",
-            description: "",
-            required_capabilities: &[ObjectCapability::GenerateAsymmetricKey],
-            require_all_capabilities: false,
-        };
-        let mut authkey = ObjectDescriptor::new();
-        authkey.capabilities = vec![ObjectCapability::GenerateAsymmetricKey];
-
-        let result = get_authorized_commands(&authkey, &[cmd]);
-        assert_eq!(result.len(), 1);
     }
 }

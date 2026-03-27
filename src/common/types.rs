@@ -19,7 +19,8 @@ use std::fmt::Display;
 use serde::{Serialize, Deserialize};
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectType};
 use crate::common::algorithms;
-use crate::common::util::contains_all;
+
+pub const EXIT_LABEL: &str = "Exit YubiHSM Manager";
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct NewObjectSpec {
@@ -125,99 +126,6 @@ impl NewObjectSpec {
 }
 
 
-#[derive(Debug, Clone, Copy, PartialEq,  Eq, Default)]
-pub enum MgmCommandType {
-    #[default]
-    List,
-    Search,
-    GetKeyProperties,
-    Generate,
-    Import,
-    Delete,
-    GetPublicKey,
-    GetCertificate,
-    Sign,
-    Encrypt,
-    Decrypt,
-    DeriveEcdh,
-    SetupUser,
-    SetupAdmin,
-    SetupAuditor,
-    SetupCustomUser,
-    SignAttestationCert,
-    ExportWrapped,
-    ImportWrapped,
-    BackupDevice,
-    RestoreDevice,
-    GotoKey,
-    GotoAsym,
-    GotoSym,
-    GotoWrap,
-    GotoAuth,
-    GotoJava,
-    GotoKsp,
-    GotoDevice,
-    GetDeviceInfo,
-    GetDevicePublicKey,
-    GetRandom,
-    Reset,
-    Exit,
-}
-
-#[derive(Clone, Debug, Copy, PartialEq,  Eq, Default)]
-pub struct MgmCommand {
-    pub command: MgmCommandType,
-    pub label: &'static str,
-    pub description: &'static str,
-    pub required_capabilities: &'static [ObjectCapability],
-    pub require_all_capabilities: bool,
-}
-
-impl MgmCommand {
-
-    pub const EXIT_COMMAND: MgmCommand = MgmCommand {
-        command: MgmCommandType::Exit,
-        label: "Exit YubiHSM Manager",
-        description: "",
-        required_capabilities: &[],
-        require_all_capabilities: false,
-    };
-
-    pub fn new(
-        command: MgmCommandType,
-        label: &'static str,
-        description: &'static str,
-        required_capabilities: &'static [ObjectCapability],
-        require_all_capabilities: bool,
-    ) -> Self {
-        Self {
-            command,
-            label,
-            description,
-            required_capabilities,
-            require_all_capabilities,
-        }
-    }
-
-    pub fn is_authkey_authorized(&self, authkey: &ObjectDescriptor) -> bool {
-        if self.required_capabilities.is_empty() {
-            return true;
-        }
-        if self.require_all_capabilities {
-            contains_all(&authkey.capabilities, &self.required_capabilities)
-        } else {
-            self.required_capabilities.iter().any(|cap| authkey.capabilities.contains(cap))
-        }
-    }
-
-    pub fn contains_command(
-        commands: &[MgmCommand],
-        commands_to_check: &MgmCommandType,
-    ) -> bool {
-        commands.iter().any(|cmd| cmd.command == *commands_to_check)
-    }
-}
-
 
 
 
@@ -271,14 +179,6 @@ mod tests {
             delegated_capabilities: vec![ObjectCapability::ExportWrapped],
             data: vec![vec![0xDE, 0xAD]],
         }
-    }
-
-    fn make_authkey_desc(caps: Vec<ObjectCapability>) -> ObjectDescriptor {
-        let mut desc = ObjectDescriptor::new();
-        desc.id = 1;
-        desc.object_type = ObjectType::AuthenticationKey;
-        desc.capabilities = caps;
-        desc
     }
 
     // ══════════════════════════════════════════════
@@ -456,127 +356,6 @@ mod tests {
         spec.delegated_capabilities = vec![];
         let desc: ObjectDescriptor = spec.into();
         assert_eq!(desc.delegated_capabilities, None);
-    }
-
-    // ══════════════════════════════════════════════
-    //  MgmCommand::is_authkey_authorized
-    // ══════════════════════════════════════════════
-
-    #[test]
-    fn test_authz_no_required_caps_always_true() {
-        let cmd = MgmCommand {
-            command: MgmCommandType::List,
-            label: "List",
-            description: "",
-            required_capabilities: &[],
-            require_all_capabilities: false,
-        };
-        let authkey = make_authkey_desc(vec![]);
-        assert!(cmd.is_authkey_authorized(&authkey));
-    }
-
-    #[test]
-    fn test_authz_require_all_has_all() {
-        let cmd = MgmCommand {
-            command: MgmCommandType::Generate,
-            label: "Generate",
-            description: "",
-            required_capabilities: &[
-                ObjectCapability::GenerateAsymmetricKey,
-                ObjectCapability::SignPkcs,
-            ],
-            require_all_capabilities: true,
-        };
-        let authkey = make_authkey_desc(vec![
-            ObjectCapability::GenerateAsymmetricKey,
-            ObjectCapability::SignPkcs,
-            ObjectCapability::ExportWrapped, // extra cap is fine
-        ]);
-        assert!(cmd.is_authkey_authorized(&authkey));
-    }
-
-    #[test]
-    fn test_authz_require_all_missing_one() {
-        let cmd = MgmCommand {
-            command: MgmCommandType::Generate,
-            label: "Generate",
-            description: "",
-            required_capabilities: &[
-                ObjectCapability::GenerateAsymmetricKey,
-                ObjectCapability::SignPkcs,
-            ],
-            require_all_capabilities: true,
-        };
-        // Missing SignPkcs
-        let authkey = make_authkey_desc(vec![ObjectCapability::GenerateAsymmetricKey]);
-        assert!(!cmd.is_authkey_authorized(&authkey));
-    }
-
-    #[test]
-    fn test_authz_require_any_has_one() {
-        let cmd = MgmCommand {
-            command: MgmCommandType::Sign,
-            label: "Sign",
-            description: "",
-            required_capabilities: &[
-                ObjectCapability::SignPkcs,
-                ObjectCapability::SignPss,
-                ObjectCapability::SignEcdsa,
-            ],
-            require_all_capabilities: false,
-        };
-        // Only has SignPss — that's enough with require_all=false
-        let authkey = make_authkey_desc(vec![ObjectCapability::SignPss]);
-        assert!(cmd.is_authkey_authorized(&authkey));
-    }
-
-    #[test]
-    fn test_authz_require_any_has_none() {
-        let cmd = MgmCommand {
-            command: MgmCommandType::Sign,
-            label: "Sign",
-            description: "",
-            required_capabilities: &[
-                ObjectCapability::SignPkcs,
-                ObjectCapability::SignPss,
-            ],
-            require_all_capabilities: false,
-        };
-        // Has completely unrelated capabilities
-        let authkey = make_authkey_desc(vec![ObjectCapability::ExportWrapped]);
-        assert!(!cmd.is_authkey_authorized(&authkey));
-    }
-
-    // ══════════════════════════════════════════════
-    //  MgmCommand::contains_command
-    // ══════════════════════════════════════════════
-
-    #[test]
-    fn test_contains_command() {
-        let commands = vec![
-            MgmCommand {
-                command: MgmCommandType::List,
-                label: "List",
-                description: "",
-                required_capabilities: &[],
-                require_all_capabilities: false,
-            },
-            MgmCommand {
-                command: MgmCommandType::Generate,
-                label: "Generate",
-                description: "",
-                required_capabilities: &[],
-                require_all_capabilities: false,
-            },
-        ];
-        assert!(MgmCommand::contains_command(&commands, &MgmCommandType::List));
-        assert!(MgmCommand::contains_command(&commands, &MgmCommandType::Generate));
-        assert!(!MgmCommand::contains_command(&commands, &MgmCommandType::Delete));
-    }
-
-    #[test]
-    fn test_contains_command_empty_list() {
-        assert!(!MgmCommand::contains_command(&[], &MgmCommandType::List));
     }
 
     // ══════════════════════════════════════════════
