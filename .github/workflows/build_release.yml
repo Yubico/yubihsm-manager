@@ -222,6 +222,7 @@ jobs:
           
           LICENSE=$OUTPUT/share/yubihsm-manager/licenses
           mkdir -p $LICENSE
+          cp LICENSE $LICENSE/yubihsm-manager.txt 
           cp THIRDPARTY.txt $LICENSE/
           
           cp target/debian/*.deb $OUTPUT/
@@ -365,6 +366,7 @@ jobs:
           
           LICENSE=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager/share/yubihsm-manager/licenses
           mkdir -p $LICENSE
+          cp LICENSE $LICENSE/yubihsm-manager.txt 
           cp THIRDPARTY.txt $LICENSE/
           
           cd $GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
@@ -475,6 +477,7 @@ jobs:
           install target/release/yubihsm-manager $GITHUB_WORKSPACE/artifact/usr/local/bin/
           
           mkdir -p $GITHUB_WORKSPACE/artifact/usr/local/share/yubihsm-manager/licenses
+          cp $GITHUB_WORKSPACE/LICENSE $GITHUB_WORKSPACE/artifact/usr/local/share/yubihsm-manager/licenses/yubihsm-manager.txt 
           cp $GITHUB_WORKSPACE/THIRDPARTY.txt $GITHUB_WORKSPACE/artifact/usr/local/share/yubihsm-manager/licenses/
 
           cd $GITHUB_WORKSPACE/artifact/usr/local
@@ -574,6 +577,7 @@ jobs:
           cargo.exe update
           cargo.exe build --release
           install target/release/yubihsm-manager $env:GITHUB_WORKSPACE/artifact/bin
+          cp $env:GITHUB_WORKSPACE/LICENSE $env:GITHUB_WORKSPACE/artifact/bin/yubihsm-manager.txt 
           cp $env:GITHUB_WORKSPACE/THIRDPARTY.txt $env:GITHUB_WORKSPACE/artifact/bin/
 
       - name: Test binaries
