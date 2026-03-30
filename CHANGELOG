@@ -1,0 +1,14 @@
+=== Version 1.0.0
+
+Initial release of yubihsm-manager. Interactive CLI with guided menus for YubiHSM 2 management. Supersedes the previous yubihsm-setup tool with a more user-friendly interface and expanded functionality, including:
+
+Asymmetric key operations: generate, import, sign, decrypt, ECDH derivation, and public key export
+X.509 certificate management and attestation certificate signing (device-signed, self-signed, and asymmetric-signed)
+Symmetric key operations: generate, import, AES encrypt/decrypt
+Wrap key operations: generate, import, export/import wrapped objects
+Authentication key management
+Device operations: backup, restore, factory reset, and pseudo-random number generation
+Guided setup wizards for SunPKCS11 and Microsoft KSP
+Scripting: record interactive sessions to JSON script to be executed later for repeatable provisioning
+Support for USB and HTTP connections
+Cross-platform: Linux (deb/rpm), macOS (Intel and Apple Silicon), and Windows
