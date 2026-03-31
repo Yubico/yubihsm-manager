@@ -17,7 +17,8 @@ set -x
 tar --exclude .git        \
     --exclude .github     \
     --exclude .gitignore  \
-    --exclude resources   \
+    --exclude .ci         \
+    --exclude resources/release   \
     --transform="s/^\./yubihsm-manager-$VERSION/" -czf ../yubihsm-manager-$VERSION.tar.gz .
 
 

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<installer-gui-script minSpecVersion="1">
+    <title>yubihsm-manager</title>
+<!--    <readme file="README.html" mime-type="text/html"/> -->
+    <license file="license.html" mime-type="text/html" />
+    <pkg-ref id="com.yubico.yubihsm-manager"/>
+    <options hostArchitectures="x86_64,arm64" customize="never" require-scripts="false"/>
+    <choices-outline>
+        <line choice="default">
+            <line choice="com.yubico.yubihsm-manager"/>
+        </line>
+    </choices-outline>
+    <choice id="default"/>
+    <choice id="com.yubico.yubihsm-manager" visible="false">
+        <pkg-ref id="com.yubico.yubihsm-manager"/>
+    </choice>
+    <pkg-ref id="com.yubico.yubihsm-manager" version="0" onConclusion="none">yubihsm-manager.pkg</pkg-ref>
+</installer-gui-script>
