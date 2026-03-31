@@ -415,7 +415,6 @@ jobs:
 
           $env:OPENSSL_ROOT_DIR ="C:/vcpkg/packages/openssl_x64-windows"
 
-          #cd ..
           #Invoke-WebRequest -Uri https://developers.yubico.com/yubihsm-shell/Releases/yubihsm-shell-$env:LIBYUBIHSM_VERSION-win64.msi -OutFile yubihsm-shell.msi -UseBasicParsing
           #$log = "$env:GITHUB_WORKSPACE\install.log"
           #$procMain = Start-Process "msiexec" "/i `"yubihsm-shell.msi`" /qn /l*! `"$log`"" -NoNewWindow -PassThru
@@ -428,55 +427,46 @@ jobs:
           cmake -S .. -A x64 -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_LIB=ON -DENABLE_STATIC=ON -DENABLE_CERT_COMPRESS=OFF -DWITHOUT_MANPAGES=1
           cmake --build . -v --config Release --target yubihsm_static
 
-          pwd
-
-          #cp lib/Release/libyubihsm*.dll $env:GITHUB_WORKSPACE/artifact/bin/
-          #cp lib/Release/libyubihsm*.lib $env:GITHUB_WORKSPACE/artifact/lib/
-          #cp C:/vcpkg/packages/openssl_x64-windows/bin/libcrypto-3-x64.dll $env:GITHUB_WORKSPACE/artifact/bin/
-          #cp C:/vcpkg/packages/openssl_x64-windows/bin/libssl-3-x64.dll $env:GITHUB_WORKSPACE/artifact/bin/
-
 
       - name: Build yubihsm-manager
         run: |
           $ErrorActionPreference = "Stop"
           Set-PSDebug -Trace 1
 
-          mkdir -p $env:GITHUB_WORKSPACE/artifact/bin
-          #mkdir -p $env:GITHUB_WORKSPACE/artifact/lib
-
-          echo "GITHUB_WORKSPACE=$env:GITHUB_WORKSPACE"
-
-           ls $env:GITHUB_WORKSPACE/yubihsm-shell/build/lib/Release
+          mkdir -p $env:GITHUB_WORKSPACE/artifact/yubihsm-manager/bin
 
           rustup target add x86_64-pc-windows-msvc
           rustup default stable-x86_64-pc-windows-msvc
 
           $env:RUST_BACKTRACE=1
-          #$env:YUBIHSM_LIB_DIR="C:\Program Files\Yubico\YubiHSM Shell\lib"
-          $env:PATH+=";$env:GITHUB_WORKSPACE/yubihsm-shell/build/bin/Release;C:/vcpkg/packages/openssl_x64-windows/bin"
-
           $env:YUBIHSM_LIB_DIR="$env:GITHUB_WORKSPACE/yubihsm-shell/build/lib/Release"
           $env:YUBIHSM_LIB_NAME="yubihsm"
-          #$env:PATH+=";$env:GITHUB_WORKSPACE/artifact/bin;C:/vcpkg/packages/openssl_x64-windows/bin"
-          #$env:PATH+=";$env:GITHUB_WORKSPACE/artifact/bin"
-
           $env:OPENSSL_STATIC="1"
           $env:OPENSSL_DIR="C:/vcpkg/packages/openssl_x64-windows-static"
+          
+          #$env:PATH+=";$env:GITHUB_WORKSPACE/yubihsm-shell/build/bin/Release;C:/vcpkg/packages/openssl_x64-windows/bin"
 
           cargo.exe update
           cargo.exe build --release
-          install target/release/yubihsm-manager $env:GITHUB_WORKSPACE/artifact/bin
-          cp $env:GITHUB_WORKSPACE/LICENSE $env:GITHUB_WORKSPACE/artifact/bin/yubihsm-manager.txt
-          cp $env:GITHUB_WORKSPACE/THIRDPARTY.txt $env:GITHUB_WORKSPACE/artifact/bin/
+          install target/release/yubihsm-manager $env:GITHUB_WORKSPACE/artifact/yubihsm-manager/bin
 
       - name: Test binaries
         run: |
           $ErrorActionPreference = "Stop"
           Set-PSDebug -Trace 1
-          cd artifact/bin
+          cd artifact/yubihsm-manager/bin
 
           ./yubihsm-manager.exe --help
           ./yubihsm-manager.exe --version
+
+      - name: Pack licenses
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-PSDebug -Trace 1
+          
+          mkdir -p $env:GITHUB_WORKSPACE/artifact/yubihsm-manager/licenses
+          cp $env:GITHUB_WORKSPACE/LICENSE $env:GITHUB_WORKSPACE/artifact/yubihsm-manager/licenses/yubihsm-manager.txt
+          cp $env:GITHUB_WORKSPACE/THIRDPARTY.txt $env:GITHUB_WORKSPACE/artifact/yubihsm-manager/licenses/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v5
@@ -511,13 +501,9 @@ jobs:
 
           #git clone --branch $env:LIBYUBIHSM_VERSION https://github.com/Yubico/yubihsm-shell.git
           git clone https://github.com/Yubico/yubihsm-shell.git
-          cd yubihsm-shell
-          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
-          
+          cd yubihsm-shell         
           cd resources/release/macos/shell
           ./make_release_binaries.sh amd $LIBYUBIHSM_VERSION $GITHUB_WORKSPACE/yubihsm-shell
-          #ls
-          #ls yubihsm-shell-darwin-amd-$LIBYUBIHSM_VERSION
           cp yubihsm-shell-darwin-amd-$LIBYUBIHSM_VERSION/usr/local/lib/libyubihsm*.dylib $GITHUB_WORKSPACE/artifact/amd/lib/
           cp yubihsm-shell-darwin-amd-$LIBYUBIHSM_VERSION/usr/local/lib/libusb-1.0.0.dylib $GITHUB_WORKSPACE/artifact/amd/lib/
           cp yubihsm-shell-darwin-amd-$LIBYUBIHSM_VERSION/usr/local/lib/libz.1.dylib $GITHUB_WORKSPACE/artifact/amd/lib/
@@ -527,9 +513,6 @@ jobs:
         run: |
           set -e -o pipefail
           set -x
-
-          #mkdir -p $GITHUB_WORKSPACE/artifact/amd/bin
-          #mkdir -p $GITHUB_WORKSPACE/artifact/amd/lib
 
           export BREW_LIB="/usr/local/opt"
           #BREW_CELLAR="/usr/local/Cellar"
@@ -601,16 +584,8 @@ jobs:
           #git clone --branch $env:LIBYUBIHSM_VERSION https://github.com/Yubico/yubihsm-shell.git
           git clone https://github.com/Yubico/yubihsm-shell.git
           cd yubihsm-shell
-          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
-          
-          #mkdir build; cd build
-          #cmake -DRELEASE_BUILD=1 -DBUILD_ONLY_LIB=ON -DENABLE_STATIC=ON -DENABLE_CERT_COMPRESS=OFF ..
-          #make yubihsm_static
-
           cd resources/release/macos/shell
           ./make_release_binaries.sh arm $LIBYUBIHSM_VERSION $GITHUB_WORKSPACE/yubihsm-shell
-          #ls
-          #ls yubihsm-shell-darwin-arm-$LIBYUBIHSM_VERSION
           cp yubihsm-shell-darwin-arm-$LIBYUBIHSM_VERSION/usr/local/lib/libyubihsm*.dylib $GITHUB_WORKSPACE/arm/lib/
           cp yubihsm-shell-darwin-arm-$LIBYUBIHSM_VERSION/usr/local/lib/libusb-1.0.0.dylib $GITHUB_WORKSPACE/arm/lib/
           cp yubihsm-shell-darwin-arm-$LIBYUBIHSM_VERSION/usr/local/lib/libz.1.dylib $GITHUB_WORKSPACE/arm/lib/
@@ -621,9 +596,6 @@ jobs:
         run: |
           set -e -o pipefail
           set -x
-
-          #mkdir -p $GITHUB_WORKSPACE/artifact/usr/local/bin
-          #mkdir -p $GITHUB_WORKSPACE/artifact/usr/local/lib
 
           export BREW_LIB="/opt/homebrew/opt"
           #BREW_CELLAR="/opt/homebrew/Cellar"
@@ -675,6 +647,13 @@ jobs:
           mkdir -p $LICENSE
           cp LICENSE $LICENSE/yubihsm-manager.txt
           cp THIRDPARTY.txt $LICENSE/
+
+      - name: Pack installer scripts
+        run: |
+          set -e -o pipefail
+          set -x
+
+          cp resources/release/macos/* $GITHUB_WORKSPACE/artifact/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v5
