@@ -98,7 +98,7 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
 
 
         let in_data = self.ui.get_string_input(
-            "Enter data in hex or absolut path to binary file (data must be a multiple of 16 bytes long):", true, None, None)?;
+            "Enter data in hex or absolute path to binary file (data must be a multiple of 16 bytes long):", true, None, None)?;
         let in_data = get_hex_or_bytes_from_file(&self.ui, in_data)?;
         if in_data.len() % 16 != 0 {
             return Err(MgmError::InvalidInput("Input data must be a multiple of 16 bytes".to_string()))

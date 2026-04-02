@@ -69,7 +69,7 @@ impl Command for MainCommand {
             Self::Generate => "Generate a new key inside the YubiHSM",
             Self::Import => "Import an object into the YubiHSM",
             Self::GotoAsym => "Manage and use asymmetric keys stored on the YubiHSM",
-            Self::GotoSym => "Manage and use symmetric keys stored on the YubiHSM. Rrquires firmware version 2.3.1 or higher",
+            Self::GotoSym => "Manage and use symmetric keys stored on the YubiHSM. Requires firmware version 2.3.1 or higher",
             Self::GotoWrap => "Manage and use wrap keys stored on the YubiHSM",
             Self::GotoAuth => "Manage authentication keys stored on the YubiHSM",
             Self::GotoSpecialOps => "",
