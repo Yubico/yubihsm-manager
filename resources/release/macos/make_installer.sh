@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Script to produce a MacOS installer (.pkg)
-# This script has to be run from the source directory
+
 # asciidoctor -o $PKG_RESOURCES/license.html $MAC_DIR/license.adoc
 
 if [ "$#" -ne 4 ]; then
