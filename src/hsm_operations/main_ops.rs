@@ -261,10 +261,6 @@ impl MainOperations {
                 label: "Authentication key".to_string(),
                 description: String::new()
             },
-            SelectionItem {
-                value: ObjectType::PublicWrapKey,
-                label: "Public wrap key".to_string(),
-                description: String::new()},
         ]
     }
 
