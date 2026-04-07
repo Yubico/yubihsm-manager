@@ -218,9 +218,9 @@ impl YubihsmUi for Cmdline {
         let mut selector = cliclack::select(p);
 
         let mut objects = available_objects.to_vec();
-        objects.sort_by_key(|a| a.label.clone());
+        objects.sort_by_key(|a| a.label());
         for obj in objects {
-            let label = format!("0x{:04x} : {:40} : {}", obj.id, obj.label, obj.algorithm);
+            let label = format!("0x{:04x} : {:40} : {}", obj.object_id(), obj.label(), obj.algorithm());
             selector = selector.item(obj, label, "");
         }
         let selector = return_or_exit!(selector.interact());
@@ -245,9 +245,9 @@ impl YubihsmUi for Cmdline {
         }
 
         let mut objects = available_objects.to_vec();
-        objects.sort_by_key(|a| a.label.clone());
-        for obj in available_objects {
-            let label = format!("0x{:04x} : {:40} : {}", obj.id, obj.label, obj.algorithm);
+        objects.sort_by_key(|a| a.label());
+        for obj in objects {
+            let label = format!("0x{:04x} : {:40} : {}", obj.object_id(), obj.label(), obj.algorithm());
             selected = selected.item(obj.to_owned(), label, "");
         }
         let selected = return_or_exit!(selected.interact());
@@ -582,7 +582,7 @@ impl YubihsmUi for Cmdline {
         }
 
         let mut _objects = objects.to_vec();
-        _objects.sort_by_key(|a| a.label.clone());
+        _objects.sort_by_key(|a| a.label());
 
         let mut builder = Builder::default();
         builder.push_record(vec!["ID", "Type", "Label", "Algorithm", "Sequence", "Origin", "Domains", "Capabilities", "Delegated Capabilities"]);
@@ -595,8 +595,8 @@ impl YubihsmUi for Cmdline {
                 spec.get_type_str(),
                 spec.label.to_string(),
                 spec.get_algorithm_str(),
-                object.sequence.to_string(),
-                format!("{:?}", object.origin),
+                object.sequence().to_string(),
+                format!("{:?}", object.origin()),
                 spec.get_domains_str(),
                 spec.get_capabilities_str(),
                 spec.get_delegated_capabilities_str()]);

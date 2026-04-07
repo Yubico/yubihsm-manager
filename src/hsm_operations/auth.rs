@@ -231,11 +231,11 @@ mod tests {
         caps: Vec<ObjectCapability>,
         delegated: Option<Vec<ObjectCapability>>,
     ) -> ObjectDescriptor {
-        let mut desc = ObjectDescriptor::new();
-        desc.id = 1;
-        desc.object_type = ObjectType::AuthenticationKey;
-        desc.capabilities = caps;
-        desc.delegated_capabilities = delegated;
+        let mut desc = ObjectDescriptor::default();
+        desc.set_object_id(1);
+        desc.set_object_type(ObjectType::AuthenticationKey);
+        desc.set_capabilities(caps);
+        desc.set_delegated_capabilities(delegated);
         desc
     }
 

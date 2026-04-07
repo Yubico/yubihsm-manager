@@ -103,7 +103,7 @@ fn generate_rsa_wrap_key_pair(session: &Session) -> u16{
     let id = WrapOperations.generate(session, &spec).expect("Failed to generate RSA wrap key pair");
 
     // Export the public key
-    let pubkey = AsymmetricOperations::get_pubkey(session, id, ObjectType::WrapKey)
+    let pubkey = AsymmetricOperations::get_pubkey(session, id, &ObjectType::WrapKey)
         .expect("Failed to export RSA wrap key public key");
 
     let (_, _, pubkey_bytes) = AsymmetricOperations::parse_asym_pem(pubkey).expect("Failed to parse PEM public key");
@@ -159,8 +159,8 @@ fn test_aes_wrap_export_then_import() {
     let wrap_id = generate_aes_wrap_key(&session);
     let target_id = generate_target_key(&session);
     let info = session.get_object_info(target_id, ObjectType::AsymmetricKey).expect("Failed to get object info for target key");
-    assert_eq!(info.sequence, 0);
-    assert_eq!(info.origin, ObjectOrigin::Generated);
+    assert_eq!(info.sequence(), 0);
+    assert_eq!(info.origin(), &ObjectOrigin::Generated);
 
     // Export wrapped
     let op_spec = aes_wrap_op_spec(wrap_id);
@@ -185,9 +185,9 @@ fn test_aes_wrap_export_then_import() {
 
     // Verify restored object exists
     let info = session.get_object_info(target_id, ObjectType::AsymmetricKey).expect("Failed to get object info for restored object");
-    assert_eq!(info.algorithm, ObjectAlgorithm::EcP256);
-    assert_eq!(info.sequence, 1);
-    assert_eq!(info.origin, ObjectOrigin::WrappedGenerated);
+    assert_eq!(info.algorithm(), &ObjectAlgorithm::EcP256);
+    assert_eq!(info.sequence(), 1);
+    assert_eq!(info.origin(), &ObjectOrigin::WrappedGenerated);
 
     // Cleanup
     session.delete_object(target_id, ObjectType::AsymmetricKey).expect("Failed to delete restored target key");
@@ -325,8 +325,8 @@ fn test_rsa_wrap_object() {
     let wrap_id = generate_rsa_wrap_key_pair(&session);
     let target_id = generate_target_key(&session);
     let target_info = session.get_object_info(target_id, ObjectType::AsymmetricKey).expect("Failed to get object info for target key");
-    assert_eq!(target_info.sequence, 0);
-    assert_eq!(target_info.origin, ObjectOrigin::Generated);
+    assert_eq!(target_info.sequence(), 0);
+    assert_eq!(target_info.origin(), &ObjectOrigin::Generated);
 
     // Export using public wrap key
     let mut op_spec = rsa_wrap_op_spec(wrap_id, WrapKeyType::RsaPublic, WrapType::Object);
@@ -347,10 +347,10 @@ fn test_rsa_wrap_object() {
         &session, &op_spec, &wrapped[0].wrapped_data, None,
     ).expect("RSA-OAEP import_wrapped should succeed");
     assert_eq!(handle.object_id, target_id);
-    assert_eq!(handle.object_type, target_info.object_type);
+    assert_eq!(handle.object_type, *target_info.object_type());
     let imported_info = session.get_object_info(handle.object_id, handle.object_type).expect("Failed to get object info for imported object");
-    assert_eq!(imported_info.sequence, 1);
-    assert_eq!(imported_info.origin, ObjectOrigin::WrappedGenerated);
+    assert_eq!(imported_info.sequence(), 1);
+    assert_eq!(imported_info.origin(), &ObjectOrigin::WrappedGenerated);
 
     // Cleanup
     session.delete_object(target_id, ObjectType::AsymmetricKey).expect("Failed to delete target key");
@@ -373,8 +373,8 @@ fn test_rsa_wrap_key() {
     let wrap_id = generate_rsa_wrap_key_pair(&session);
     let target_id = generate_target_key(&session);
     let target_info = session.get_object_info(target_id, ObjectType::AsymmetricKey).expect("Failed to get object info for target key");
-    assert_eq!(target_info.sequence, 0);
-    assert_eq!(target_info.origin, ObjectOrigin::Generated);
+    assert_eq!(target_info.sequence(), 0);
+    assert_eq!(target_info.origin(), &ObjectOrigin::Generated);
 
     // Export using public wrap key
     let mut op_spec = rsa_wrap_op_spec(wrap_id, WrapKeyType::RsaPublic, WrapType::Key);
@@ -391,7 +391,7 @@ fn test_rsa_wrap_key() {
         id: 0,
         object_type: ObjectType::AsymmetricKey,
         label: "wrapped".to_string(),
-        algorithm: target_info.algorithm, // reuse target's algorithm for simplicity
+        algorithm: *target_info.algorithm(), // reuse target's algorithm for simplicity
         domains: vec![ObjectDomain::One],
         capabilities: vec![
             ObjectCapability::SignEcdsa,
@@ -407,8 +407,8 @@ fn test_rsa_wrap_key() {
     ).expect("RSA-OAEP import_wrapped should succeed");
     let imported_info = session.get_object_info(handle.object_id, handle.object_type).expect("Failed to get object info for imported object");
     assert_ne!(handle.object_id, target_id, "Imported object should have new ID");
-    assert_eq!(imported_info.sequence, 0);
-    assert_eq!(imported_info.origin, ObjectOrigin::WrappedImported);
+    assert_eq!(imported_info.sequence(), 0);
+    assert_eq!(imported_info.origin(), &ObjectOrigin::WrappedImported);
 
     assert!(session.get_object_info(target_id, ObjectType::AsymmetricKey).is_ok(), "Original target key should still exist after import");
 

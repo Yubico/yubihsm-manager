@@ -266,9 +266,9 @@ impl AsymmetricOperations {
             get_op_keys(session, authkey, &caps, ObjectType::AsymmetricKey, None)?;
 
         keys.retain(|k| {
-            (Self::is_rsa_key_algorithm(&k.algorithm) && (k.capabilities.contains(&ObjectCapability::SignPkcs) || k.capabilities.contains(&ObjectCapability::SignPss))) ||
-            (Self::is_ec_key_algorithm(&k.algorithm) && k.capabilities.contains(&ObjectCapability::SignEcdsa)) ||
-            (k.algorithm == ObjectAlgorithm::Ed25519 && k.capabilities.contains(&ObjectCapability::SignEddsa))
+            (Self::is_rsa_key_algorithm(k.algorithm()) && (k.capabilities().contains(&ObjectCapability::SignPkcs) || k.capabilities().contains(&ObjectCapability::SignPss))) ||
+            (Self::is_ec_key_algorithm(k.algorithm()) && k.capabilities().contains(&ObjectCapability::SignEcdsa)) ||
+            (k.algorithm() == &ObjectAlgorithm::Ed25519 && k.capabilities().contains(&ObjectCapability::SignEddsa))
         });
         Ok(keys)
     }
@@ -287,22 +287,22 @@ impl AsymmetricOperations {
 
     pub fn get_signing_algorithms(authkey: &ObjectDescriptor, signkey: &ObjectDescriptor) -> Vec<MgmAlgorithm> {
         let mut algos = Vec::new();
-        if Self::is_rsa_key_algorithm(&signkey.algorithm) {
-            if signkey.capabilities.contains(&ObjectCapability::SignPkcs) &&
-                authkey.capabilities.contains(&ObjectCapability::SignPkcs) {
+        if Self::is_rsa_key_algorithm(signkey.algorithm()) {
+            if signkey.capabilities().contains(&ObjectCapability::SignPkcs) &&
+                authkey.capabilities().contains(&ObjectCapability::SignPkcs) {
                 algos.extend_from_slice(&MgmAlgorithm::RSA_PKCS_ALGORITHMS);
             }
-            if signkey.capabilities.contains(&ObjectCapability::SignPss) &&
-                authkey.capabilities.contains(&ObjectCapability::SignPss) {
+            if signkey.capabilities().contains(&ObjectCapability::SignPss) &&
+                authkey.capabilities().contains(&ObjectCapability::SignPss) {
                 algos.extend_from_slice(&MgmAlgorithm::RSA_PSS_ALGORITHMS);
             }
-        } else if Self::is_ec_key_algorithm(&signkey.algorithm) &&
-            signkey.capabilities.contains(&ObjectCapability::SignEcdsa) &&
-                authkey.capabilities.contains(&ObjectCapability::SignEcdsa) {
+        } else if Self::is_ec_key_algorithm(signkey.algorithm()) &&
+            signkey.capabilities().contains(&ObjectCapability::SignEcdsa) &&
+                authkey.capabilities().contains(&ObjectCapability::SignEcdsa) {
             algos.extend_from_slice(&MgmAlgorithm::ECDSA_ALGORITHMS);
-        } else if signkey.algorithm == ObjectAlgorithm::Ed25519 &&
-            signkey.capabilities.contains(&ObjectCapability::SignEddsa) &&
-                authkey.capabilities.contains(&ObjectCapability::SignEddsa) {
+        } else if signkey.algorithm() == &ObjectAlgorithm::Ed25519 &&
+            signkey.capabilities().contains(&ObjectCapability::SignEddsa) &&
+                authkey.capabilities().contains(&ObjectCapability::SignEddsa) {
                 algos.extend_from_slice(&MgmAlgorithm::EDDSA_ALGORITHMS);
         }
         algos
@@ -310,19 +310,19 @@ impl AsymmetricOperations {
 
     pub fn get_decryption_algorithms(authkey: &ObjectDescriptor, deckey: &ObjectDescriptor) -> Vec<MgmAlgorithm> {
         let mut algos = Vec::new();
-        if Self::is_rsa_key_algorithm(&deckey.algorithm) {
-            if deckey.capabilities.contains(&ObjectCapability::DecryptPkcs) && authkey.capabilities.contains(&ObjectCapability::DecryptPkcs) {
+        if Self::is_rsa_key_algorithm(deckey.algorithm()) {
+            if deckey.capabilities().contains(&ObjectCapability::DecryptPkcs) && authkey.capabilities().contains(&ObjectCapability::DecryptPkcs) {
                 algos.push(ObjectAlgorithm::RsaPkcs1Decrypt.into());
             }
-            if deckey.capabilities.contains(&ObjectCapability::DecryptOaep) && authkey.capabilities.contains(&ObjectCapability::DecryptOaep) {
+            if deckey.capabilities().contains(&ObjectCapability::DecryptOaep) && authkey.capabilities().contains(&ObjectCapability::DecryptOaep) {
                 algos.extend_from_slice(&MgmAlgorithm::RSA_OAEP_ALGORITHMS);
             }
         }
         algos
     }
 
-    pub fn get_pubkey(session: &Session, object_id: u16, object_typ: ObjectType) -> Result<Pem, MgmError> {
-        let (pubkey, algo) = session.get_pubkey(object_id, object_typ)?;
+    pub fn get_pubkey(session: &Session, object_id: u16, object_typ: &ObjectType) -> Result<Pem, MgmError> {
+        let (pubkey, algo) = session.get_pubkey(object_id, *object_typ)?;
         Self::get_pubkey_pem(algo, pubkey.as_slice())
     }
 
@@ -381,11 +381,11 @@ impl AsymmetricOperations {
             return Err(MgmError::InvalidInput("Peer public key is not an EC public key".to_string()))
         }
 
-        if peer_algo != hsm_key.algorithm {
+        if peer_algo != *hsm_key.algorithm() {
             return Err(MgmError::InvalidInput("Peer public key algorithm does not match HSM key algorithm".to_string()))
         }
 
-        Ok(session.derive_ecdh(hsm_key.id, peer_key.as_slice())?)
+        Ok(session.derive_ecdh(hsm_key.object_id(), peer_key.as_slice())?)
     }
 
     pub fn get_attestation_cert(
@@ -629,7 +629,7 @@ impl AsymmetricOperations {
     fn import_attestation_template(session: &Session, attesting_key: u16, attested_key: u16, template_cert: Option<Pem>) -> Result<bool, MgmError> {
         match session.get_object_info(attesting_key, ObjectType::Opaque) {
             Ok(opaque) => {
-                if template_cert.is_some() || opaque.algorithm != ObjectAlgorithm::OpaqueX509Certificate {
+                if template_cert.is_some() || opaque.algorithm() != &ObjectAlgorithm::OpaqueX509Certificate {
                     return Err(MgmError::Error("An opaque object with the same ID as the attesting key already exists on the device".to_string()))
                 }
                 Ok(false)
@@ -824,7 +824,7 @@ impl YubihsmOperations for JavaOps {
             }
         }    }
 
-    fn delete(&self, session: &Session, object_id: u16, _object_type: ObjectType) -> Result<(), MgmError> {
+    fn delete(&self, session: &Session, object_id: u16, _object_type: &ObjectType) -> Result<(), MgmError> {
         session.delete_object(object_id, ObjectType::AsymmetricKey)?;
         session.delete_object(object_id, ObjectType::Opaque)?;
         Ok(())
@@ -851,9 +851,9 @@ mod tests {
     // ── Helper: build ObjectDescriptor with specific caps + algo ──
 
     fn make_desc(algo: ObjectAlgorithm, caps: Vec<ObjectCapability>) -> ObjectDescriptor {
-        let mut desc = ObjectDescriptor::new();
-        desc.algorithm = algo;
-        desc.capabilities = caps;
+        let mut desc = ObjectDescriptor::default();
+        desc.set_algorithm(algo);
+        desc.set_capabilities(caps);
         desc
     }
     

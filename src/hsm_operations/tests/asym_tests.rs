@@ -89,14 +89,14 @@ fn test_generate_ecp256() {
     assert_eq!(returned_id, OBJECT_ID);
 
     let desc = session.get_object_info(OBJECT_ID, ObjectType::AsymmetricKey).expect("Failed to get object info for generated EcP256 key");
-    assert_eq!(desc.algorithm, ObjectAlgorithm::EcP256);
-    assert_eq!(desc.object_type, ObjectType::AsymmetricKey);
-    assert_eq!(desc.label, spec.label);
-    assert_eq!(desc.capabilities.len(), spec.capabilities.len());
-    assert!(desc.capabilities.contains(&ObjectCapability::DeriveEcdh));
-    assert!(desc.capabilities.contains(&ObjectCapability::SignAttestationCertificate));
+    assert_eq!(desc.algorithm(), &ObjectAlgorithm::EcP256);
+    assert_eq!(desc.object_type(), &ObjectType::AsymmetricKey);
+    assert_eq!(desc.label(), spec.label);
+    assert_eq!(desc.capabilities().len(), spec.capabilities.len());
+    assert!(desc.capabilities().contains(&ObjectCapability::DeriveEcdh));
+    assert!(desc.capabilities().contains(&ObjectCapability::SignAttestationCertificate));
 
-    session.delete_object(desc.id, desc.object_type).expect("Failed to delete generated EcP256 key");
+    session.delete_object(desc.object_id(), *desc.object_type()).expect("Failed to delete generated EcP256 key");
 
     assert!(session.get_object_info(OBJECT_ID, ObjectType::AsymmetricKey).is_err(), "Object should be deleted");
 }
@@ -113,14 +113,14 @@ fn test_generate_ed25519() {
     assert_eq!(returned_id, OBJECT_ID);
 
     let desc = session.get_object_info(OBJECT_ID, ObjectType::AsymmetricKey).expect("Failed to get object info for generated Ed25519 key");
-    assert_eq!(desc.algorithm, ObjectAlgorithm::Ed25519);
-    assert_eq!(desc.object_type, ObjectType::AsymmetricKey);
-    assert_eq!(desc.label, spec.label);
-    assert_eq!(desc.capabilities.len(), spec.capabilities.len());
-    assert!(desc.capabilities.contains(&ObjectCapability::SignEddsa));
-    assert!(desc.capabilities.contains(&ObjectCapability::ExportableUnderWrap));
+    assert_eq!(desc.algorithm(), &ObjectAlgorithm::Ed25519);
+    assert_eq!(desc.object_type(), &ObjectType::AsymmetricKey);
+    assert_eq!(desc.label(), spec.label);
+    assert_eq!(desc.capabilities().len(), spec.capabilities.len());
+    assert!(desc.capabilities().contains(&ObjectCapability::SignEddsa));
+    assert!(desc.capabilities().contains(&ObjectCapability::ExportableUnderWrap));
 
-    session.delete_object(desc.id, desc.object_type).expect("Failed to delete generated Ed25519 key");
+    session.delete_object(desc.object_id(), *desc.object_type()).expect("Failed to delete generated Ed25519 key");
         assert!(session.get_object_info(OBJECT_ID, ObjectType::AsymmetricKey).is_err(), "Object should be deleted");
 }
 
@@ -138,12 +138,12 @@ fn test_generate_rsa2048() {
     assert_eq!(returned_id, OBJECT_ID);
 
     let desc = session.get_object_info(OBJECT_ID, ObjectType::AsymmetricKey).expect("Failed to get object info for generated RSA 2048 key");
-    assert_eq!(desc.algorithm, ObjectAlgorithm::Rsa2048);
-    assert_eq!(desc.object_type, ObjectType::AsymmetricKey);
-    assert_eq!(desc.label, spec.label);
-    assert_eq!(desc.capabilities.len(), spec.capabilities.len());
-    assert!(desc.capabilities.contains(&ObjectCapability::DecryptPkcs));
-    assert!(desc.capabilities.contains(&ObjectCapability::DecryptOaep));
+    assert_eq!(desc.algorithm(), &ObjectAlgorithm::Rsa2048);
+    assert_eq!(desc.object_type(), &ObjectType::AsymmetricKey);
+    assert_eq!(desc.label(), spec.label);
+    assert_eq!(desc.capabilities().len(), spec.capabilities.len());
+    assert!(desc.capabilities().contains(&ObjectCapability::DecryptPkcs));
+    assert!(desc.capabilities().contains(&ObjectCapability::DecryptOaep));
 
     session.delete_object(OBJECT_ID, ObjectType::AsymmetricKey).expect("Failed to delete generated RSA 2048 key");
     assert!(session.get_object_info(OBJECT_ID, ObjectType::AsymmetricKey).is_err(), "Object should be deleted");
@@ -241,12 +241,12 @@ fn test_import_ecp256_privkey() {
     assert_eq!(returned_id, OBJECT_ID);
 
     let desc = session.get_object_info(OBJECT_ID, ObjectType::AsymmetricKey).expect("Failed to get object info for imported EcP256 key");
-    assert_eq!(desc.algorithm, ObjectAlgorithm::EcP256);
-    assert_eq!(desc.object_type, ObjectType::AsymmetricKey);
-    assert_eq!(desc.label, spec.label);
-    assert_eq!(desc.capabilities.len(), spec.capabilities.len());
-    assert!(desc.capabilities.contains(&ObjectCapability::SignEcdsa));
-    assert!(desc.capabilities.contains(&ObjectCapability::ExportableUnderWrap));
+    assert_eq!(desc.algorithm(), &ObjectAlgorithm::EcP256);
+    assert_eq!(desc.object_type(), &ObjectType::AsymmetricKey);
+    assert_eq!(desc.label(), spec.label);
+    assert_eq!(desc.capabilities().len(), spec.capabilities.len());
+    assert!(desc.capabilities().contains(&ObjectCapability::SignEcdsa));
+    assert!(desc.capabilities().contains(&ObjectCapability::ExportableUnderWrap));
 
     session.delete_object(OBJECT_ID, ObjectType::AsymmetricKey).expect("Failed to delete imported EcP256 key");
     assert!(session.get_object_info(OBJECT_ID, ObjectType::AsymmetricKey).is_err(), "Object should be deleted");
@@ -267,12 +267,12 @@ fn test_import_rsa2048_privkey() {
     assert_eq!(returned_id, OBJECT_ID);
 
     let desc = session.get_object_info(OBJECT_ID, ObjectType::AsymmetricKey).expect("Failed to get object info for imported RSA 2048 key");
-    assert_eq!(desc.algorithm, ObjectAlgorithm::Rsa2048);
-    assert_eq!(desc.object_type, ObjectType::AsymmetricKey);
-    assert_eq!(desc.label, spec.label);
-    assert_eq!(desc.capabilities.len(), spec.capabilities.len());
-    assert!(desc.capabilities.contains(&ObjectCapability::SignPkcs));
-    assert!(desc.capabilities.contains(&ObjectCapability::DecryptPkcs));
+    assert_eq!(desc.algorithm(), &ObjectAlgorithm::Rsa2048);
+    assert_eq!(desc.object_type(), &ObjectType::AsymmetricKey);
+    assert_eq!(desc.label(), spec.label);
+    assert_eq!(desc.capabilities().len(), spec.capabilities.len());
+    assert!(desc.capabilities().contains(&ObjectCapability::SignPkcs));
+    assert!(desc.capabilities().contains(&ObjectCapability::DecryptPkcs));
 
     session.delete_object(OBJECT_ID, ObjectType::AsymmetricKey).expect("Failed to delete imported RSA 2048 key");
 }
@@ -287,10 +287,10 @@ fn test_import_x509_cert() {
     assert_eq!(returned_id, OBJECT_ID);
 
     let desc = session.get_object_info(OBJECT_ID, ObjectType::Opaque).expect("Failed to get object info for imported X509 cert");
-    assert_eq!(desc.algorithm, ObjectAlgorithm::OpaqueX509Certificate);
-    assert_eq!(desc.object_type, ObjectType::Opaque);
-    assert_eq!(desc.label, spec.label);
-    assert_eq!(desc.capabilities.len(), spec.capabilities.len());
+    assert_eq!(desc.algorithm(), &ObjectAlgorithm::OpaqueX509Certificate);
+    assert_eq!(desc.object_type(), &ObjectType::Opaque);
+    assert_eq!(desc.label(), spec.label);
+    assert_eq!(desc.capabilities().len(), spec.capabilities.len());
 
     session.delete_object(OBJECT_ID, ObjectType::Opaque).expect("Failed to delete imported X509 certificate");
     assert!(session.get_object_info(OBJECT_ID, ObjectType::Opaque).is_err(), "Object should be deleted");
@@ -309,7 +309,7 @@ fn test_get_pubkey_ec() {
     );
     AsymmetricOperations.generate(&session, &spec).expect("Failed to generate EcP256 key for get_pubkey test");
 
-    let pem = AsymmetricOperations::get_pubkey(&session, OBJECT_ID, ObjectType::AsymmetricKey).expect("Failed to retrieve public key from device");
+    let pem = AsymmetricOperations::get_pubkey(&session, OBJECT_ID, &ObjectType::AsymmetricKey).expect("Failed to retrieve public key from device");
     let pem_str = pem.to_string();
     assert!(pem_str.contains("BEGIN PUBLIC KEY"), "Got: {}", pem_str);
     assert!(pem_str.contains("END PUBLIC KEY"));
@@ -330,7 +330,7 @@ fn test_get_pubkey_rsa() {
     );
     AsymmetricOperations.generate(&session, &spec).expect("Failed to generate RSA 2048 key for get_pubkey test");
 
-    let pem = AsymmetricOperations::get_pubkey(&session, OBJECT_ID, ObjectType::AsymmetricKey).expect("Failed to retrieve RSA public key from device");
+    let pem = AsymmetricOperations::get_pubkey(&session, OBJECT_ID, &ObjectType::AsymmetricKey).expect("Failed to retrieve RSA public key from device");
     let pem_str = pem.to_string();
     assert!(pem_str.contains("BEGIN PUBLIC KEY"), "Got: {}", pem_str);
 
@@ -365,7 +365,7 @@ fn verify_rsa_pkcs1_signature(
     pubkey_pem: &[u8],
     data: &[u8],
     signature: &[u8],
-    digest: openssl::hash::MessageDigest,
+    digest: MessageDigest,
 ) -> bool {
     let pkey = PKey::public_key_from_pem(pubkey_pem).expect("Failed to parse RSA public key PEM");
     let mut verifier = Verifier::new(digest, &pkey).expect("Failed to create verifier for RSA PKCS#1");
@@ -378,7 +378,7 @@ fn verify_rsa_pss_signature(
     pubkey_pem: &[u8],
     data: &[u8],
     signature: &[u8],
-    digest: openssl::hash::MessageDigest,
+    digest: MessageDigest,
 ) -> bool {
     let pkey = PKey::public_key_from_pem(pubkey_pem).expect("Failed to parse RSA public key PEM");
     let mut verifier = Verifier::new(digest, &pkey).expect("Failed to create verifier for RSA PSS");
@@ -403,8 +403,8 @@ fn test_sign_ecdsa_sha256() {
     assert!(!sig.is_empty(), "Signature should not be empty");
 
     // Verify: the YubiHSM hashes internally, so we need the digest for ECDSA low-level verify
-    let digest = openssl::hash::hash(openssl::hash::MessageDigest::sha256(), data).expect("Failed to compute digest of data");
-    let pubkey_pem = AsymmetricOperations::get_pubkey(&session, OBJECT_ID, ObjectType::AsymmetricKey)
+    let digest = openssl::hash::hash(MessageDigest::sha256(), data).expect("Failed to compute digest of data");
+    let pubkey_pem = AsymmetricOperations::get_pubkey(&session, OBJECT_ID, &ObjectType::AsymmetricKey)
         .expect("Failed to get public key from device").to_string().into_bytes();
     assert!(
         verify_ecdsa_signature(&pubkey_pem, &digest, &sig),
@@ -429,7 +429,7 @@ fn test_sign_eddsa() {
     assert_eq!(sig.len(), 64, "Ed25519 signature should be 64 bytes");
 
     // Verify: Ed25519 does not pre-hash; raw data is passed to verify
-    let pubkey_pem = AsymmetricOperations::get_pubkey(&session, OBJECT_ID, ObjectType::AsymmetricKey)
+    let pubkey_pem = AsymmetricOperations::get_pubkey(&session, OBJECT_ID, &ObjectType::AsymmetricKey)
         .expect("Failed to get public key from device").to_string().into_bytes();
     assert!(
         verify_eddsa_signature(&pubkey_pem, data, &sig),
@@ -454,10 +454,10 @@ fn test_sign_rsa_pkcs1_sha256() {
     assert_eq!(sig.len(), 256, "RSA 2048 signature should be 256 bytes");
 
     // Verify using high-level OpenSSL Verifier (handles hashing + padding)
-    let pubkey_pem = AsymmetricOperations::get_pubkey(&session, OBJECT_ID, ObjectType::AsymmetricKey)
+    let pubkey_pem = AsymmetricOperations::get_pubkey(&session, OBJECT_ID, &ObjectType::AsymmetricKey)
         .expect("Failed to get public key from device").to_string().into_bytes();
     assert!(
-        verify_rsa_pkcs1_signature(&pubkey_pem, data, &sig, openssl::hash::MessageDigest::sha256()),
+        verify_rsa_pkcs1_signature(&pubkey_pem, data, &sig, MessageDigest::sha256()),
         "RSA PKCS#1 v1.5 SHA-256 signature should verify"
     );
 
@@ -479,10 +479,10 @@ fn test_sign_rsa_pss_sha256() {
     assert_eq!(sig.len(), 256, "RSA 2048 PSS signature should be 256 bytes");
 
     // Verify using high-level OpenSSL Verifier with PSS padding
-    let pubkey_pem = AsymmetricOperations::get_pubkey(&session, OBJECT_ID, ObjectType::AsymmetricKey)
+    let pubkey_pem = AsymmetricOperations::get_pubkey(&session, OBJECT_ID, &ObjectType::AsymmetricKey)
         .expect("Failed to get public key from device").to_string().into_bytes();
     assert!(
-        verify_rsa_pss_signature(&pubkey_pem, data, &sig, openssl::hash::MessageDigest::sha256()),
+        verify_rsa_pss_signature(&pubkey_pem, data, &sig, MessageDigest::sha256()),
         "RSA PSS SHA-256 signature should verify"
     );
 
@@ -524,7 +524,7 @@ fn rsa_encrypt_oaep_sha256(pubkey_pem: &[u8], plaintext: &[u8]) -> Vec<u8> {
     let rsa = Rsa::public_key_from_pem(pubkey_pem).expect("Failed to parse RSA public key PEM");
     let pkey = PKey::from_rsa(rsa).expect("Failed to create PKey from RSA public key");
     let mut encrypter = Encrypter::new(&pkey).expect("Failed to create encrypter for RSA OAEP");
-    encrypter.set_rsa_padding(openssl::rsa::Padding::PKCS1_OAEP).expect("Failed to set RSA OAEP padding");
+    encrypter.set_rsa_padding(Padding::PKCS1_OAEP).expect("Failed to set RSA OAEP padding");
     encrypter.set_rsa_oaep_md(MessageDigest::sha256()).expect("Failed to set RSA OAEP digest");
     encrypter.set_rsa_mgf1_md(MessageDigest::sha256()).expect("Failed to set RSA OAEP MGF1 digest");
 
@@ -546,7 +546,7 @@ fn test_decrypt_rsa_pkcs1() {
     AsymmetricOperations.import(&session, &spec).expect("Failed to import RSA 2048 key for decryption test");
 
     // Get public key from YubiHSM and encrypt locally
-    let pem = AsymmetricOperations::get_pubkey(&session, OBJECT_ID, ObjectType::AsymmetricKey).expect("Failed to get RSA public key from device");
+    let pem = AsymmetricOperations::get_pubkey(&session, OBJECT_ID, &ObjectType::AsymmetricKey).expect("Failed to get RSA public key from device");
     let pem_bytes = pem.to_string().into_bytes();
     let plaintext = b"hello world";
     let ciphertext = rsa_encrypt_pkcs1(&pem_bytes, plaintext);
@@ -570,7 +570,7 @@ fn test_decrypt_rsa_oaep_sha256() {
     );
     AsymmetricOperations.import(&session, &spec).expect("Failed to import RSA 2048 key for decryption test");
 
-    let pem = AsymmetricOperations::get_pubkey(&session, OBJECT_ID, ObjectType::AsymmetricKey).expect("Failed to get RSA public key from device");
+    let pem = AsymmetricOperations::get_pubkey(&session, OBJECT_ID, &ObjectType::AsymmetricKey).expect("Failed to get RSA public key from device");
     let pem_bytes = pem.to_string().into_bytes();
     let plaintext = b"hello world";
     let ciphertext = rsa_encrypt_oaep_sha256(&pem_bytes, plaintext);
@@ -696,13 +696,13 @@ fn test_get_all_asym_objects() {
 
     let objects = AsymmetricOperations.get_all_objects(&session).expect("Failed to get all objects from device");
     assert_eq!(objects.len(), 2, "Should have 3 objects (EC key and ED key. Symmetric key should not be listed)");
-    assert!(objects.iter().any(|o| o.id == OBJECT_ID),
+    assert!(objects.iter().any(|o| o.object_id() == OBJECT_ID),
             "Imported EC key should appear in get_all_objects"
     );
-    assert!(objects.iter().any(|o| o.id == ed_id),
+    assert!(objects.iter().any(|o| o.object_id() == ed_id),
             "Generated ED key should appear in get_all_objects"
     );
-    assert!(!objects.iter().any(|o| o.id == wrap_id),
+    assert!(!objects.iter().any(|o| o.object_id() == wrap_id),
             "Generated wrap key should not appear in get_all_objects"
     );
 
@@ -733,11 +733,11 @@ fn test_get_signing_keys() {
 
     let signing_keys = AsymmetricOperations::get_signing_keys(&session, &authkey).expect("Failed to get signing keys from device");
     assert!(
-        signing_keys.iter().any(|k| k.id == id_1),
+        signing_keys.iter().any(|k| k.object_id() == id_1),
         "Key with signing capability should appear in get_signing_keys"
     );
     assert!(
-        !signing_keys.iter().any(|k| k.id == id_2),
+        !signing_keys.iter().any(|k| k.object_id() == id_2),
         "Key without signing capability should not appear in get_signing_keys"
     );
 
@@ -773,15 +773,15 @@ fn test_get_decryption_keys() {
 
     let dec_keys = AsymmetricOperations::get_decryption_keys(&session, &authkey).expect("Failed to get decryption keys from device");
     assert!(
-        dec_keys.iter().any(|k| k.id == id_1),
+        dec_keys.iter().any(|k| k.object_id() == id_1),
         "RSA key with decryption capability should appear in get_decryption_keys"
     );
     assert!(
-        !dec_keys.iter().any(|k| k.id == id_2),
+        !dec_keys.iter().any(|k| k.object_id() == id_2),
         "RSA key without decryption capabilities should not appear in get_decryption_keys"
     );
     assert!(
-        !dec_keys.iter().any(|k| k.id == id_3),
+        !dec_keys.iter().any(|k| k.object_id() == id_3),
         "EC key with the right decryption capabilities should not appear in get_decryption_keys"
     );
 
@@ -818,15 +818,15 @@ fn test_get_derivation_keys() {
         .expect("Failed to get authkey object info");
     let derive_keys = AsymmetricOperations::get_derivation_keys(&session, &authkey).expect("Failed to get derivation keys from device");
     assert!(
-        derive_keys.iter().any(|k| k.id == id_1),
+        derive_keys.iter().any(|k| k.object_id() == id_1),
         "EC key with derivation capabilities should appear in get_derivation_keys"
     );
     assert!(
-        !derive_keys.iter().any(|k| k.id == id_2),
+        !derive_keys.iter().any(|k| k.object_id() == id_2),
         "EC key without derivation capabilities should not appear in get_derivation_keys"
     );
     assert!(
-        !derive_keys.iter().any(|k| k.id == id_3),
+        !derive_keys.iter().any(|k| k.object_id() == id_3),
         "RSA key with derivation capabilities should not appear in get_derivation_keys"
     );
 
@@ -852,8 +852,8 @@ fn test_get_certificate() {
     assert!(pem_str.contains("END CERTIFICATE"));
 
     let (obj_type, obj_algo, _) = AsymmetricOperations::parse_asym_pem(cert_pem).expect("Failed to parse certificate PEM");
-    assert!(obj_algo == ObjectAlgorithm::OpaqueX509Certificate);
-    assert!(obj_type == ObjectType::Opaque);
+    assert_eq!(obj_algo, ObjectAlgorithm::OpaqueX509Certificate);
+    assert_eq!(obj_type, ObjectType::Opaque);
 
     session.delete_object(id, ObjectType::Opaque).expect("Failed to delete imported certificate");
 }

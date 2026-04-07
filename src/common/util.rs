@@ -34,7 +34,7 @@ pub fn get_id_from_string(id_str: &str) -> Result<u16, MgmError> {
 }
 
 pub fn get_delegated_capabilities(object: &ObjectDescriptor) -> Vec<ObjectCapability>  {
-    match &object.delegated_capabilities {
+    match object.delegated_capabilities() {
         Some(caps) => caps.clone(),
         None => Vec::new()
     }
@@ -65,7 +65,7 @@ pub fn get_op_keys(
     op_key_algorithms: Option<&[ObjectAlgorithm]>) -> Result<Vec<ObjectDescriptor>, MgmError> {
 
     let mut caps = op_key_capabilities.to_vec();
-    caps.retain(|c| authkey.capabilities.contains(c));
+    caps.retain(|c| authkey.capabilities().contains(c));
     if caps.is_empty() {
         let caps_str = op_key_capabilities.iter().map(|c| format!("{:?}", c)).collect::<Vec<String>>().join(", ");
         return Err(MgmError::Error(
@@ -87,7 +87,7 @@ pub fn get_op_keys(
     let mut keys = get_object_descriptors(session, &keys)?;
 
     if let Some(algo) = op_key_algorithms {
-        keys.retain(|desc| algo.contains(&desc.algorithm));
+        keys.retain(|desc| algo.contains(desc.algorithm()));
         if keys.is_empty() {
             let algo_str = algo.iter().map(|a| format!("{:?}", a)).collect::<Vec<String>>().join(", ");
             return Err(MgmError::Error(
@@ -143,15 +143,15 @@ mod tests {
 
     #[test]
     fn test_delegated_caps_some() {
-        let mut desc = ObjectDescriptor::new();
+        let mut desc = ObjectDescriptor::default();
         let caps = vec![ObjectCapability::SignPkcs, ObjectCapability::ExportWrapped];
-        desc.delegated_capabilities = Some(caps.clone());
+        desc.set_delegated_capabilities(Some(caps.clone()));
         assert_eq!(get_delegated_capabilities(&desc), caps);
     }
 
     #[test]
     fn test_delegated_caps_none() {
-        let desc = ObjectDescriptor::new();
+        let desc = ObjectDescriptor::default();
         assert!(get_delegated_capabilities(&desc).is_empty());
     }
 

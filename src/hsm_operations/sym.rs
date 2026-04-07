@@ -210,14 +210,14 @@ impl SymmetricOperations {
         let out_data = match op_spec.enc_mode {
             EncryptionMode::Encrypt => {
                 match op_spec.aes_mode {
-                    AesMode::Ecb => session.encrypt_aes_ecb(op_spec.operation_key.id, &op_spec.data)?,
-                    AesMode::Cbc => session.encrypt_aes_cbc(op_spec.operation_key.id, &op_spec.iv, &op_spec.data)?
+                    AesMode::Ecb => session.encrypt_aes_ecb(op_spec.operation_key.object_id(), &op_spec.data)?,
+                    AesMode::Cbc => session.encrypt_aes_cbc(op_spec.operation_key.object_id(), &op_spec.iv, &op_spec.data)?
                 }
             },
             EncryptionMode::Decrypt => {
                 match op_spec.aes_mode {
-                    AesMode::Ecb => session.decrypt_aes_ecb(op_spec.operation_key.id, &op_spec.data)?,
-                    AesMode::Cbc => session.decrypt_aes_cbc(op_spec.operation_key.id, &op_spec.iv, &op_spec.data)?
+                    AesMode::Ecb => session.decrypt_aes_ecb(op_spec.operation_key.object_id(), &op_spec.data)?,
+                    AesMode::Cbc => session.decrypt_aes_cbc(op_spec.operation_key.object_id(), &op_spec.iv, &op_spec.data)?
                 }
             }
         };

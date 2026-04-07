@@ -190,8 +190,8 @@ impl YubihsmOperations for WrapOperations {
         }
 
         let key_type = Self::get_wrapkey_type(
-            object_type.unwrap(),
-            object_algorithm.unwrap(),
+            &object_type.unwrap(),
+            &object_algorithm.unwrap(),
         )?;
 
         match key_type {
@@ -256,7 +256,7 @@ impl WrapOperations {
         }
     }
 
-    pub fn get_wrapkey_type(object_type: ObjectType, algorithm: ObjectAlgorithm) -> Result<WrapKeyType, MgmError> {
+    pub fn get_wrapkey_type(object_type: &ObjectType, algorithm: &ObjectAlgorithm) -> Result<WrapKeyType, MgmError> {
         match object_type {
             ObjectType::PublicWrapKey => Ok(WrapKeyType::RsaPublic),
             ObjectType::WrapKey => match algorithm {
@@ -289,9 +289,9 @@ impl WrapOperations {
                 0, ObjectType::WrapKey, "", ObjectAlgorithm::ANY, &Vec::new())?;
             let mut keys = get_object_descriptors(session, keys.as_slice())?;
             if key_type == WrapKeyType::Aes {
-                keys.retain(|k| !AsymmetricOperations::is_rsa_key_algorithm(&k.algorithm));
+                keys.retain(|k| !AsymmetricOperations::is_rsa_key_algorithm(k.algorithm()));
             } else if key_type == WrapKeyType::Rsa {
-                keys.retain(|k| AsymmetricOperations::is_rsa_key_algorithm(&k.algorithm));
+                keys.retain(|k| AsymmetricOperations::is_rsa_key_algorithm(k.algorithm()));
             }
             Ok(keys)
         }
@@ -299,17 +299,17 @@ impl WrapOperations {
 
     pub fn get_rsa_wrapkeys(session:&Session) -> Result<Vec<ObjectDescriptor>, MgmError> {
         let mut keys = Self.get_all_objects(session)?;
-        keys.retain(|k| AsymmetricOperations::is_rsa_key_algorithm(&k.algorithm));
+        keys.retain(|k| AsymmetricOperations::is_rsa_key_algorithm(k.algorithm()));
         Ok(keys)
     }
 
     pub fn get_wrapping_keys(session:&Session, authkey: &ObjectDescriptor) -> Result<Vec<ObjectDescriptor>, MgmError> {
-        if !authkey.capabilities.contains(&ObjectCapability::ExportWrapped) {
+        if !authkey.capabilities().contains(&ObjectCapability::ExportWrapped) {
             return Ok(Vec::new());
         }
         let mut keys = Self::get_wrapkeys_by_type(session, WrapKeyType::Aes)?;
         keys.extend_from_slice(&Self::get_wrapkeys_by_type(session, WrapKeyType::RsaPublic)?);
-        keys.retain(|k| k.capabilities.contains(&ObjectCapability::ExportWrapped));
+        keys.retain(|k| k.capabilities().contains(&ObjectCapability::ExportWrapped));
         if keys.is_empty() {
             return Err(MgmError::Error(
                 format!("No wrap keys with {:?} capability were found", ObjectCapability::ExportWrapped)));
@@ -318,12 +318,12 @@ impl WrapOperations {
     }
 
     pub fn get_unwrapping_keys(session:&Session, authkey: &ObjectDescriptor) -> Result<Vec<ObjectDescriptor>, MgmError> {
-        if !authkey.capabilities.contains(&ObjectCapability::ImportWrapped) {
+        if !authkey.capabilities().contains(&ObjectCapability::ImportWrapped) {
             return Ok(Vec::new());
         }
         let mut keys = Self::get_wrapkeys_by_type(session, WrapKeyType::Aes)?;
         keys.extend_from_slice(&Self::get_wrapkeys_by_type(session, WrapKeyType::Rsa)?);
-        keys.retain(|k| k.capabilities.contains(&ObjectCapability::ImportWrapped));
+        keys.retain(|k| k.capabilities().contains(&ObjectCapability::ImportWrapped));
         if keys.is_empty() {
             return Err(MgmError::Error(
                 format!("No wrap keys with {:?} capability were found", ObjectCapability::ImportWrapped)));
@@ -332,10 +332,10 @@ impl WrapOperations {
     }
 
     pub fn get_exportable_objects(session: &Session, wrap_key: &ObjectDescriptor, wrap_type: WrapType) -> Result<Vec<ObjectDescriptor>, MgmError> {
-        if wrap_key.delegated_capabilities.is_none() {
+        if wrap_key.delegated_capabilities().is_none() {
             return Ok(Vec::new());
         }
-        let delegated = wrap_key.delegated_capabilities.as_ref().unwrap();
+        let delegated = wrap_key.delegated_capabilities().as_ref().unwrap();
 
         let objects = session.list_objects_with_filter(
             0,
@@ -344,9 +344,9 @@ impl WrapOperations {
             ObjectAlgorithm::ANY,
             &[ObjectCapability::ExportableUnderWrap])?;
         let mut objects = get_object_descriptors(session, objects.as_slice())?;
-        objects.retain(|obj| contains_all(delegated, &obj.capabilities));
+        objects.retain(|obj| contains_all(delegated, obj.capabilities()));
         if wrap_type == WrapType::Key {
-            objects.retain(|obj| obj.object_type == ObjectType::AsymmetricKey || obj.object_type == ObjectType::SymmetricKey);
+            objects.retain(|obj| obj.object_type() == &ObjectType::AsymmetricKey || obj.object_type() == &ObjectType::SymmetricKey);
         }
         Ok(objects)
     }
@@ -391,7 +391,7 @@ impl WrapOperations {
             )));
         }
 
-        let mut wrapkey_spec = NewObjectSpec::new();
+        let mut wrapkey_spec = NewObjectSpec::default();
         wrapkey_spec.object_type = ObjectType::WrapKey;
         wrapkey_spec.algorithm = WrapOperations::get_algorithm_from_keylen(key_len)?;
         wrapkey_spec.id = ((u16::from(data[0])) << 8) | u16::from(data[1]);

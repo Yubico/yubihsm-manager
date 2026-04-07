@@ -63,8 +63,8 @@ fn test_generate_aes128() {
 
     let id = SymmetricOperations.generate(&session, &spec).expect("Failed to generate AES-128 key");
     let desc = session.get_object_info(id, ObjectType::SymmetricKey).expect("Failed to get object info for generated AES-128 key");
-    assert_eq!(desc.algorithm, ObjectAlgorithm::Aes128);
-    assert_eq!(desc.object_type, ObjectType::SymmetricKey);
+    assert_eq!(desc.algorithm(), &ObjectAlgorithm::Aes128);
+    assert_eq!(desc.object_type(), &ObjectType::SymmetricKey);
 
     session.delete_object(id, ObjectType::SymmetricKey).expect("Failed to delete generated AES-128 key");
     assert!(session.get_object_info(id, ObjectType::SymmetricKey).is_err(), "Deleted AES-128 key should no longer be retrievable");
@@ -85,8 +85,8 @@ fn test_generate_aes192() {
 
     let id = SymmetricOperations.generate(&session, &spec).expect("Failed to generate AES-192 key");
     let desc = session.get_object_info(id, ObjectType::SymmetricKey).expect("Failed to get object info for generated AES-192 key");
-    assert_eq!(desc.algorithm, ObjectAlgorithm::Aes192);
-    assert_eq!(desc.object_type, ObjectType::SymmetricKey);
+    assert_eq!(desc.algorithm(), &ObjectAlgorithm::Aes192);
+    assert_eq!(desc.object_type(), &ObjectType::SymmetricKey);
 
     session.delete_object(id, ObjectType::SymmetricKey).expect("Failed to delete generated AES-192 key");
     assert!(session.get_object_info(id, ObjectType::SymmetricKey).is_err(), "Deleted AES-192 key should no longer be retrievable");
@@ -108,8 +108,8 @@ fn test_generate_aes256() {
 
     let id = SymmetricOperations.generate(&session, &spec).expect("Failed to generate AES-256 key");
     let desc = session.get_object_info(id, ObjectType::SymmetricKey).expect("Failed to get object info for generated AES-256 key");
-    assert_eq!(desc.algorithm, ObjectAlgorithm::Aes256);
-    assert_eq!(desc.object_type, ObjectType::SymmetricKey);
+    assert_eq!(desc.algorithm(), &ObjectAlgorithm::Aes256);
+    assert_eq!(desc.object_type(), &ObjectType::SymmetricKey);
 
     session.delete_object(id, ObjectType::SymmetricKey).expect("Failed to delete generated AES-256 key");
     assert!(session.get_object_info(id, ObjectType::SymmetricKey).is_err(), "Deleted AES-256 key should no longer be retrievable");
@@ -156,7 +156,7 @@ fn test_import_aes128() {
 
     let id = SymmetricOperations.import(&session, &spec).expect("Failed to import AES-128 key");
     let desc = session.get_object_info(id, ObjectType::SymmetricKey).expect("Failed to get object info for imported AES-128 key");
-    assert_eq!(desc.algorithm, ObjectAlgorithm::Aes128);
+    assert_eq!(desc.algorithm(), &ObjectAlgorithm::Aes128);
 
     session.delete_object(id, ObjectType::SymmetricKey).expect("Failed to delete imported AES-128 key");
     assert!(session.get_object_info(id, ObjectType::SymmetricKey).is_err(), "Deleted imported AES-128 key should no longer be retrievable");
@@ -179,7 +179,7 @@ fn test_import_aes192() {
 
     let id = SymmetricOperations.import(&session, &spec).expect("Failed to import AES-192 key");
     let desc = session.get_object_info(id, ObjectType::SymmetricKey).expect("Failed to get object info for imported AES-128 key");
-    assert_eq!(desc.algorithm, ObjectAlgorithm::Aes192);
+    assert_eq!(desc.algorithm(), &ObjectAlgorithm::Aes192);
 
     session.delete_object(id, ObjectType::SymmetricKey).expect("Failed to delete imported AES-192 key");
         assert!(session.get_object_info(id, ObjectType::SymmetricKey).is_err(), "Deleted imported AES-192 key should no longer be retrievable");
@@ -202,7 +202,7 @@ fn test_import_aes256() {
 
     let id = SymmetricOperations.import(&session, &spec).expect("Failed to import AES-256 key");
     let desc = session.get_object_info(id, ObjectType::SymmetricKey).expect("Failed to get object info for imported AES-256 key");
-    assert_eq!(desc.algorithm, ObjectAlgorithm::Aes256);
+    assert_eq!(desc.algorithm(), &ObjectAlgorithm::Aes256);
 
     session.delete_object(id, ObjectType::SymmetricKey).expect("Failed to delete imported AES-256 key");
     assert!(session.get_object_info(id, ObjectType::SymmetricKey).is_err(), "Deleted imported AES-256 key should no longer be retrievable");
@@ -542,11 +542,11 @@ fn test_get_all_sym_objects() {
 
     let objects = SymmetricOperations.get_all_objects(&session).expect("Failed to get all objects for listing test");
     assert!(
-        objects.iter().any(|o| o.id == id),
+        objects.iter().any(|o| o.object_id() == id),
         "Generated AES key should appear in get_all_objects"
     );
     assert!(
-        !objects.iter().any(|o| o.id == ec_id),
+        !objects.iter().any(|o| o.object_id() == ec_id),
         "Generated asymmetric key should not appear in get_all_objects"
     );
 
@@ -591,15 +591,15 @@ fn test_get_operation_keys_encrypt_ecb() {
         &session, &authkey, EncryptionMode::Encrypt, AesMode::Ecb,
     ).expect("Failed to get operation keys for ECB encryption test");
     assert!(
-        keys.iter().any(|k| k.id == id_1),
+        keys.iter().any(|k| k.object_id() == id_1),
         "ECB-encrypt capable key should appear in operation keys"
     );
     assert!(
-        !keys.iter().any(|k| k.id == id_2),
+        !keys.iter().any(|k| k.object_id() == id_2),
         "Only ECB-decrypt capable key should not appear in operation keys"
     );
     assert!(
-        !keys.iter().any(|k| k.id == id_3),
+        !keys.iter().any(|k| k.object_id() == id_3),
         "Only CBC-encrypt capable key should not appear in operation keys"
     );
 
