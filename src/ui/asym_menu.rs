@@ -136,7 +136,7 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
 
     fn sign(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let input = self.ui.get_string_input(
-            "Enter data to sign or absolut path to file containing data to sign", true, None, None)?;
+            "Enter data to sign or absolute path to file containing data to sign", true, None, None)?;
         let input = get_string_or_bytes_from_file(&self.ui, input)?;
 
         let key = self.ui.select_one_object(
@@ -166,7 +166,7 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
 
     fn decrypt(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
         let enc = self.ui.get_string_input(
-            "Enter data to decrypt in Hex format or absolut path to binary file", true, None, None)?;
+            "Enter data to decrypt in Hex format or absolute path to binary file", true, None, None)?;
         let enc = get_hex_or_bytes_from_file(&self.ui, enc)?;
 
         let key = self.ui.select_one_object(
