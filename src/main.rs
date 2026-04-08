@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+extern crate strum;
+
 use clap::Arg;
 use yubihsmrs::YubiHsm;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectType};
@@ -317,10 +319,8 @@ fn main() {
     };
     if let Err(e) = ret {
         match e {
-            MgmError::OperationCancelled => YubihsmUi::display_error_message(&ui, e.to_string().as_str()),
-             _ => {
-                 YubihsmUi::display_error_message(&ui, format!("Error: {}", e).as_str());
-             },
+            MgmError::OperationCancelled => YubihsmUi::display_info_message(&ui, e.to_string().as_str()),
+             _ => YubihsmUi::display_error_message(&ui, e.to_string().as_str()),
         };
         std::process::exit(1);
     }
