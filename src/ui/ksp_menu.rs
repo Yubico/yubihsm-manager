@@ -54,7 +54,7 @@ impl<T: YubihsmUi + Clone> Ksp<T> {
 
         self.ui.display_info_message("Importing KSP wrap key...");
         let id = self.ui.get_new_object_id(0)?;
-        let domains = self.ui.select_object_domains(&authkey.domains)?;
+        let domains = self.ui.select_object_domains(&authkey.domains())?;
         let shares = self.ui.get_split_aes_n_shares("Enter the number of shares to create:")?;
         let threshold = self.ui.get_split_aes_m_threshold("Enter the number of shares necessary to re-create the key:", shares)?;
         let (wrapkey_id, wrapkey_shares) = KspOperations::import_ksp_wrapkey(
@@ -73,7 +73,7 @@ impl<T: YubihsmUi + Clone> Ksp<T> {
             rsa_decrypt,
             self.ui.get_password("Enter application authentication key password:", true)?,
         )?;
-        self.ui.display_success_message(format!("Successfully imported application authentication key with ID  0x{:04x}", appkey_desc.id).as_str());
+        self.ui.display_success_message(format!("Successfully imported application authentication key with ID  0x{:04x}", appkey_desc.object_id()).as_str());
 
         let auditkey = if self.ui.get_confirmation("Create an audit key? ")? {
             self.ui.display_info_message("Importing audit key...");
@@ -83,7 +83,7 @@ impl<T: YubihsmUi + Clone> Ksp<T> {
                 &domains,
                 self.ui.get_password("Enter audit key password:", true)?,
             )?;
-            self.ui.display_success_message(format!("Successfully imported audit key with ID  0x{:04x}", key_desc.id).as_str());
+            self.ui.display_success_message(format!("Successfully imported audit key with ID  0x{:04x}", key_desc.object_id()).as_str());
             Some(key_desc)
         } else {
             None
@@ -96,7 +96,7 @@ impl<T: YubihsmUi + Clone> Ksp<T> {
         self.ui.display_success_message("KSP setup completed successfully!");
 
         if self.ui.get_confirmation("Delete the current authentication key (strongly recommended)?")? {
-            session.delete_object(authkey.id, ObjectType::AuthenticationKey)?;
+            session.delete_object(authkey.object_id(), ObjectType::AuthenticationKey)?;
         }
 
         Ok(())
@@ -109,7 +109,7 @@ impl<T: YubihsmUi + Clone> Ksp<T> {
         if let Some(key) = auditkey {
             export_objects.push(key);
         }
-        let export_objects = export_objects.iter().map(|obj| ObjectHandle { object_id: obj.id, object_type: obj.object_type }).collect();
+        let export_objects = export_objects.iter().map(|obj| ObjectHandle { object_id: obj.object_id(), object_type: *obj.object_type() }).collect();
 
         let wrap_op_spec = WrapOpSpec {
             wrapkey_id,

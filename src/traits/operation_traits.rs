@@ -45,7 +45,7 @@ pub trait YubihsmOperations {
 
     fn generate(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError>;
     fn import(&self, session: &Session, spec: &NewObjectSpec) -> Result<u16, MgmError>;
-    fn delete(&self, session: &Session, object_id: u16, object_type: ObjectType) -> Result<(), MgmError> {
-        Ok(session.delete_object(object_id, object_type)?)
+    fn delete(&self, session: &Session, object_id: u16, object_type: &ObjectType) -> Result<(), MgmError> {
+        Ok(session.delete_object(object_id, *object_type)?)
     }
 }

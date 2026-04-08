@@ -244,7 +244,7 @@ impl ScriptRunner {
                 }
 
                 let mut new_spec: NewObjectSpec = spec.into();
-                let wrapkey_type = WrapOperations::get_wrapkey_type(new_spec.object_type, new_spec.algorithm)?;
+                let wrapkey_type = WrapOperations::get_wrapkey_type(&new_spec.object_type, &new_spec.algorithm)?;
                 match wrapkey_type {
                     WrapKeyType::Aes => {
                         if key == script_types::PROMPT {
@@ -291,7 +291,7 @@ impl ScriptRunner {
             RecordedOperation::DeleteObject { object_id, object_type, context} => {
                 ui.display_info_message(&format!("{} Delete {:?} 0x{:04x}", step, object_type, object_id));
                 if context == JavaOps::SUNPKCS11_CONTEXT {
-                    JavaOps.delete(session, *object_id, *object_type)?;
+                    JavaOps.delete(session, *object_id, object_type)?;
                 } else {
                     session.delete_object(*object_id, *object_type)?;
                 }

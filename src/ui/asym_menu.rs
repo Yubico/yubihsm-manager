@@ -100,16 +100,16 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
 
         let key = self.ui.select_one_object(&keys, Some("Select key"))?;
 
-        let pubkey = AsymmetricOperations::get_pubkey(session, key.id, key.object_type)?;
+        let pubkey = AsymmetricOperations::get_pubkey(session, key.object_id(), key.object_type())?;
         self.ui.display_success_message(pubkey.to_string().as_str());
 
         if self.ui.get_confirmation("Write to file?")? {
             let filename = get_path(&self.ui,
                                     "Enter path to file to write public key to:",
                                     false,
-                                    format!("./0x{:04x}.pubkey.pem", key.id).as_str())?;
+                                    format!("./0x{:04x}.pubkey.pem", key.object_id()).as_str())?;
             if let Err(err) = write_bytes_to_file(&self.ui, &pubkey.to_string().into_bytes(), filename.as_str()) {
-                self.ui.display_error_message(format!("Failed to write public key 0x{:04x} to file. {}", key.id, err).as_str());
+                self.ui.display_error_message(format!("Failed to write public key 0x{:04x} to file. {}", key.object_id(), err).as_str());
             }
         }
         Ok(())
@@ -119,16 +119,16 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
         let certs = AsymmetricOperations::get_asymmetric_objects(session, &[ObjectType::Opaque])?;
         let cert = self.ui.select_one_object(&certs, Some("Select certificate(s):"))?;
 
-        let cert_pem = AsymmetricOperations::get_certificate(session, cert.id)?;
+        let cert_pem = AsymmetricOperations::get_certificate(session, cert.object_id())?;
         self.ui.display_success_message(cert_pem.to_string().as_str());
 
         if self.ui.get_confirmation("Write to file?")? {
             let filename = get_path(&self.ui,
                                     "Enter path to file to write certificate to:",
                                     false,
-                                    format!("./0x{:04x}.cert.pem", cert.id).as_str())?;
+                                    format!("./0x{:04x}.cert.pem", cert.object_id()).as_str())?;
             if let Err(err) = write_bytes_to_file(&self.ui, &cert_pem.to_string().into_bytes(), filename.as_str()) {
-                self.ui.display_error_message(format!("Failed to write certificate 0x{:04x} to file. {}", cert.id, err).as_str());
+                self.ui.display_error_message(format!("Failed to write certificate 0x{:04x} to file. {}", cert.object_id(), err).as_str());
             }
         }
         Ok(())
@@ -143,14 +143,14 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
             &AsymmetricOperations::get_signing_keys(session, authkey)?,
             Some("Select signing key"))?;
 
-        let sign_algo = if key.algorithm == ObjectAlgorithm::Ed25519 {
+        let sign_algo = if key.algorithm() == &ObjectAlgorithm::Ed25519 {
             ObjectAlgorithm::Ed25519
         } else {
             self.ui.select_algorithm(
                 &AsymmetricOperations::get_signing_algorithms(authkey, &key), None, Some("Select RSA signing algorithm"))?
         };
-        let sig = AsymmetricOperations::sign(session, key.id, &sign_algo, &input)?;
-        self.ui.display_success_message(format!("Signed data using {} and key 0x{:04x}:\n{}", sign_algo, key.id, hex::encode(&sig)).as_str());
+        let sig = AsymmetricOperations::sign(session, key.object_id(), &sign_algo, &input)?;
+        self.ui.display_success_message(format!("Signed data using {} and key 0x{:04x}:\n{}", sign_algo, key.object_id(), hex::encode(&sig)).as_str());
 
         if self.ui.get_confirmation("Write to binary file?")? {
             let filename = get_path(&self.ui,
@@ -177,8 +177,8 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
             None,
             Some("Select RSA decryption algorithm"))?;
 
-        let data = AsymmetricOperations::decrypt(session, key.id, &algorithm, &enc)?;
-        self.ui.display_success_message(format!("Decrypted data using {} and key 0x{:04x}", algorithm, key.id).as_str());
+        let data = AsymmetricOperations::decrypt(session, key.object_id(), &algorithm, &enc)?;
+        self.ui.display_success_message(format!("Decrypted data using {} and key 0x{:04x}", algorithm, key.object_id()).as_str());
 
         if let Ok(data_str) = std::str::from_utf8(data.as_slice()) {
             self.ui.display_success_message(format!("Plain text data:\n{}", data_str).as_str());
@@ -217,7 +217,7 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
     }
 
     fn sign_attestation(&self, session: &Session, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        if !authkey.capabilities.contains(&ObjectCapability::SignAttestationCertificate) {
+        if !authkey.capabilities().contains(&ObjectCapability::SignAttestationCertificate) {
             return Err(MgmError::Error("User does not have signing attestation certificates capabilities".to_string()));
         }
 
@@ -237,28 +237,28 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
             Some("Select attestation type"))?;
 
         let mut attested_keys = keys.clone();
-        attested_keys.retain(|k| k.origin == ObjectOrigin::Generated);
+        attested_keys.retain(|k| k.origin() == &ObjectOrigin::Generated);
 
         let (attested_key, attesting_key, template_cert) = match attest_type {
             AttestationType::DeviceSigned => {
                 let key = self.ui.select_one_object(
                     &attested_keys,
                     Some("Select key to attest"))?;
-                (key.id, 0, None)
+                (key.object_id(), 0, None)
             },
             AttestationType::SelfSigned => {
-                attested_keys.retain(|k| k.capabilities.contains(&ObjectCapability::SignAttestationCertificate));
+                attested_keys.retain(|k| k.capabilities().contains(&ObjectCapability::SignAttestationCertificate));
                 let key = self.ui.select_one_object(
                     &attested_keys,
                     Some("Select key to self-attest"))?;
-                (key.id, key.id, None)
+                (key.object_id(), key.object_id(), None)
             },
             AttestationType::AsymSigned => {
                 let attested_key = self.ui.select_one_object(
                     &attested_keys,
                     Some("Select key to attest"))?;
 
-                keys.retain(|k| k.capabilities.contains(&ObjectCapability::SignAttestationCertificate));
+                keys.retain(|k| k.capabilities().contains(&ObjectCapability::SignAttestationCertificate));
                 let attesting_key = self.ui.select_one_object(
                     &keys,
                     Some("Select attesting key"))?;
@@ -277,7 +277,7 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
                     Some(pems[0].to_owned())
                 };
 
-                (attested_key.id, attesting_key.id, template_cert)
+                (attested_key.object_id(), attesting_key.object_id(), template_cert)
             }
         };
 

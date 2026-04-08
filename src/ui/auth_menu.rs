@@ -136,11 +136,11 @@ impl<T: YubihsmUi> AuthenticationMenu<T> {
     }
 
     fn setup_user(&self, current_authkey: &ObjectDescriptor, user_type: UserType) -> Result<NewObjectSpec, MgmError> {
-        let mut new_key = NewObjectSpec::new();
+        let mut new_key = NewObjectSpec::default();
         new_key.object_type = ObjectType::AuthenticationKey;
         new_key.id = self.ui.get_new_object_id(0)?;
         new_key.label = self.ui.get_object_label("")?;
-        new_key.domains = self.ui.select_object_domains(&current_authkey.domains)?;
+        new_key.domains = self.ui.select_object_domains(current_authkey.domains())?;
         let applicable_capabilities = AuthenticationOperations::get_applicable_capabilities(current_authkey, user_type);
         new_key.capabilities = self.ui.select_object_capabilities(
             &applicable_capabilities,

@@ -22,7 +22,7 @@ use crate::common::algorithms;
 
 pub const EXIT_LABEL: &str = "Exit YubiHSM Manager";
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NewObjectSpec {
     pub id: u16,
     pub object_type: ObjectType,
@@ -51,19 +51,15 @@ impl Display for NewObjectSpec {
 }
 
 impl From<ObjectDescriptor> for NewObjectSpec {
-    fn from(spec: ObjectDescriptor) -> Self {
+    fn from(desc: ObjectDescriptor) -> Self {
         NewObjectSpec {
-            id: spec.id,
-            object_type: spec.object_type,
-            label: spec.label,
-            algorithm: spec.algorithm,
-            domains: spec.domains,
-            capabilities: spec.capabilities,
-            delegated_capabilities: if spec.delegated_capabilities.is_some() {
-                spec.delegated_capabilities.unwrap()
-            } else {
-                vec![]
-            },
+            id: desc.object_id(),
+            object_type: *desc.object_type(),
+            label: desc.label(),
+            algorithm: *desc.algorithm(),
+            domains: desc.domains().to_vec(),
+            capabilities: desc.capabilities().to_vec(),
+            delegated_capabilities: desc.delegated_capabilities().clone().unwrap_or_default(),
             data: vec![],
         }
     }
@@ -71,25 +67,24 @@ impl From<ObjectDescriptor> for NewObjectSpec {
 
 impl From<NewObjectSpec> for ObjectDescriptor {
     fn from(spec: NewObjectSpec) -> Self {
-        let mut desc = ObjectDescriptor::new();
-        desc.id = spec.id;
-        desc.object_type = spec.object_type;
-        desc.label = spec.label;
-        desc.algorithm = spec.algorithm;
-        desc.domains = spec.domains;
-        desc.capabilities = spec.capabilities;
-        desc.delegated_capabilities = if spec.delegated_capabilities.is_empty() {
-            None
-        } else {
-            Some(spec.delegated_capabilities)
-        };
-        desc
+        Self::new(
+            spec.id,
+            spec.object_type,
+            spec.label,
+            spec.algorithm,
+            spec.domains,
+            spec.capabilities,
+            if spec.delegated_capabilities.is_empty() {
+                None
+            } else {
+                Some(spec.delegated_capabilities)
+            },
+        )
     }
 }
 
-impl NewObjectSpec {
-
-    pub fn new() -> Self {
+impl Default for NewObjectSpec {
+    fn default() -> Self {
         Self {
             id: 0,
             object_type: ObjectType::Any,
@@ -101,6 +96,9 @@ impl NewObjectSpec {
             data: vec![],
         }
     }
+}
+
+impl NewObjectSpec {
 
     pub fn get_id_str(&self) -> String {
         format!("0x{:04x}", self.id)
@@ -200,7 +198,7 @@ mod tests {
 
     #[test]
     fn test_empty_spec() {
-        let spec = NewObjectSpec::new();
+        let spec = NewObjectSpec::default();
         assert_eq!(spec.id, 0);
         assert_eq!(spec.object_type, ObjectType::Any);
         assert!(spec.label.is_empty());
@@ -217,8 +215,7 @@ mod tests {
 
     #[test]
     fn test_get_id_str_low() {
-        let mut spec = NewObjectSpec::new();
-        spec.id = 1;
+        let spec = NewObjectSpec{ id: 1, ..Default::default() };
         assert_eq!(spec.get_id_str(), "0x0001");
     }
 
@@ -235,7 +232,7 @@ mod tests {
 
     #[test]
     fn test_formatting_empty() {
-        let spec = NewObjectSpec::new();
+        let spec = NewObjectSpec::default();
         assert!(spec.get_domains_str().is_empty());
         assert!(spec.get_delegated_capabilities_str().is_empty());
     }
@@ -294,14 +291,15 @@ mod tests {
 
     #[test]
     fn test_from_descriptor_basic_fields() {
-        let mut desc = ObjectDescriptor::new();
-        desc.id = 0x0042;
-        desc.object_type = ObjectType::SymmetricKey;
-        desc.label = "sym-key".to_string();
-        desc.algorithm = ObjectAlgorithm::Aes128;
-        desc.domains = vec![ObjectDomain::Two];
-        desc.capabilities = vec![ObjectCapability::EncryptCbc];
-        desc.delegated_capabilities = Some(vec![ObjectCapability::ImportWrapped]);
+        let desc = ObjectDescriptor::new(
+        0x0042,
+        ObjectType::SymmetricKey,
+        "sym-key".to_string(),
+        ObjectAlgorithm::Aes128,
+        vec![ObjectDomain::Two],
+        vec![ObjectCapability::EncryptCbc],
+        Some(vec![ObjectCapability::ImportWrapped]),
+        );
 
         let spec: NewObjectSpec = NewObjectSpec::from(desc);
         assert_eq!(spec.id, 0x0042);
@@ -320,8 +318,8 @@ mod tests {
 
     #[test]
     fn test_from_descriptor_delegated_none() {
-        let mut desc = ObjectDescriptor::new();
-        desc.delegated_capabilities = None;
+        let mut desc = ObjectDescriptor::default();
+        desc.set_delegated_capabilities(None);
 
         let spec = NewObjectSpec::from(desc);
         assert!(spec.delegated_capabilities.is_empty());
@@ -335,18 +333,18 @@ mod tests {
     fn test_to_descriptor_basic_fields() {
         let spec = make_spec();
         let desc: ObjectDescriptor = spec.into();
-        assert_eq!(desc.id, 0x1234);
-        assert_eq!(desc.object_type, ObjectType::AsymmetricKey);
-        assert_eq!(desc.label, "test-key");
-        assert_eq!(desc.algorithm, ObjectAlgorithm::Rsa2048);
-        assert_eq!(desc.domains, vec![ObjectDomain::One, ObjectDomain::Three]);
+        assert_eq!(desc.object_id(), 0x1234);
+        assert_eq!(desc.object_type(), &ObjectType::AsymmetricKey);
+        assert_eq!(desc.label(), "test-key".to_string());
+        assert_eq!(desc.algorithm(), &ObjectAlgorithm::Rsa2048);
+        assert_eq!(desc.domains(), &[ObjectDomain::One, ObjectDomain::Three]);
         assert_eq!(
-            desc.capabilities,
-            vec![ObjectCapability::SignPkcs, ObjectCapability::SignPss]
+            desc.capabilities(),
+            &[ObjectCapability::SignPkcs, ObjectCapability::SignPss]
         );
         assert_eq!(
-            desc.delegated_capabilities,
-            Some(vec![ObjectCapability::ExportWrapped])
+            desc.delegated_capabilities().as_ref(),
+            Some(&vec![ObjectCapability::ExportWrapped])
         );
     }
 
@@ -355,7 +353,7 @@ mod tests {
         let mut spec = make_spec();
         spec.delegated_capabilities = vec![];
         let desc: ObjectDescriptor = spec.into();
-        assert_eq!(desc.delegated_capabilities, None);
+        assert!(desc.delegated_capabilities().is_none());
     }
 
     // ══════════════════════════════════════════════

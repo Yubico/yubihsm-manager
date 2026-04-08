@@ -85,7 +85,7 @@ impl KspOperations {
     ];
 
     pub fn check_privileges(authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        if !contains_all(authkey.capabilities.as_slice(), &Self::REQUIRED_CAPABILITIES) {
+        if !contains_all(authkey.capabilities().as_slice(), &Self::REQUIRED_CAPABILITIES) {
             return Err(MgmError::Error("Current user does not have the necessary permissions to setup the YubiHSM for KSP use case".to_string()))
         }
         Ok(())

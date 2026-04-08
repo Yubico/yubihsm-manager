@@ -200,9 +200,9 @@ impl MainOperations {
             },
             FilterType::Type(types) => {
                 let mut objects = Self.get_all_objects(session)?;
-                objects.retain(|obj| types.contains(&obj.object_type));
+                objects.retain(|obj| types.contains(obj.object_type()));
                 if types.contains(&ObjectType::Opaque) {
-                    objects.retain(|obj| obj.object_type != ObjectType::Opaque || obj.algorithm == ObjectAlgorithm::OpaqueX509Certificate);
+                    objects.retain(|obj| obj.object_type() != &ObjectType::Opaque || obj.algorithm() == &ObjectAlgorithm::OpaqueX509Certificate);
                 }
                 objects
             },
@@ -217,13 +217,13 @@ impl MainOperations {
     pub fn get_objects_for_delete(session: &Session, authkey: &ObjectDescriptor) -> Result<Vec<ObjectDescriptor>, MgmError> {
         let mut objects = Self.get_all_objects(session)?;
         objects.retain(|obj| {
-                match obj.object_type {
-                    ObjectType::AsymmetricKey => authkey.capabilities.contains(&ObjectCapability::DeleteAsymmetricKey),
-                    ObjectType::Opaque => authkey.capabilities.contains(&ObjectCapability::DeleteOpaque),
-                    ObjectType::SymmetricKey => authkey.capabilities.contains(&ObjectCapability::DeleteSymmetricKey),
-                    ObjectType::WrapKey => authkey.capabilities.contains(&ObjectCapability::DeleteWrapKey),
-                    ObjectType::PublicWrapKey => authkey.capabilities.contains(&ObjectCapability::DeletePublicWrapKey),
-                    ObjectType::AuthenticationKey => authkey.capabilities.contains(&ObjectCapability::DeleteAuthenticationKey),
+                match obj.object_type() {
+                    ObjectType::AsymmetricKey => authkey.capabilities().contains(&ObjectCapability::DeleteAsymmetricKey),
+                    ObjectType::Opaque => authkey.capabilities().contains(&ObjectCapability::DeleteOpaque),
+                    ObjectType::SymmetricKey => authkey.capabilities().contains(&ObjectCapability::DeleteSymmetricKey),
+                    ObjectType::WrapKey => authkey.capabilities().contains(&ObjectCapability::DeleteWrapKey),
+                    ObjectType::PublicWrapKey => authkey.capabilities().contains(&ObjectCapability::DeletePublicWrapKey),
+                    ObjectType::AuthenticationKey => authkey.capabilities().contains(&ObjectCapability::DeleteAuthenticationKey),
                     _ => false,
                 }
             });
@@ -266,21 +266,21 @@ impl MainOperations {
 
     pub fn get_generatable_types(authkey: &ObjectDescriptor) -> Vec<SelectionItem<ObjectType>> {
         let mut types = Vec::new();
-        if authkey.capabilities.contains(&ObjectCapability::GenerateAsymmetricKey) {
+        if authkey.capabilities().contains(&ObjectCapability::GenerateAsymmetricKey) {
             types.push(SelectionItem {
                 value: ObjectType::AsymmetricKey,
                 label: "Asymmetric private key".to_string(),
                 description: String::new()
             });
         }
-        if authkey.capabilities.contains(&ObjectCapability::GenerateSymmetricKey) {
+        if authkey.capabilities().contains(&ObjectCapability::GenerateSymmetricKey) {
             types.push(SelectionItem {
                 value: ObjectType::SymmetricKey,
                 label: "Symmetric key".to_string(),
                 description: String::new()
             });
         }
-        if authkey.capabilities.contains(&ObjectCapability::GenerateWrapKey) {
+        if authkey.capabilities().contains(&ObjectCapability::GenerateWrapKey) {
             types.push(SelectionItem {
                 value: ObjectType::WrapKey,
                 label: "Wrap key".to_string(),
@@ -292,30 +292,30 @@ impl MainOperations {
 
     pub fn get_importable_types(authkey: &ObjectDescriptor) -> Vec<SelectionItem<ImportableType>> {
         let mut types = Vec::new();
-        if authkey.capabilities.contains(&ObjectCapability::PutAsymmetricKey) ||
-            authkey.capabilities.contains(&ObjectCapability::PutOpaque) {
+        if authkey.capabilities().contains(&ObjectCapability::PutAsymmetricKey) ||
+            authkey.capabilities().contains(&ObjectCapability::PutOpaque) {
             types.push(SelectionItem {
                 value: ImportableType::ObjectType(ObjectType::AsymmetricKey),
                 label: "Asymmetric object".to_string(),
                 description: "Asymmetric private key or X509Certificate".to_string()
             });
         }
-        if authkey.capabilities.contains(&ObjectCapability::PutSymmetricKey) {
+        if authkey.capabilities().contains(&ObjectCapability::PutSymmetricKey) {
             types.push(SelectionItem {
                 value: ImportableType::ObjectType(ObjectType::SymmetricKey),
                 label: "Symmetric key".to_string(),
                 description: String::new()
             });
         }
-        if authkey.capabilities.contains(&ObjectCapability::PutWrapKey) ||
-            authkey.capabilities.contains(&ObjectCapability::PutPublicWrapKey) {
+        if authkey.capabilities().contains(&ObjectCapability::PutWrapKey) ||
+            authkey.capabilities().contains(&ObjectCapability::PutPublicWrapKey) {
             types.push(SelectionItem {
                 value: ImportableType::ObjectType(ObjectType::WrapKey),
                 label: "Wrap key".to_string(),
                 description: String::new()
             });
         }
-        if authkey.capabilities.contains(&ObjectCapability::ImportWrapped) {
+        if authkey.capabilities().contains(&ObjectCapability::ImportWrapped) {
             types.push(SelectionItem {
                 value: ImportableType::Wrapped,
                 label: "Wrapped Object".to_string(),

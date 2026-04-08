@@ -110,21 +110,21 @@ pub fn delete_objects(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, y
     }
 
     for object in objects {
-        match yh_operation.delete(session, object.id, object.object_type) {
+        match yh_operation.delete(session, object.object_id(), object.object_type()) {
             Ok(_) => {
                 ui.display_success_message(
-                    format!("Successfully deleted {} object with ID 0x{:04x} from the YubiHSM", object.object_type, object.id).as_str());
+                    format!("Successfully deleted {} object with ID 0x{:04x} from the YubiHSM", object.object_type(), object.object_id()).as_str());
 
                 if let Some(rec) = recorder {
                     rec.record(RecordedOperation::DeleteObject {
-                        object_id: object.id,
-                        object_type: object.object_type,
+                        object_id: object.object_id(),
+                        object_type: *object.object_type(),
                         context: yh_operation.context().to_string(),
                     })?;
                 }
             },
             Err(err) => {
-                ui.display_error_message(format!("Failed to delete {} object with ID 0x{:04x}. {}", object.object_type, object.id, err).as_str());
+                ui.display_error_message(format!("Failed to delete {} object with ID 0x{:04x}. {}", object.object_type(), object.object_id(), err).as_str());
             }
         }
     }
@@ -135,7 +135,7 @@ pub fn generate_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, 
                        session: &Session,
                        authkey: &ObjectDescriptor,
                        object_type: ObjectType) -> Result<(), MgmError> {
-    let mut new_key = NewObjectSpec::new();
+    let mut new_key = NewObjectSpec::default();
     new_key.object_type = object_type;
     new_key.algorithm = ui.select_algorithm(
         &yh_operation.get_generation_algorithms(),
@@ -143,7 +143,7 @@ pub fn generate_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, 
         Some("Select key algorithm"))?;
     new_key.id = ui.get_new_object_id(0)?;
     new_key.label = ui.get_object_label("")?;
-    new_key.domains = ui.select_object_domains(&authkey.domains)?;
+    new_key.domains = ui.select_object_domains(&authkey.domains())?;
     new_key.capabilities = ui.select_object_capabilities(
         &yh_operation.get_applicable_capabilities(authkey, Some(new_key.object_type), Some(new_key.algorithm))?,
         None)?;
@@ -182,14 +182,14 @@ pub fn import_object(ui: &impl YubihsmUi, recorder: &Option<SessionRecorder>, yh
                      object_algorithm: ObjectAlgorithm,
                      data: Vec<Vec<u8>>,
                     filename: Option<String>) -> Result<(), MgmError> {
-    let mut new_key = NewObjectSpec::new();
+    let mut new_key = NewObjectSpec::default();
     new_key.object_type = object_type;
     new_key.algorithm = object_algorithm;
     new_key.data.extend(data);
 
     new_key.id = ui.get_new_object_id(0)?;
     new_key.label = ui.get_object_label("")?;
-    new_key.domains = ui.select_object_domains(&authkey.domains)?;
+    new_key.domains = ui.select_object_domains(&authkey.domains())?;
     new_key.capabilities = ui.select_object_capabilities(
         &yh_operation.get_applicable_capabilities(authkey, Some(new_key.object_type), Some(new_key.algorithm))?,
         Some("Select object capabilities"))?;

@@ -34,9 +34,9 @@ pub trait Command: Copy + Eq + IntoEnumIterator {
             return true;
         }
         if self.require_all_capabilities() {
-            contains_all(&authkey.capabilities, caps)
+            contains_all(authkey.capabilities(), caps)
         } else {
-            caps.iter().any(|cap| authkey.capabilities.contains(cap))
+            caps.iter().any(|cap| authkey.capabilities().contains(cap))
         }
     }
 
@@ -98,10 +98,10 @@ mod tests {
     }
 
     fn make_authkey_desc(caps: Vec<ObjectCapability>) -> ObjectDescriptor {
-        let mut desc = ObjectDescriptor::new();
-        desc.id = 1;
-        desc.object_type = ObjectType::AuthenticationKey;
-        desc.capabilities = caps;
+        let mut desc = ObjectDescriptor::default();
+        desc.set_object_id(1);
+        desc.set_object_type(ObjectType::AuthenticationKey);
+        desc.set_capabilities(caps);
         desc
     }
 

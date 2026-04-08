@@ -75,14 +75,14 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
 
     fn operate(&self, session: &Session, authkey: &ObjectDescriptor, enc_mode: EncryptionMode) -> Result<(), MgmError> {
         let mut aes_mode = vec![];
-        if (enc_mode == EncryptionMode::Encrypt && authkey.capabilities.contains(&ObjectCapability::EncryptEcb)) || (enc_mode == EncryptionMode::Decrypt && authkey.capabilities.contains(&ObjectCapability::DecryptEcb)) {
+        if (enc_mode == EncryptionMode::Encrypt && authkey.capabilities().contains(&ObjectCapability::EncryptEcb)) || (enc_mode == EncryptionMode::Decrypt && authkey.capabilities().contains(&ObjectCapability::DecryptEcb)) {
             aes_mode.push(SelectionItem {
                 value: AesMode::Ecb,
                 label: "ECB".to_string(),
                 description: "".to_string() }
             );
         }
-        if (enc_mode == EncryptionMode::Encrypt && authkey.capabilities.contains(&ObjectCapability::EncryptCbc)) || (enc_mode == EncryptionMode::Decrypt && authkey.capabilities.contains(&ObjectCapability::DecryptCbc)) {
+        if (enc_mode == EncryptionMode::Encrypt && authkey.capabilities().contains(&ObjectCapability::EncryptCbc)) || (enc_mode == EncryptionMode::Decrypt && authkey.capabilities().contains(&ObjectCapability::DecryptCbc)) {
             aes_mode.push(SelectionItem {
                 value: AesMode::Cbc,
                 label: "CBC".to_string(),

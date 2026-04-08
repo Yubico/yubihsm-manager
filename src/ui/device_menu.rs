@@ -84,10 +84,10 @@ impl<T: YubihsmUi> DeviceMenu<T> {
         let wrapkey = self.ui.select_one_object(
             &wrapkeys,
             Some("Select the wrapping key to use for exporting objects:"))?;
-        let wrapkey_type = WrapOperations::get_wrapkey_type(wrapkey.object_type, wrapkey.algorithm)?;
+        let wrapkey_type = WrapOperations::get_wrapkey_type(wrapkey.object_type(), wrapkey.algorithm())?;
 
         let mut wrap_op = WrapOpSpec {
-            wrapkey_id: wrapkey.id,
+            wrapkey_id: wrapkey.object_id(),
             wrapkey_type,
             wrap_type: WrapType::Object,
             include_ed_seed: false,
@@ -97,11 +97,11 @@ impl<T: YubihsmUi> DeviceMenu<T> {
         };
 
         let export_objects = WrapOperations::get_exportable_objects(session, &wrapkey, WrapType::Object)?;
-        if export_objects.iter().any(|x| x.algorithm == ObjectAlgorithm::Ed25519) {
+        if export_objects.iter().any(|x| x.algorithm() == &ObjectAlgorithm::Ed25519) {
             wrap_op.include_ed_seed = self.ui.get_confirmation("Include Ed25519 seed in the wrapped export? (required for importing Ed25519 keys)")?
         };
-        let mut export_objects: Vec<ObjectHandle> = export_objects.iter().map(|obj| ObjectHandle { object_id: obj.id, object_type: obj.object_type }).collect();
-        export_objects.retain(|obj| { obj.object_type != ObjectType::WrapKey && obj.object_id != wrapkey.id });
+        let mut export_objects: Vec<ObjectHandle> = export_objects.iter().map(|obj| ObjectHandle { object_id: obj.object_id(), object_type: *obj.object_type() }).collect();
+        export_objects.retain(|obj| { obj.object_type != ObjectType::WrapKey && obj.object_id != wrapkey.object_id() });
 
         if wrapkey_type == WrapKeyType::RsaPublic {
             wrap_op.aes_algorithm = Some(self.ui.select_algorithm(
@@ -153,7 +153,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
         let wrapkey = self.ui.select_one_object(
             &wrapkeys,
             Some("Select the unwrapping key to use for importing objects:"))?;
-        let wrapkey_type = WrapOperations::get_wrapkey_type(wrapkey.object_type, wrapkey.algorithm)?;
+        let wrapkey_type = WrapOperations::get_wrapkey_type(wrapkey.object_type(), wrapkey.algorithm())?;
 
         let dir = self.ui.get_path_input(
             "Enter path to backup directory:",
@@ -177,7 +177,7 @@ impl<T: YubihsmUi> DeviceMenu<T> {
         }
 
         let mut wrap_op = WrapOpSpec {
-            wrapkey_id: wrapkey.id,
+            wrapkey_id: wrapkey.object_id(),
             wrapkey_type,
             wrap_type: WrapType::Object,
             include_ed_seed: false,

@@ -86,7 +86,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
     }
 
     fn import_full_key(&self, session: &Session, recorder: &Option<SessionRecorder>,  authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        let mut new_key = NewObjectSpec::new();
+        let mut new_key = NewObjectSpec::default();
 
 
         let mut input = self.ui.get_string_input(
@@ -123,11 +123,11 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         } else {
             unreachable!();
         }
-        let key_type = WrapOperations::get_wrapkey_type(new_key.object_type, new_key.algorithm)?;
+        let key_type = WrapOperations::get_wrapkey_type(&new_key.object_type, &new_key.algorithm)?;
 
         new_key.id = self.ui.get_new_object_id(0)?;
         new_key.label = self.ui.get_object_label("")?;
-        new_key.domains = self.ui.select_object_domains(&authkey.domains)?;
+        new_key.domains = self.ui.select_object_domains(authkey.domains())?;
         new_key.capabilities = self.ui.select_object_capabilities(
             &WrapOperations.get_applicable_capabilities(authkey, Some(new_key.object_type), Some(new_key.algorithm))?,
             Some("Select object capabilities"))?;
@@ -188,7 +188,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         let wrapkey = self.ui.select_one_object(
             &wrapkeys,
             Some("Select the wrapping key to use for exporting objects:"))?;
-        let wrapkey_type = WrapOperations::get_wrapkey_type(wrapkey.object_type, wrapkey.algorithm)?;
+        let wrapkey_type = WrapOperations::get_wrapkey_type(wrapkey.object_type(), wrapkey.algorithm())?;
 
         let wrap_type = match wrapkey_type {
             WrapKeyType::Aes => WrapType::Object,
@@ -201,7 +201,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             _ => unreachable!()
         };
         let mut wrap_op = WrapOpSpec {
-            wrapkey_id: wrapkey.id,
+            wrapkey_id: wrapkey.object_id(),
             wrapkey_type,
             wrap_type,
             include_ed_seed: false,
@@ -219,10 +219,10 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             &exportable_objects,
             false,
             Some("Select objects to export"))?;
-        if exportable_objects.iter().any(|x| x.algorithm == ObjectAlgorithm::Ed25519) {
+        if exportable_objects.iter().any(|x| x.algorithm() == &ObjectAlgorithm::Ed25519) {
             wrap_op.include_ed_seed = self.ui.get_confirmation("Include Ed25519 seed in the wrapped export? (required for importing Ed25519 keys)")?;
         };
-        let export_objects = export_objects.iter().map(|obj| ObjectHandle { object_id: obj.id, object_type: obj.object_type }).collect();
+        let export_objects = export_objects.iter().map(|obj| ObjectHandle { object_id: obj.object_id(), object_type: *obj.object_type() }).collect();
 
         if wrapkey_type == WrapKeyType::RsaPublic {
             wrap_op.aes_algorithm = Some(self.ui.select_algorithm(
@@ -285,10 +285,10 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         let wrapkey = self.ui.select_one_object(
             &wrapkeys,
             Some("Select the unwrapping key to use for importing objects:"))?;
-        let wrapkey_type = WrapOperations::get_wrapkey_type(wrapkey.object_type, wrapkey.algorithm)?;
+        let wrapkey_type = WrapOperations::get_wrapkey_type(wrapkey.object_type(), wrapkey.algorithm())?;
 
         let mut wrap_op = WrapOpSpec {
-            wrapkey_id: wrapkey.id,
+            wrapkey_id: wrapkey.object_id(),
             wrapkey_type,
             wrap_type: WrapType::Object,
             include_ed_seed: false,
@@ -328,7 +328,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                         AsymmetricOperations.get_applicable_capabilities(&wrapkey, None, Some(algo))?
                     };
 
-                    let mut new_key = NewObjectSpec::new();
+                    let mut new_key = NewObjectSpec::default();
                     new_key.algorithm = algo;
                     new_key.object_type = if SymmetricOperations::is_aes_algorithm(&algo) {
                         ObjectType::SymmetricKey
@@ -337,7 +337,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                     };
                     new_key.id = self.ui.get_new_object_id(0)?;
                     new_key.label = self.ui.get_object_label("")?;
-                    new_key.domains = self.ui.select_object_domains(&authkey.domains)?;
+                    new_key.domains = self.ui.select_object_domains(authkey.domains())?;
                     new_key.capabilities = self.ui.select_object_capabilities(
                         &caps,
                         Some("Select object capabilities"))?;

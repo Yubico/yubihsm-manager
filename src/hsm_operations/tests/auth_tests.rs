@@ -84,11 +84,11 @@ fn test_import_password_auth_key() {
     let id = AuthenticationOperations.import(&session, &spec).expect("Failed to import password-derived auth key");
 
     let desc = session.get_object_info(id, ObjectType::AuthenticationKey).unwrap();
-    assert_eq!(desc.id, id);
-    assert_eq!(desc.object_type, ObjectType::AuthenticationKey);
-    assert_eq!(desc.algorithm, ObjectAlgorithm::Aes128YubicoAuthentication);
-    assert_eq!(desc.label, "test-auth-pw");
-    assert_eq!(desc.capabilities, vec![ObjectCapability::SignEcdsa, ObjectCapability::ExportableUnderWrap]);
+    assert_eq!(desc.object_id(), id);
+    assert_eq!(desc.object_type(), &ObjectType::AuthenticationKey);
+    assert_eq!(desc.algorithm(), &ObjectAlgorithm::Aes128YubicoAuthentication);
+    assert_eq!(desc.label(), "test-auth-pw".to_string());
+    assert_eq!(desc.capabilities(), &[ObjectCapability::SignEcdsa, ObjectCapability::ExportableUnderWrap]);
     assert_eq!(get_delegated_capabilities(&desc), vec![ObjectCapability::SignEcdsa]);
 
     let session2 = hsm.establish_session(id, password, true).expect("Failed to establish session with imported password-derived auth key");
@@ -191,7 +191,7 @@ fn test_import_ecp256_auth_key() {
 
     let id = AuthenticationOperations.import(&session, &spec).expect("Failed to import EC P256 auth key");
     let desc = session.get_object_info(id, ObjectType::AuthenticationKey).expect("Failed to get object info for imported EC P256 auth key");
-    assert_eq!(desc.algorithm, ObjectAlgorithm::Ecp256YubicoAuthentication);
+    assert_eq!(desc.algorithm(), &ObjectAlgorithm::Ecp256YubicoAuthentication);
 
     let device_pubkey = hsm.get_device_pubkey().expect("Failed to get device public key");
 
@@ -213,7 +213,7 @@ fn test_get_all_auth_objects_includes_default() {
 
     let objects = AuthenticationOperations.get_all_objects(&session).expect("Failed to get all auth objects");
     assert!(
-        objects.iter().any(|o| o.id == DEFAULT_AUTHKEY_ID),
+        objects.iter().any(|o| o.object_id() == DEFAULT_AUTHKEY_ID),
         "Default auth key (ID {}) should appear in listing",
         DEFAULT_AUTHKEY_ID
     );
@@ -233,7 +233,7 @@ fn test_get_all_auth_objects_includes_new_key() {
 
     let objects = AuthenticationOperations.get_all_objects(&session).expect("Failed to get all auth objects");
     assert!(
-        objects.iter().any(|o| o.id == id),
+        objects.iter().any(|o| o.object_id() == id),
         "Newly created auth key should appear in listing"
     );
 
