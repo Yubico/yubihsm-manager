@@ -45,11 +45,11 @@ pub mod cli;
 pub mod script;
 
 macro_rules! unwrap_or_exit1 {
-    ( $e:expr, $msg:expr) => {
+    ( $e:expr, $ui:expr, $msg:expr) => {
         match $e {
             Ok(x) => x,
             Err(err) => {
-                YubihsmUi::display_error_message(&Cmdline, format!("{}. {}", $msg, err).as_str());
+                YubihsmUi::display_error_message($ui, format!("{}. {}", $msg, err).as_str());
                 std::process::exit(1);
             },
         }
@@ -60,7 +60,7 @@ const YH_EC_P256_PUBKEY_LEN: usize = 65;
 
 pub static MAIN_HEADER: &str = "YubiHSM Manager";
 
-fn main() -> Result<(), MgmError>{
+fn main() {
 
     let ui = Cmdline::new();
 
@@ -144,9 +144,11 @@ fn main() -> Result<(), MgmError>{
             .help_heading("Scripting"))
         .get_matches();
 
+    // ----------------------------------------------------------------------
     // Check if we are executing a script or entering into command line mode
+    // ----------------------------------------------------------------------
     let script: Option<SessionScript> = if let Some(script_path) = matches.get_one::<String>("exec") {
-        let s = ScriptRunner::load(std::path::Path::new(script_path))?;
+        let s = unwrap_or_exit1!(ScriptRunner::load(std::path::Path::new(script_path)), &ui, "Failed to load script");
 
         ui.display_info_message(&format!(
             "Loaded script with {} operations", s.operations.len()));
@@ -155,6 +157,9 @@ fn main() -> Result<(), MgmError>{
         None
     };
 
+    // -----------------------------------------------------------------------------------------------------
+    // Open a connection to the device and execute the commands that do not require authentication (if any)
+    // ------------------------------------------------------------------------------------------------------
     // Connector value is needed to create the HSM object. Priority: command line > script > default.
     let connector =
     if let Some(c) = matches.get_one::<String>("connector") {
@@ -166,29 +171,36 @@ fn main() -> Result<(), MgmError>{
         std::process::exit(1);
     };
 
-    unwrap_or_exit1!(yubihsmrs::init(), "Unable to initialize libyubihsm");
-    let h = unwrap_or_exit1!(YubiHsm::new(connector), "Unable to create HSM object");
-    unwrap_or_exit1!(h.set_verbosity(matches.get_flag("verbose")), "Unable to set verbosity");
+    unwrap_or_exit1!(yubihsmrs::init(), &ui, "Failed to initialize libyubihsm");
+    let h = unwrap_or_exit1!(YubiHsm::new(connector), &ui, "Failed to open a YubiHSM connection");
+    unwrap_or_exit1!(h.set_verbosity(matches.get_flag("verbose")), &ui, "Failed to set verbosity");
 
     // This command does not require authentication
     if let Some("get-device-info") = matches.subcommand_name() {
-        let info = h.get_device_info()?;
+        let info = unwrap_or_exit1!(h.get_device_info(), &ui, "Failed to get device info");
           println!("{}\n", info);
-        return Ok(());
+        return
     };
 
     // This command does not require authentication
     if let Some("get-device-publickey") = matches.subcommand_name() {
-        let pubkey = h.get_device_pubkey()?;
-        let pubkey = AsymmetricOperations::get_pubkey_pem(ObjectAlgorithm::EcP256, &pubkey)?;
+        let pubkey = unwrap_or_exit1!(h.get_device_pubkey(), &ui, "Failed to get device public key");
+        let pubkey = unwrap_or_exit1!(
+            AsymmetricOperations::get_pubkey_pem(ObjectAlgorithm::EcP256, &pubkey),
+            &ui,
+            "Failed to convert device public key to PEM format"
+        );
         println!("{}\n", pubkey);
-        return Ok(());
+        return
     };
 
+    // ----------------------------------------------------------------------------------------
+    // Open a session to the device, either to execute a script or to enter command line mode.
+    // ----------------------------------------------------------------------------------------
     // Determine authentication key ID to use for session. Priority: command line > script > default (1).
     let authkey =
         if let Some(id) = matches.get_one::<String>("authkey") {
-            get_id_from_string(id)?
+            unwrap_or_exit1!(get_id_from_string(id), &ui, "Failed to parse authentication key ID")
         } else if let Some(s) = &script {
             s.session.auth_key_id
         } else {
@@ -202,7 +214,7 @@ fn main() -> Result<(), MgmError>{
         let filename = if let Some(f) = matches.get_one::<String>("privkey") {
             f.to_owned()
         } else {
-            YubihsmUi::display_error_message(&ui, "Unable to read private key file name");
+            YubihsmUi::display_error_message(&ui, "Failed to read private key file name");
             std::process::exit(1);
         };
 
@@ -211,39 +223,44 @@ fn main() -> Result<(), MgmError>{
             std::process::exit(1);
         }
 
-        let pems = get_pem_from_file(&filename)?;
+        let pems = unwrap_or_exit1!(get_pem_from_file(&filename), &ui, "Failed to read PEM file");
         if pems.len() > 1 {
             YubihsmUi::display_warning(&ui, "Warning!! More than one PEM object found in file. Only the first object is read");
         }
-        let (_, _, privkey) = AsymmetricOperations::parse_asym_pem(pems[0].clone())?;
-        let device_pubkey = h.get_device_pubkey()?;
+        let (_, _, privkey) = unwrap_or_exit1!(AsymmetricOperations::parse_asym_pem(pems[0].clone()), &ui, "Failed to parse PEM file");
+        let device_pubkey = unwrap_or_exit1!(h.get_device_pubkey(), &ui, "Failed to get device public key");
         if device_pubkey.len() != YH_EC_P256_PUBKEY_LEN {
             YubihsmUi::display_error_message(&ui, "Wrong length of device public key");
             std::process::exit(1);
         }
-        unwrap_or_exit1!(h.establish_session_asym(authkey, privkey.as_slice(), device_pubkey.as_slice()), "Unable to open asymmetric session")
+        unwrap_or_exit1!(h.establish_session_asym(authkey, privkey.as_slice(), device_pubkey.as_slice()), &ui, "Failed to open asymmetric session")
     } else {
         let password = if let Some(pwd) = matches.get_one::<String>("password") {
             pwd.to_owned()
         } else {
-            YubihsmUi::get_password(&ui, "Enter authentication password:", false)?
+            unwrap_or_exit1!(YubihsmUi::get_password(&ui, "Enter authentication password:", false), &ui, "Failed to read password")
         };
 
         if authkey == 1 && password == "password" {
             YubihsmUi::display_warning(&ui, "Warning!! Opening a session using default authentication key and default password. It is strongly recommended to change default credentials");
         }
-        unwrap_or_exit1!(h.establish_session(authkey, &password, true), "Unable to open session")
+        unwrap_or_exit1!(h.establish_session(authkey, &password, true), &ui, "Failed to open session")
     };
 
+    // --------------------------------------------------------------------
     // If a script was loaded, execute it and exit — skip interactive menu.
+    // --------------------------------------------------------------------
     if let Some(s) = &script {
         YubihsmUi::display_info_message(&ui, "Executing script...");
         if let Err(e) = ScriptRunner::run(&ui, &session, s, matches.get_flag("continue-on-error")) {
             YubihsmUi::display_error_message(&ui,e.to_string().as_str());
         }
-        return Ok(())
+        return
     }
 
+    // ----------------------------------------------
+    // Turn on recording if the --record flag is set
+    // ----------------------------------------------
     let recorder: Option<SessionRecorder> = if matches.get_flag("record") {
         let script_path = if let Some(sn) = matches.get_one::<String>("script-path") {
             if sn.ends_with(".json") { sn.to_owned() } else { format!("{}.json", sn) }
@@ -272,24 +289,39 @@ fn main() -> Result<(), MgmError>{
         None
     };
 
-    // Enter command line mode
-    let authkey = session.get_object_info(authkey, ObjectType::AuthenticationKey)?;
+    // ----------------------------------
+    // Enter interactive menu
+    // ----------------------------------
+    let authkey = unwrap_or_exit1!(
+        session.get_object_info(authkey, ObjectType::AuthenticationKey),
+        &ui,
+        "Failed to get authentication key info"
+    );
 
-    match matches.subcommand() {
+    let ret = match matches.subcommand() {
         Some(subcommand) => {
             match subcommand.0 {
-                "asym" => AsymmetricMenu::new(ui).exec_command(&session, &recorder, &authkey),
-                "sym" => SymmetricMenu::new(ui).exec_command(&session, &recorder, &authkey),
-                "auth" => AuthenticationMenu::new(ui).exec_command(&session, &recorder, &authkey),
-                "wrap" => WrapMenu::new(ui).exec_command(&session, &recorder, &authkey),
-                "ksp" => Ksp::new(ui).guided_setup(&session, &authkey),
-                "sunpkcs11" => JavaMenu::new(ui).exec_command(&session, &recorder, &authkey),
-                "reset" => DeviceMenu::new(ui).reset(&session),
+                "asym" => AsymmetricMenu::new(ui.clone()).exec_command(&session, &recorder, &authkey),
+                "sym" => SymmetricMenu::new(ui.clone()).exec_command(&session, &recorder, &authkey),
+                "auth" => AuthenticationMenu::new(ui.clone()).exec_command(&session, &recorder, &authkey),
+                "wrap" => WrapMenu::new(ui.clone()).exec_command(&session, &recorder, &authkey),
+                "ksp" => Ksp::new(ui.clone()).guided_setup(&session, &authkey),
+                "sunpkcs11" => JavaMenu::new(ui.clone()).exec_command(&session, &recorder, &authkey),
+                "reset" => DeviceMenu::new(ui.clone()).reset(&session),
                 _ => unreachable!(),
             }
         },
         None => {
-            MainMenu::new(ui).exec_command(&session, &recorder, &authkey)
+            MainMenu::new(ui.clone()).exec_command(&session, &recorder, &authkey)
         }
+    };
+    if let Err(e) = ret {
+        match e {
+            MgmError::OperationCancelled => YubihsmUi::display_error_message(&ui, e.to_string().as_str()),
+             _ => {
+                 YubihsmUi::display_error_message(&ui, format!("Error: {}", e).as_str());
+             },
+        };
+        std::process::exit(1);
     }
 }
