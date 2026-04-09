@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-extern crate strum;
-
 use clap::Arg;
 use yubihsmrs::YubiHsm;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectType};
@@ -181,7 +179,7 @@ fn main() {
     if let Some("get-device-info") = matches.subcommand_name() {
         let info = unwrap_or_exit1!(h.get_device_info(), &ui, "Failed to get device info");
           println!("{}\n", info);
-        return
+        return;
     };
 
     // This command does not require authentication
@@ -193,7 +191,7 @@ fn main() {
             "Failed to convert device public key to PEM format"
         );
         println!("{}\n", pubkey);
-        return
+        return;
     };
 
     // ----------------------------------------------------------------------------------------
@@ -257,7 +255,7 @@ fn main() {
         if let Err(e) = ScriptRunner::run(&ui, &session, s, matches.get_flag("continue-on-error")) {
             YubihsmUi::display_error_message(&ui,e.to_string().as_str());
         }
-        return
+        return;
     }
 
     // ----------------------------------------------

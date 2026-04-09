@@ -18,11 +18,13 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, Obj
 use yubihsmrs::Session;
 use crate::ui::helper_operations::{delete_objects, display_object_properties, generate_object, import_object, list_objects};
 use crate::ui::helper_operations::{display_menu_headers};
+use crate::ui::wrap_menu::WrapMenu;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::command_traits::Command;
 use crate::common::error::MgmError;
 use crate::common::types::SelectionItem;
+use crate::common::validators;
 use crate::hsm_operations::wrap::WrapOperations;
 use crate::hsm_operations::asym::{AsymCommand, AsymmetricOperations, AttestationType};
 use crate::ui::helper_io::{get_hex_or_bytes_from_file, get_pem_from_file, get_string_or_bytes_from_file, write_bytes_to_file, get_path};
@@ -34,7 +36,7 @@ pub struct AsymmetricMenu<T: YubihsmUi> {
     ui: T,
 }
 
-impl<T: YubihsmUi> AsymmetricMenu<T> {
+impl<T: YubihsmUi + Clone> AsymmetricMenu<T> {
 
     pub fn new(interface: T) -> Self {
         AsymmetricMenu { ui: interface }
@@ -71,21 +73,27 @@ impl<T: YubihsmUi> AsymmetricMenu<T> {
     }
 
     pub fn import(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        let filepath = self.ui.get_asymmetric_import_filepath(
-            "Enter path to PEM file containing private key or X509Certificate:",
-            None)?;
-        let pem = get_pem_from_file(&filepath)?;
-        if pem.len() > 1 {
-            self.ui.display_warning("PEM file contains multiple objects, only the first one is read");
-        }
-        let pem = pem[0].to_owned();
-        let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
+        let filepath = self.ui.get_path_input(
+            "Enter path to PEM file containing private key or X509Certificate, or path to file containing wrapped YubiHSM object:",
+            true,
+            None,
+            Some("Path to PEM file containing asymmetric private key or X509 certificate, or path to file containing wrapped YubiHSM object with the file extension '.yhw'"))?;
 
-        if _type != ObjectType::AsymmetricKey && _type != ObjectType::Opaque {
-            return Err(MgmError::InvalidInput("File does not contain a private key nor an X509 certificate".to_string()));
+        if validators::pem_certificate_file_validator(&filepath, true).is_ok() || validators::pem_private_key_file_validator(&filepath).is_ok() {
+            self.ui.display_info_message("Input is valid asymmetric private key or X509Certificate in PEM format");
+            let pem = get_pem_from_file(&filepath)?;
+            if pem.len() > 1 {
+                self.ui.display_warning("PEM file contains multiple objects, only the first one is read");
+            }
+            let pem = pem[0].to_owned();
+            let (_type, _algo, _bytes) = AsymmetricOperations::parse_asym_pem(pem)?;
+            import_object(&self.ui, recorder, &AsymmetricOperations, session, authkey, _type, _algo, [_bytes].to_vec(), Some(filepath))
+        } else if filepath.to_lowercase().ends_with(".yhw") {
+            self.ui.display_info_message("Input is a file containing a wrapped YubiHSM object");
+            WrapMenu::new(self.ui.clone()).import_wrapped_from_file(session, recorder, authkey, &filepath)
+        } else {
+            Err(MgmError::InvalidInput("File is not a valid PEM object nor a wrapped object file".to_string()))
         }
-
-        import_object(&self.ui, recorder, &AsymmetricOperations, session, authkey, _type, _algo, [_bytes].to_vec(), Some(filepath))
     }
 
     pub fn get_public_key(&self, session: &Session, object_type: ObjectType) -> Result<(), MgmError> {

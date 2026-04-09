@@ -277,7 +277,10 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             true,
             None,
             Some("Files containing wrapped YubiHSM objects usually have the file extension .yhw"))?;
+        self.import_wrapped_from_file(session, recorder, authkey, &filepath)
+    }
 
+    pub fn import_wrapped_from_file(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor, filepath: &str) -> Result<(), MgmError> {
         let wrapped = fs::read(&filepath)?;
 
         let wrapkeys = WrapOperations::get_unwrapping_keys(session, authkey)?;

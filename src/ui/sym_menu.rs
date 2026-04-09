@@ -21,11 +21,13 @@ use crate::traits::command_traits::Command;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::ui::helper_operations::{generate_object, import_object, list_objects};
 use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_object_properties};
+use crate::ui::helper_io::{get_hex_or_bytes_from_file, write_bytes_to_file, get_path};
 use crate::ui::device_menu::DeviceMenu;
+use crate::ui::wrap_menu::WrapMenu;
 use crate::common::error::MgmError;
 use crate::common::types::SelectionItem;
+use crate::common::validators;
 use crate::hsm_operations::sym::{SymCommand, AesMode, AesOperationSpec, EncryptionMode, SymmetricOperations};
-use crate::ui::helper_io::{get_hex_or_bytes_from_file, write_bytes_to_file, get_path};
 use crate::script::script_recorder::SessionRecorder;
 
 static SYM_HEADER: &str = "Symmetric keys";
@@ -67,10 +69,22 @@ impl<T: YubihsmUi + Clone> SymmetricMenu<T> {
     }
 
     pub fn import(&self, session: &Session, recorder: &Option<SessionRecorder>,  authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        let key_data = vec![self.ui.get_aes_key_hex("Enter AES key in HEX format:")?];
-        let key_algo = SymmetricOperations::get_symkey_algorithm_from_keylen(key_data[0].len())?;
-
-        import_object(&self.ui, recorder, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey, key_algo, key_data, None)
+        let input = self.ui.get_string_input(
+            "Enter symmetric key in hex format or path to file containing a YubiHSM wrapped object:",
+            true,
+            None,
+            Some("16, 24 or 32 bytes in HEX format or path to file containing wrapped YubiHSM object with the file extension '.yhw'"))?;
+        if validators::aes_key_validator(&input).is_ok() {
+            self.ui.display_info_message("Input is valid AES key in hex format");
+            let key_data = vec![hex::decode(input)?];
+            let key_algo = SymmetricOperations::get_symkey_algorithm_from_keylen(key_data[0].len())?;
+            import_object(&self.ui, recorder, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey, key_algo, key_data, None)
+        } else if validators::path_exists_validator(&input).is_ok() && input.to_lowercase().ends_with(".yhw") {
+            self.ui.display_info_message("Input is a file containing a wrapped YubiHSM object");
+            WrapMenu::new(self.ui.clone()).import_wrapped_from_file(session, recorder, authkey, &input)
+        } else {
+            Err(MgmError::InvalidInput("Input is not a valid AES key nor a wrapped object file".to_string()))
+        }
     }
 
     fn operate(&self, session: &Session, authkey: &ObjectDescriptor, enc_mode: EncryptionMode) -> Result<(), MgmError> {
