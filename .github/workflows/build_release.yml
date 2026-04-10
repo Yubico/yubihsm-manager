@@ -172,37 +172,31 @@ jobs:
             sed -i 's/add_definitions (-D_FORTIFY_SOURCE=2)/add_definitions (-D_FORTIFY_SOURCE=3)/' cmake/SecurityFlags.cmake
           fi
 
-          if [ "$PLATFORM" = "ubuntu2504" ] || [ "$PLATFORM" = "debian13" ] || [ "$PLATFORM" = "ubuntu2510" ]; then
+          #if [ "$PLATFORM" = "ubuntu2504" ] || [ "$PLATFORM" = "debian13" ] || [ "$PLATFORM" = "ubuntu2510" ]; then
             # Set PCSC flags
-            sed -i 's/#SET(CMAKE_C_FLAGS/SET(CMAKE_C_FLAGS/' ykhsmauth/CMakeLists.txt
-          fi
+            #sed -i 's/#SET(CMAKE_C_FLAGS/SET(CMAKE_C_FLAGS/' ykhsmauth/CMakeLists.txt
+          #fi
 
-          if [ "$PLATFORM" = "debian11" ]; then
-            dpkg-buildpackage -b --no-sign
-          else
-            dpkg-buildpackage
-          fi
-          dpkg -i ../libyubihsm*_amd64.deb
+          mkdir build && cd build
+          cmake -DDISABLE_LTO=1 -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_LIB=ON -DENABLE_STATIC=ON -DENABLE_CERT_COMPRESS=OFF -DWITHOUT_MANPAGES=1 -S ..
+          cmake --build . --target yubihsm_static
+          
+          mkdir static_lib
+          cp lib/libyubihsm.a static_lib/
 
-      - name: Build installer
+      - name: Build release binaries
         working-directory: yubihsm-manager
         env:
           PLATFORM: ${{ env.PLATFORM }}
         run: |
           set -x -e
-          OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
-          mkdir -p $OUTPUT
+                    
+          #OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
+          #mkdir -p $OUTPUT
 
-          #cd ..
           export PATH=$PATH:$HOME/.cargo/bin
-          #if [[ ! -x $(command -v rustc) ]]; then
-          #  curl -o rustup.sh https://sh.rustup.rs
-          #  bash ./rustup.sh -y
-          #fi
-          #cargo install cargo-deb
-
-          #YUBIHSM_LIB_DIR=$(dpkg -L libyubihsm1 | grep -e "libyubihsm.so.2$" | xargs dirname) cargo build --release
-          YUBIHSM_LIB_DIR=/usr/lib/x86_64-linux-gnu  cargo build --release
+          
+          YUBIHSM_STATIC=1 YUBIHSM_LIB_DIR=$GITHUB_WORKSPACE/yubihsm-shell/build/static_lib  cargo build --release -vv
           strip --strip-all target/release/yubihsm-manager
           ldd target/release/yubihsm-manager
           
@@ -221,16 +215,13 @@ jobs:
         run: |
           set -x -e
           OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
+          mkdir -p $OUTPUT
+          cp target/debian/*.deb $OUTPUT/
 
           LICENSE=$OUTPUT/share/yubihsm-manager/licenses
           mkdir -p $LICENSE
           cp LICENSE $LICENSE/yubihsm-manager.txt
           cp THIRDPARTY.txt $LICENSE/
-
-          cp target/debian/*.deb $OUTPUT/
-          cp $GITHUB_WORKSPACE/libyubihsm1_*.deb $OUTPUT/
-          cp $GITHUB_WORKSPACE/libyubihsm-http1_*.deb $OUTPUT/
-          cp $GITHUB_WORKSPACE/libyubihsm-usb1_*.deb $OUTPUT/
 
           cd $OUTPUT/
           rm -f yubihsm-manager-$PLATFORM-amd64.tar.gz
@@ -312,23 +303,22 @@ jobs:
           #git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
           git clone https://github.com/Yubico/yubihsm-shell.git
           # Set PCSC flags
-          sed -i 's/#SET(CMAKE_C_FLAGS/SET(CMAKE_C_FLAGS/' yubihsm-shell/ykhsmauth/CMakeLists.txt
+          #sed -i 's/#SET(CMAKE_C_FLAGS/SET(CMAKE_C_FLAGS/' yubihsm-shell/ykhsmauth/CMakeLists.txt
 
-          export INPUT=$GITHUB_WORKSPACE/yubihsm-shell
-          export CMAKE="cmake"
+          cd yubihsm-shell
+          mkdir build && cd build
+          cmake -DDISABLE_LTO=1 -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_LIB=ON -DENABLE_STATIC=ON -DENABLE_CERT_COMPRESS=OFF -DWITHOUT_MANPAGES=1 -S ..
+          cmake --build . --target yubihsm_static
 
-          RPM_DIR=$GITHUB_WORKSPACE/rpmbuild
-          mkdir -p $RPM_DIR/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-          echo '%_topdir %(echo $HOME)/rpmbuild' > $GITHUB_WORKSPACE/.rpmmacros
-          cp yubihsm-shell/resources/release/linux/yubihsm-shell.spec $RPM_DIR/SPECS/
-          QA_SKIP_BUILD_ROOT=1 QA_RPATHS=$(( 0x0001|0x0010 )) rpmbuild -bb $RPM_DIR/SPECS/yubihsm-shell.spec
-          yum install -y /github/home/rpmbuild/RPMS/x86_64/yubihsm-devel-*.rpm
+          mkdir static_lib
+          cp lib/libyubihsm.a static_lib/
 
       - name: build release binary
         working-directory: yubihsm-manager
         env:
           PLATFORM: ${{ env.PLATFORM }}
         run: |
+          set -x
 
           export PATH=$PATH:~/.cargo/bin
           if [[ ! -x $(command -v rustc) ]]; then
@@ -336,27 +326,24 @@ jobs:
             bash ./rustup.sh -y
           fi
 
-          set -x
+          #OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
+          #mkdir -p $OUTPUT
 
-          OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
-          mkdir -p $OUTPUT
-          cp /github/home/rpmbuild/RPMS/x86_64/yubihsm-devel*.rpm $OUTPUT/
-
-          YUBIHSM_LIB_DIR=/usr/lib64 cargo build --release
+          YUBIHSM_STATIC=1 YUBIHSM_LIB_DIR=$GITHUB_WORKSPACE/yubihsm-shell/build/static_lib cargo build --release
           ldd target/release/yubihsm-manager
 
-          if [ $PLATFORM == "fedora43" ]; then
-            export BIN_DIR=$GITHUB_WORKSPACE/yubihsm-manager/target/release
-            rpmbuild -bb resources/release/linux/yubihsm-manager.spec
-            cp /github/home/rpmbuild/RPMS/x86_64/yubihsm-manager-*.rpm $OUTPUT/
-          else
-            cargo install cargo-rpm
-            cargo rpm init
-            YUBIHSM_LIB_DIR=/usr/lib64 cargo rpm build
-            cp target/release/rpmbuild/RPMS/x86_64/*.rpm $OUTPUT/
-          fi
+          #if [ $PLATFORM == "fedora43" ]; then
+          export BIN_DIR=$GITHUB_WORKSPACE/yubihsm-manager/target/release
+          rpmbuild -bb resources/release/linux/yubihsm-manager.spec
+          #cp /github/home/rpmbuild/RPMS/x86_64/yubihsm-manager-*.rpm $OUTPUT/
+          #else
+            #cargo install cargo-rpm
+            #cargo rpm init
+            #YUBIHSM_LIB_DIR=/usr/lib64 cargo rpm build
+            #cp target/release/rpmbuild/RPMS/x86_64/*.rpm $OUTPUT/
+          #fi
 
-          yum install -y $OUTPUT/yubihsm-manager-*.rpm
+          yum install -y /github/home/rpmbuild/RPMS/x86_64/yubihsm-manager-*.rpm
           yubihsm-manager --version
           yubihsm-manager --help
 
@@ -366,13 +353,16 @@ jobs:
           PLATFORM: ${{ env.PLATFORM }}
           VERSION: ${{ matrix.version }}
         run: |
+          OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
+          mkdir -p $OUTPUT
+          cp /github/home/rpmbuild/RPMS/x86_64/yubihsm-manager-*.rpm $OUTPUT/
 
-          LICENSE=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager/share/yubihsm-manager/licenses
+          LICENSE=$OUTPUT/share/yubihsm-manager/licenses
           mkdir -p $LICENSE
           cp LICENSE $LICENSE/yubihsm-manager.txt
           cp THIRDPARTY.txt $LICENSE/
 
-          cd $GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
+          cd $OUTPUT
           rm -f yubihsm-manager-$PLATFORM-amd64.tar.gz
           tar -C .. -zcvf ../yubihsm-manager-$VERSION-$PLATFORM-amd64.tar.gz yubihsm-manager
           rm -f *.deb
@@ -383,99 +373,99 @@ jobs:
         with:
           name: "yubihsm-manager-${{ env.PLATFORM }}-amd64"
           path: ${{ env.PLATFORM }}
-#
-#  Windows:
-#    needs: licenses
-#    name: Windows
-#    runs-on: windows-latest
-#    env:
-#      VERSION: 1.0.0RC1
-#      LIBYUBIHSM_VERSION: 2.7.2
-#
-#    steps:
-#      - name: Checkout repository
-#        uses: actions/checkout@v5
-#
-#      - name: Download license bundle
-#        uses: actions/download-artifact@v5
-#        with:
-#          name: licenses
-#          path: .
-#
-#      - name: Install dependencies
-#        run: |
-#          $ErrorActionPreference = "Stop"
-#          Set-PSDebug -Trace 1
-#
-#          C:/vcpkg/vcpkg.exe update
-#          C:/vcpkg/vcpkg.exe install openssl:x64-windows-static
-#
-#      # downloads and build yubihsm-shell from source release on dev.y.c
-#      - name: install yubihsm-shell
-#        run: |
-#          $ErrorActionPreference = "Stop"
-#          Set-PSDebug -Trace 1
-#
-#          $env:OPENSSL_ROOT_DIR ="C:/vcpkg/packages/openssl_x64-windows"
-#
-#          #Invoke-WebRequest -Uri https://developers.yubico.com/yubihsm-shell/Releases/yubihsm-shell-$env:LIBYUBIHSM_VERSION-win64.msi -OutFile yubihsm-shell.msi -UseBasicParsing
-#          #$log = "$env:GITHUB_WORKSPACE\install.log"
-#          #$procMain = Start-Process "msiexec" "/i `"yubihsm-shell.msi`" /qn /l*! `"$log`"" -NoNewWindow -PassThru
-#          #$procMain.WaitForExit()
-#
-#          #git clone --branch $env:LIBYUBIHSM_VERSION --single-branch https://github.com/Yubico/yubihsm-shell.git
-#          git clone https://github.com/Yubico/yubihsm-shell.git
-#          cd yubihsm-shell
-#          mkdir build; cd build
-#          cmake -S .. -A x64 -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_LIB=ON -DENABLE_STATIC=ON -DENABLE_CERT_COMPRESS=OFF -DWITHOUT_MANPAGES=1
-#          cmake --build . -v --config Release --target yubihsm_static
-#
-#
-#      - name: Build yubihsm-manager
-#        run: |
-#          $ErrorActionPreference = "Stop"
-#          Set-PSDebug -Trace 1
-#
-#          mkdir -p $env:GITHUB_WORKSPACE/artifact/yubihsm-manager/bin
-#
-#          rustup target add x86_64-pc-windows-msvc
-#          rustup default stable-x86_64-pc-windows-msvc
-#
-#          $env:RUST_BACKTRACE=1
-#          $env:YUBIHSM_LIB_DIR="$env:GITHUB_WORKSPACE/yubihsm-shell/build/lib/Release"
-#          $env:YUBIHSM_LIB_NAME="yubihsm"
-#          $env:OPENSSL_STATIC="1"
-#          $env:OPENSSL_DIR="C:/vcpkg/packages/openssl_x64-windows-static"
-#
-#          #$env:PATH+=";$env:GITHUB_WORKSPACE/yubihsm-shell/build/bin/Release;C:/vcpkg/packages/openssl_x64-windows/bin"
-#
-#          cargo.exe update
-#          cargo.exe build --release
-#          install target/release/yubihsm-manager $env:GITHUB_WORKSPACE/artifact/yubihsm-manager/bin
-#
-#      - name: Test binaries
-#        run: |
-#          $ErrorActionPreference = "Stop"
-#          Set-PSDebug -Trace 1
-#          cd artifact/yubihsm-manager/bin
-#
-#          ./yubihsm-manager.exe --help
-#          ./yubihsm-manager.exe --version
-#
-#      - name: Pack licenses
-#        run: |
-#          $ErrorActionPreference = "Stop"
-#          Set-PSDebug -Trace 1
-#
-#          mkdir -p $env:GITHUB_WORKSPACE/artifact/yubihsm-manager/licenses
-#          cp $env:GITHUB_WORKSPACE/LICENSE $env:GITHUB_WORKSPACE/artifact/yubihsm-manager/licenses/yubihsm-manager.txt
-#          cp $env:GITHUB_WORKSPACE/THIRDPARTY.txt $env:GITHUB_WORKSPACE/artifact/yubihsm-manager/licenses/
-#
-#      - name: Upload artifact
-#        uses: actions/upload-artifact@v5
-#        with:
-#          name: yubihsm-manager-${{ env.VERSION }}-win64
-#          path: artifact
+
+  Windows:
+    needs: licenses
+    name: Windows
+    runs-on: windows-latest
+    env:
+      VERSION: 1.0.0RC1
+      LIBYUBIHSM_VERSION: 2.7.2
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Download license bundle
+        uses: actions/download-artifact@v5
+        with:
+          name: licenses
+          path: .
+
+      - name: Install dependencies
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-PSDebug -Trace 1
+
+          C:/vcpkg/vcpkg.exe update
+          C:/vcpkg/vcpkg.exe install openssl:x64-windows-static
+
+      # downloads and build yubihsm-shell from source release on dev.y.c
+      - name: install yubihsm-shell
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-PSDebug -Trace 1
+
+          $env:OPENSSL_ROOT_DIR ="C:/vcpkg/packages/openssl_x64-windows"
+
+          #Invoke-WebRequest -Uri https://developers.yubico.com/yubihsm-shell/Releases/yubihsm-shell-$env:LIBYUBIHSM_VERSION-win64.msi -OutFile yubihsm-shell.msi -UseBasicParsing
+          #$log = "$env:GITHUB_WORKSPACE\install.log"
+          #$procMain = Start-Process "msiexec" "/i `"yubihsm-shell.msi`" /qn /l*! `"$log`"" -NoNewWindow -PassThru
+          #$procMain.WaitForExit()
+
+          #git clone --branch $env:LIBYUBIHSM_VERSION --single-branch https://github.com/Yubico/yubihsm-shell.git
+          git clone https://github.com/Yubico/yubihsm-shell.git
+          cd yubihsm-shell
+          mkdir build; cd build
+          cmake -S .. -A x64 -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_LIB=ON -DENABLE_STATIC=ON -DENABLE_CERT_COMPRESS=OFF -DWITHOUT_MANPAGES=1
+          cmake --build . -v --config Release --target yubihsm_static
+
+
+      - name: Build yubihsm-manager
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-PSDebug -Trace 1
+
+          mkdir -p $env:GITHUB_WORKSPACE/artifact/yubihsm-manager/bin
+
+          rustup target add x86_64-pc-windows-msvc
+          rustup default stable-x86_64-pc-windows-msvc
+
+          $env:RUST_BACKTRACE=1
+          $env:YUBIHSM_LIB_DIR="$env:GITHUB_WORKSPACE/yubihsm-shell/build/lib/Release"
+          $env:YUBIHSM_LIB_NAME="yubihsm"
+          $env:OPENSSL_STATIC="1"
+          $env:OPENSSL_DIR="C:/vcpkg/packages/openssl_x64-windows-static"
+
+          #$env:PATH+=";$env:GITHUB_WORKSPACE/yubihsm-shell/build/bin/Release;C:/vcpkg/packages/openssl_x64-windows/bin"
+
+          cargo.exe update
+          cargo.exe build --release
+          install target/release/yubihsm-manager $env:GITHUB_WORKSPACE/artifact/yubihsm-manager/bin
+
+      - name: Test binaries
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-PSDebug -Trace 1
+          cd artifact/yubihsm-manager/bin
+
+          ./yubihsm-manager.exe --help
+          ./yubihsm-manager.exe --version
+
+      - name: Pack licenses
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-PSDebug -Trace 1
+
+          mkdir -p $env:GITHUB_WORKSPACE/artifact/yubihsm-manager/licenses
+          cp $env:GITHUB_WORKSPACE/LICENSE $env:GITHUB_WORKSPACE/artifact/yubihsm-manager/licenses/yubihsm-manager.txt
+          cp $env:GITHUB_WORKSPACE/THIRDPARTY.txt $env:GITHUB_WORKSPACE/artifact/yubihsm-manager/licenses/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: yubihsm-manager-${{ env.VERSION }}-win64
+          path: artifact
 
   MacOS-AMD:
     name: MacOS AMD
