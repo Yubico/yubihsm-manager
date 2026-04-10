@@ -35,6 +35,8 @@ macro_rules! return_or_exit {
                 if CTRL_C_PRESSED.load(Ordering::SeqCst) {
                     let _ = cliclack::outro_cancel("Exiting YubiHSM Manager!");
                     std::process::exit(1);
+                } else if err.kind() == std::io::ErrorKind::Interrupted {
+                    return Err(MgmError::OperationCancelled);
                 } else {
                     return Err(MgmError::from(err));
                 }

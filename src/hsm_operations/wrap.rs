@@ -345,6 +345,7 @@ impl WrapOperations {
             &[ObjectCapability::ExportableUnderWrap])?;
         let mut objects = get_object_descriptors(session, objects.as_slice())?;
         objects.retain(|obj| contains_all(delegated, obj.capabilities()));
+        objects.retain(|obj| wrap_key.domains().iter().any(|d| obj.domains().contains(d)));
         if wrap_type == WrapType::Key {
             objects.retain(|obj| obj.object_type() == &ObjectType::AsymmetricKey || obj.object_type() == &ObjectType::SymmetricKey);
         }

@@ -30,9 +30,6 @@ use crate::common::util::get_object_descriptors;
 pub enum MainCommand {
     List,
     Search,
-    Delete,
-    Generate,
-    Import,
     GotoAsym,
     GotoSym,
     GotoWrap,
@@ -48,9 +45,6 @@ impl Command for MainCommand {
         match self {
             Self::List => "List",
             Self::Search => "Search objects",
-            Self::Delete => "Delete",
-            Self::Generate => "Generate",
-            Self::Import => "Import",
             Self::GotoAsym => "[Asymmetric Key operations]",
             Self::GotoSym => "[Symmetric Key operations]",
             Self::GotoWrap => "[Wrap Key operations]",
@@ -65,9 +59,6 @@ impl Command for MainCommand {
         match self {
             Self::List => "List all objects stored on the YubiHSM",
             Self::Search => "Search for objects stored on the YubiHSM by ID, type or label",
-            Self::Delete => "Delete an object from the YubiHSM",
-            Self::Generate => "Generate a new key inside the YubiHSM",
-            Self::Import => "Import an object into the YubiHSM",
             Self::GotoAsym => "Manage and use asymmetric keys stored on the YubiHSM",
             Self::GotoSym => "Manage and use symmetric keys stored on the YubiHSM. Requires firmware version 2.3.1 or higher",
             Self::GotoWrap => "Manage and use wrap keys stored on the YubiHSM",
@@ -81,24 +72,6 @@ impl Command for MainCommand {
     fn required_capabilities(&self) -> &'static [ObjectCapability] {
         match self {
             Self::List | Self::Search | Self::Exit => &[],
-            Self::Delete => &[
-                ObjectCapability::DeleteAsymmetricKey,
-                ObjectCapability::DeleteOpaque,
-                ObjectCapability::DeleteSymmetricKey,
-                ObjectCapability::DeleteWrapKey,
-                ObjectCapability::DeletePublicWrapKey,
-                ObjectCapability::DeleteAuthenticationKey],
-            Self::Generate => &[
-                ObjectCapability::GenerateAsymmetricKey,
-                ObjectCapability::GenerateSymmetricKey,
-                ObjectCapability::GenerateWrapKey],
-            Self::Import => &[
-                ObjectCapability::PutAsymmetricKey,
-                ObjectCapability::PutOpaque,
-                ObjectCapability::PutSymmetricKey,
-                ObjectCapability::PutWrapKey,
-                ObjectCapability::PutPublicWrapKey,
-                ObjectCapability::ImportWrapped],
             Self::GotoAsym | Self::GotoSym | Self::GotoWrap | Self::GotoAuth | Self::GotoSpecialOps => &[],
             Self::GotoDevice => &[
                 ObjectCapability::GetPseudoRandom,
@@ -149,12 +122,6 @@ impl Display for FilterType {
             FilterType::Type(_) => write!(f, "By object type"),
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq,  Eq)]
-pub enum ImportableType {
-    ObjectType(ObjectType),
-    Wrapped,
 }
 
 pub struct MainOperations;
@@ -214,22 +181,6 @@ impl MainOperations {
         Ok(objects)
     }
 
-    pub fn get_objects_for_delete(session: &Session, authkey: &ObjectDescriptor) -> Result<Vec<ObjectDescriptor>, MgmError> {
-        let mut objects = Self.get_all_objects(session)?;
-        objects.retain(|obj| {
-                match obj.object_type() {
-                    ObjectType::AsymmetricKey => authkey.capabilities().contains(&ObjectCapability::DeleteAsymmetricKey),
-                    ObjectType::Opaque => authkey.capabilities().contains(&ObjectCapability::DeleteOpaque),
-                    ObjectType::SymmetricKey => authkey.capabilities().contains(&ObjectCapability::DeleteSymmetricKey),
-                    ObjectType::WrapKey => authkey.capabilities().contains(&ObjectCapability::DeleteWrapKey),
-                    ObjectType::PublicWrapKey => authkey.capabilities().contains(&ObjectCapability::DeletePublicWrapKey),
-                    ObjectType::AuthenticationKey => authkey.capabilities().contains(&ObjectCapability::DeleteAuthenticationKey),
-                    _ => false,
-                }
-            });
-        Ok(objects)
-    }
-
     pub fn get_searchable_types() -> Vec<SelectionItem<ObjectType>> {
         vec![
             SelectionItem {
@@ -262,67 +213,6 @@ impl MainOperations {
                 description: String::new()
             },
         ]
-    }
-
-    pub fn get_generatable_types(authkey: &ObjectDescriptor) -> Vec<SelectionItem<ObjectType>> {
-        let mut types = Vec::new();
-        if authkey.capabilities().contains(&ObjectCapability::GenerateAsymmetricKey) {
-            types.push(SelectionItem {
-                value: ObjectType::AsymmetricKey,
-                label: "Asymmetric private key".to_string(),
-                description: String::new()
-            });
-        }
-        if authkey.capabilities().contains(&ObjectCapability::GenerateSymmetricKey) {
-            types.push(SelectionItem {
-                value: ObjectType::SymmetricKey,
-                label: "Symmetric key".to_string(),
-                description: String::new()
-            });
-        }
-        if authkey.capabilities().contains(&ObjectCapability::GenerateWrapKey) {
-            types.push(SelectionItem {
-                value: ObjectType::WrapKey,
-                label: "Wrap key".to_string(),
-                description: String::new()
-            });
-        }
-        types
-    }
-
-    pub fn get_importable_types(authkey: &ObjectDescriptor) -> Vec<SelectionItem<ImportableType>> {
-        let mut types = Vec::new();
-        if authkey.capabilities().contains(&ObjectCapability::PutAsymmetricKey) ||
-            authkey.capabilities().contains(&ObjectCapability::PutOpaque) {
-            types.push(SelectionItem {
-                value: ImportableType::ObjectType(ObjectType::AsymmetricKey),
-                label: "Asymmetric object".to_string(),
-                description: "Asymmetric private key or X509Certificate".to_string()
-            });
-        }
-        if authkey.capabilities().contains(&ObjectCapability::PutSymmetricKey) {
-            types.push(SelectionItem {
-                value: ImportableType::ObjectType(ObjectType::SymmetricKey),
-                label: "Symmetric key".to_string(),
-                description: String::new()
-            });
-        }
-        if authkey.capabilities().contains(&ObjectCapability::PutWrapKey) ||
-            authkey.capabilities().contains(&ObjectCapability::PutPublicWrapKey) {
-            types.push(SelectionItem {
-                value: ImportableType::ObjectType(ObjectType::WrapKey),
-                label: "Wrap key".to_string(),
-                description: String::new()
-            });
-        }
-        if authkey.capabilities().contains(&ObjectCapability::ImportWrapped) {
-            types.push(SelectionItem {
-                value: ImportableType::Wrapped,
-                label: "Wrapped Object".to_string(),
-                description: String::new()
-            });
-        }
-        types
     }
 
     pub fn get_special_ops() -> Vec<SelectionItem<SpecialOpCommand>> {

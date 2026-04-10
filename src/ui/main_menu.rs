@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use yubihsmrs::object::{ObjectDescriptor, ObjectType};
+use yubihsmrs::object::ObjectDescriptor;
 use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::traits::command_traits::Command;
@@ -25,13 +25,10 @@ use crate::ui::java_menu::JavaMenu;
 use crate::ui::device_menu::DeviceMenu;
 use crate::ui::auth_menu::AuthenticationMenu;
 use crate::ui::asym_menu::AsymmetricMenu;
-use crate::ui::helper_operations::{list_objects, delete_objects, display_menu_headers, generate_object};
+use crate::ui::helper_operations::{list_objects, display_menu_headers};
 use crate::common::error::MgmError;
 use crate::common::types::SelectionItem;
-use crate::hsm_operations::sym::SymmetricOperations;
-use crate::hsm_operations::wrap::WrapOperations;
-use crate::hsm_operations::main_ops::{MainCommand, SpecialOpCommand, FilterType, MainOperations, ImportableType};
-use crate::hsm_operations::asym::AsymmetricOperations;
+use crate::hsm_operations::main_ops::{MainCommand, SpecialOpCommand, FilterType, MainOperations};
 use crate::script::script_recorder::SessionRecorder;
 
 static MAIN_HEADER: &str = "YubiHSM Manager";
@@ -60,9 +57,6 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
             let res = match cmd {
                 MainCommand::List => list_objects(&self.ui, &MainOperations, session),
                 MainCommand::Search => self.search(session),
-                MainCommand::Delete => delete_objects(&self.ui, recorder, &MainOperations, session, &MainOperations::get_objects_for_delete(session, authkey)?),
-                MainCommand::Generate => self.generate(session, recorder, authkey),
-                MainCommand::Import => self.import(session, recorder, authkey),
                 MainCommand::GotoAsym => AsymmetricMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
                 MainCommand::GotoSym => SymmetricMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
                 MainCommand::GotoWrap => WrapMenu::new(self.ui.clone()).exec_command(session, recorder, authkey),
@@ -109,39 +103,6 @@ impl<T: YubihsmUi + Clone> MainMenu<T> {
         };
         self.ui.display_objects_properties(&objects);
         Ok(())
-    }
-
-    fn generate(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        let _type: ObjectType = self.ui.select_one_item(
-            &MainOperations::get_generatable_types(authkey),
-            None,
-            Some("\nSelect type of object to generate:")
-        )?;
-        match _type {
-            ObjectType::AsymmetricKey => generate_object(&self.ui, recorder, &AsymmetricOperations, session, authkey, ObjectType::AsymmetricKey),
-            ObjectType::SymmetricKey => generate_object(&self.ui, recorder, &SymmetricOperations, session, authkey, ObjectType::SymmetricKey),
-            ObjectType::WrapKey => generate_object(&self.ui, recorder, &WrapOperations, session, authkey, ObjectType::WrapKey),
-            _ => Err(MgmError::Error("Selected object type out of scope".to_string()))
-        }
-    }
-
-    fn import(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {
-        let _type: ImportableType = self.ui.select_one_item(
-            &MainOperations::get_importable_types(authkey),
-            None,
-            Some("\nSelect type of object to import:")
-        )?;
-        match _type {
-            ImportableType::ObjectType(t) => {
-                match t {
-                    ObjectType::AsymmetricKey => AsymmetricMenu::new(self.ui.clone()).import(session, recorder, authkey),
-                    ObjectType::SymmetricKey => SymmetricMenu::new(self.ui.clone()).import(session, recorder, authkey),
-                    ObjectType::WrapKey => WrapMenu::new(self.ui.clone()).import(session, recorder, authkey),
-                    _ => Err(MgmError::Error("Selected object type out of scope".to_string()))
-                }
-            }
-            ImportableType::Wrapped => WrapMenu::new(self.ui.clone()).import_wrapped(session, recorder, authkey),
-        }
     }
 
     fn goto_special_ops(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor) -> Result<(), MgmError> {

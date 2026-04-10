@@ -20,7 +20,6 @@ use yubihsmrs::Session;
 use crate::traits::ui_traits::YubihsmUi;
 use crate::traits::command_traits::Command;
 use crate::traits::operation_traits::YubihsmOperations;
-use crate::cli::cmdline::Cmdline;
 use crate::ui::helper_operations::{delete_objects, display_menu_headers, display_wrapkey_shares, generate_object, list_objects};
 use crate::ui::helper_operations::{display_object_properties, get_new_spec_table, get_script_input_data};
 use crate::ui::device_menu::DeviceMenu;
@@ -64,7 +63,7 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
                 WrapCommand::Generate => generate_object(&self.ui, recorder, &WrapOperations, session, authkey, ObjectType::WrapKey),
                 WrapCommand::Import => self.import(session, recorder, authkey),
                 WrapCommand::Delete => delete_objects(&self.ui, recorder, &WrapOperations, session, &WrapOperations.get_all_objects(session)?),
-                WrapCommand::GetPublicKey => AsymmetricMenu::new(Cmdline).get_public_key(session, ObjectType::WrapKey),
+                WrapCommand::GetPublicKey => AsymmetricMenu::new(self.ui.clone()).get_public_key(session, ObjectType::WrapKey),
                 WrapCommand::ExportWrapped => self.export_wrapped(session, recorder, authkey),
                 WrapCommand::ImportWrapped => self.import_wrapped(session, recorder, authkey),
                 WrapCommand::GetRandom => DeviceMenu::new(self.ui.clone()).get_random(session),
@@ -278,7 +277,10 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
             true,
             None,
             Some("Files containing wrapped YubiHSM objects usually have the file extension .yhw"))?;
+        self.import_wrapped_from_file(session, recorder, authkey, &filepath)
+    }
 
+    pub fn import_wrapped_from_file(&self, session: &Session, recorder: &Option<SessionRecorder>, authkey: &ObjectDescriptor, filepath: &str) -> Result<(), MgmError> {
         let wrapped = fs::read(&filepath)?;
 
         let wrapkeys = WrapOperations::get_unwrapping_keys(session, authkey)?;

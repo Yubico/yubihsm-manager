@@ -33,6 +33,8 @@ pub enum MgmError {
     InvalidInput(String),
     /// Generic Error
     Error(String),
+    /// Operation cancelled by user
+    OperationCancelled,
 }
 
 impl fmt::Display for MgmError {
@@ -45,6 +47,7 @@ impl fmt::Display for MgmError {
             MgmError::HexError(err) => err.fmt(f),
             MgmError::InvalidInput(param) => write!(f, "Unsupported or unrecognized value: {}", param),
             MgmError::Error(param) => write!(f, "{}", param),
+            MgmError::OperationCancelled => write!(f, "Operation cancelled by user"),
         }
     }
 }
@@ -71,6 +74,7 @@ impl error::Error for MgmError {
             MgmError::HexError(err) => Some(err),
             MgmError::InvalidInput(_) => None,
             MgmError::Error(_) => None,
+            MgmError::OperationCancelled => None,
         }
     }
 }
