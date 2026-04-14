@@ -47,8 +47,8 @@ fi
 cd $WORKING_DIR
 
 # Build static libyubihsm
-#git clone --branch $env:LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
-git clone https://github.com/Yubico/yubihsm-shell.git
+git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
+#git clone https://github.com/Yubico/yubihsm-shell.git
 cd yubihsm-shell
 mkdir build; cd build
 cmake -DRELEASE_BUILD=1 \

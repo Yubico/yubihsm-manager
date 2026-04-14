@@ -88,7 +88,7 @@ jobs:
           "debian:13",
           "debian:12",
         ]
-        libyubihsm_tag : [ "2.7.2" ]
+        libyubihsm_tag : [ "2.7.3" ]
         version: [ "1.0.0RC1" ]
 
     name: build on ${{ matrix.environment }}
@@ -163,8 +163,8 @@ jobs:
 
           cd ..
 
-          #git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
-          git clone https://github.com/Yubico/yubihsm-shell.git
+          git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
+          #git clone https://github.com/Yubico/yubihsm-shell.git
           cd yubihsm-shell
 
           if [ "$PLATFORM" = "ubuntu2404" ] || [ "$PLATFORM" = "ubuntu2504" ] || [ "$PLATFORM" = "ubuntu2510" ]; then
@@ -244,7 +244,7 @@ jobs:
           "fedora:43",
           "fedora:42",
         ]
-        libyubihsm_tag: [ "2.7.2" ]
+        libyubihsm_tag: [ "2.7.3" ]
         version: [ "1.0.0RC1" ]
 
     name: build on ${{ matrix.environment }}
@@ -300,10 +300,8 @@ jobs:
         env:
           LIBYUBIHSM_TAG: ${{ matrix.libyubihsm_tag }}
         run: |
-          #git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
-          git clone https://github.com/Yubico/yubihsm-shell.git
-          # Set PCSC flags
-          #sed -i 's/#SET(CMAKE_C_FLAGS/SET(CMAKE_C_FLAGS/' yubihsm-shell/ykhsmauth/CMakeLists.txt
+          git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
+          #git clone https://github.com/Yubico/yubihsm-shell.git
 
           cd yubihsm-shell
           mkdir build && cd build
@@ -380,7 +378,7 @@ jobs:
     runs-on: windows-latest
     env:
       VERSION: 1.0.0RC1
-      LIBYUBIHSM_VERSION: 2.7.2
+      LIBYUBIHSM_VERSION: 2.7.3
 
     steps:
       - name: Checkout repository
@@ -413,8 +411,8 @@ jobs:
           #$procMain = Start-Process "msiexec" "/i `"yubihsm-shell.msi`" /qn /l*! `"$log`"" -NoNewWindow -PassThru
           #$procMain.WaitForExit()
 
-          #git clone --branch $env:LIBYUBIHSM_VERSION --single-branch https://github.com/Yubico/yubihsm-shell.git
-          git clone https://github.com/Yubico/yubihsm-shell.git
+          git clone --branch $env:LIBYUBIHSM_VERSION --single-branch https://github.com/Yubico/yubihsm-shell.git
+          #git clone https://github.com/Yubico/yubihsm-shell.git
           cd yubihsm-shell
           mkdir build; cd build
           cmake -S .. -A x64 -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_LIB=ON -DENABLE_STATIC=ON -DENABLE_CERT_COMPRESS=OFF -DWITHOUT_MANPAGES=1
