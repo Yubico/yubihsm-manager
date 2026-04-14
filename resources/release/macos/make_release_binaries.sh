@@ -35,6 +35,7 @@ mkdir -p $WORKING_DIR
 
 # Install dependencies
 brew update
+brew install asciidoctor
 brew reinstall openssl@3
 OPENSSL_PREFIX=$(brew --prefix openssl@3)
 
@@ -42,6 +43,10 @@ export PATH=$PATH:~/.cargo/bin
 if [[ ! -x $(command -v rustc) ]]; then
     curl -o rustup.sh https://sh.rustup.rs
     bash ./rustup.sh -y
+fi
+
+if [[ ! -x $(command -v asciidoctor) ]]; then
+    export PATH=$PATH:/opt/brew/opt/bin
 fi
 
 cd $WORKING_DIR
