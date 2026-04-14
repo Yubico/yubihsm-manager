@@ -56,7 +56,7 @@ impl Command for DeviceCommand {
             Self::GetRandom => &[ObjectCapability::GetPseudoRandom],
             Self::BackupDevice => &[ObjectCapability::ExportWrapped],
             Self::RestoreDevice => &[ObjectCapability::ImportWrapped],
-            Self::Reset => &[],
+            Self::Reset => &[ObjectCapability::ResetDevice],
             Self::Exit => &[],
         }
     }
