@@ -378,7 +378,7 @@ jobs:
     runs-on: windows-latest
     env:
       VERSION: 1.0.0RC1
-      LIBYUBIHSM_VERSION: 2.7.3
+      LIBYUBIHSM_TAG: 2.7.3
 
     steps:
       - name: Checkout repository
@@ -406,12 +406,12 @@ jobs:
 
           $env:OPENSSL_ROOT_DIR ="C:/vcpkg/packages/openssl_x64-windows"
 
-          #Invoke-WebRequest -Uri https://developers.yubico.com/yubihsm-shell/Releases/yubihsm-shell-$env:LIBYUBIHSM_VERSION-win64.msi -OutFile yubihsm-shell.msi -UseBasicParsing
+          #Invoke-WebRequest -Uri https://developers.yubico.com/yubihsm-shell/Releases/yubihsm-shell-$env:LIBYUBIHSM_TAG-win64.msi -OutFile yubihsm-shell.msi -UseBasicParsing
           #$log = "$env:GITHUB_WORKSPACE\install.log"
           #$procMain = Start-Process "msiexec" "/i `"yubihsm-shell.msi`" /qn /l*! `"$log`"" -NoNewWindow -PassThru
           #$procMain.WaitForExit()
 
-          git clone --branch $env:LIBYUBIHSM_VERSION --single-branch https://github.com/Yubico/yubihsm-shell.git
+          git clone --branch $env:LIBYUBIHSM_TAG --single-branch https://github.com/Yubico/yubihsm-shell.git
           #git clone https://github.com/Yubico/yubihsm-shell.git
           cd yubihsm-shell
           mkdir build; cd build
@@ -470,7 +470,7 @@ jobs:
     runs-on: macos-latest-large
     env:
       VERSION: 1.0.0RC1
-      LIBYUBIHSM_VERSION: 2.7.3
+      LIBYUBIHSM_TAG: 2.7.3
 
     steps:
       - name: Checkout repository
@@ -508,7 +508,7 @@ jobs:
     runs-on: macos-latest-xlarge
     env:
       VERSION: 1.0.0RC1
-      LIBYUBIHSM_VERSION: 2.7.3
+      LIBYUBIHSM_TAG: 2.7.3
 
     steps:
       - name: Checkout repository

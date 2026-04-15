@@ -4,7 +4,7 @@
 if [ "$#" -ne 4 ]; then
     echo "This script is a guide to build a .pkg installer. Output installer will be found in the directory this script is running from."
     echo ""
-    echo "      Usage: ./make_installer.sh <amd|arm> <RELEASE_VERSION> <LIBYUBIHSM_TAG> <SOURCE_DIRECTORY>"
+    echo "      Usage: ./make_release_binaries.sh <amd|arm> <RELEASE_VERSION> <LIBYUBIHSM_TAG> <SOURCE_DIRECTORY>"
     echo "";
     exit 0
 fi
@@ -16,7 +16,7 @@ SOURCE_DIR=$4 #path to yubihsm-manager source code
 
 echo "Architecture: $ARCH"
 echo "Release version: $RELEASE_VERSION"
-echo "libyubihsm version: $LIBYUBIHSM_VERSION"
+echo "libyubihsm version: $LIBYUBIHSM_TAG"
 echo "Source directory: $SOURCE_DIR"
 
 if [ "$ARCH" == "amd" ]; then
@@ -31,7 +31,7 @@ else
 fi
 
 WORKING_DIR=$PWD/temp_dir
-mkdir -p $WORKING_DIR
+mkdir -p "$WORKING_DIR"
 
 # Install dependencies
 brew update
@@ -49,7 +49,7 @@ if [[ ! -x $(command -v asciidoctor) ]]; then
     export PATH=$PATH:/opt/brew/opt/bin
 fi
 
-cd $WORKING_DIR
+cd "$WORKING_DIR"
 
 # Build static libyubihsm
 git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
@@ -95,7 +95,7 @@ make install
 cd ..
 
 # Build yubihsm-manager
-cd $SOURCE_DIR
+cd "$SOURCE_DIR"
 
 CURL_LIB_DIR=$WORKING_DIR/curl-static/lib \
 LIBUSB_LIB_DIR=$WORKING_DIR/libusb-static/lib \
@@ -107,4 +107,4 @@ cargo build --release
 
 strip -u -r target/release/yubihsm-manager
 
-rm -rf $WORKING_DIR
+rm -rf "$WORKING_DIR"
