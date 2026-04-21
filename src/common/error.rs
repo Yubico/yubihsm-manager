@@ -29,6 +29,8 @@ pub enum MgmError {
     PemError(pem::PemError),
     /// Hex parsing error
     HexError(hex::FromHexError),
+    /// An error from an underlying VSSS call (Shamir Shared Secret).
+    VsssError(vsss_rs::Error),
     /// Unexpected or unsupported parameter
     InvalidInput(String),
     /// Generic Error
@@ -45,6 +47,7 @@ impl fmt::Display for MgmError {
             MgmError::StdIoError(err) => err.fmt(f),
             MgmError::PemError(err) => err.fmt(f),
             MgmError::HexError(err) => err.fmt(f),
+            MgmError::VsssError(err) => err.fmt(f),
             MgmError::InvalidInput(param) => write!(f, "Unsupported or unrecognized value: {}", param),
             MgmError::Error(param) => write!(f, "{}", param),
             MgmError::OperationCancelled => write!(f, "Operation cancelled by user"),
@@ -72,6 +75,7 @@ impl error::Error for MgmError {
             MgmError::StdIoError(err) => Some(err),
             MgmError::PemError(err) => Some(err),
             MgmError::HexError(err) => Some(err),
+            MgmError::VsssError(_) => None,
             MgmError::InvalidInput(_) => None,
             MgmError::Error(_) => None,
             MgmError::OperationCancelled => None,
@@ -106,6 +110,12 @@ impl From<pem::PemError> for MgmError {
 impl From<hex::FromHexError> for MgmError {
     fn from(error: hex::FromHexError) -> Self {
         MgmError::HexError(error)
+    }
+}
+
+impl From<vsss_rs::Error> for MgmError {
+    fn from(error: vsss_rs::Error) -> Self {
+        MgmError::VsssError(error)
     }
 }
 

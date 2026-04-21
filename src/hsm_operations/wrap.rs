@@ -374,23 +374,58 @@ impl WrapOperations {
         data.append(&mut ObjectCapability::bytes_from_slice(wrap_key.delegated_capabilities.as_slice()));
         data.extend_from_slice(wrap_key.data[0].as_slice());
 
-        split_key.shares_data = rusty_secrets::generate_shares(threshold, shares, &data)?;
+        let raw_shares = vsss_rs::Gf256::split_array(
+            threshold as usize,
+            shares as usize,
+            &data,
+            rand::rngs::OsRng,
+        )?;
+
+        split_key.shares_data = raw_shares
+            .iter()
+            .map(|share| {
+                format!("{}-{}-{}", threshold, share[0], hex::encode(&share[1..]))
+            })
+            .collect();
 
         Ok(split_key)
     }
 
     pub fn get_wrapkey_from_shares(shares:Vec<String>) -> Result<NewObjectSpec, MgmError> {
-        let data = rusty_secrets::recover_secret(shares)?;
+
+        let vsss_shares: Vec<Vec<u8>> = shares
+            .iter()
+            .map(|s| {
+                let parts: Vec<&str> = s.trim().split('-').collect();
+                if parts.len() != 3 {
+                    return Err(MgmError::InvalidInput(format!(
+                        "Invalid share format: expected 3 parts separated by '-', got {}",
+                        parts.len()
+                    )));
+                }
+
+                let id: u8 = match parts[1].parse() {
+                    Ok(id) => {
+                        if id < 1 {
+                            return Err(MgmError::InvalidInput(format!("Share id must be >= 1, got {}", id)));
+                        } else {
+                            id
+                        }
+                    },
+                    Err(_) => return Err(MgmError::InvalidInput(format!("Invalid share id '{}'", parts[1]))),
+                };
+
+                let data = hex::decode(parts[2])?;
+                let mut share = Vec::with_capacity(1 + data.len());
+                share.push(id);
+                share.extend_from_slice(&data);
+                Ok(share)
+            })
+            .collect::<Result<Vec<_>, MgmError>>()?;
+
+        let data = vsss_rs::Gf256::combine_array(&vsss_shares)?;
 
         let key_len = data.len() - WRAP_SPLIT_PREFIX_LEN;
-
-        if data.len() != WRAP_SPLIT_PREFIX_LEN + (key_len) {
-            return Err(MgmError::Error(format!(
-                "Wrong length for recovered secret: expected {}, found {}",
-                WRAP_SPLIT_PREFIX_LEN + (key_len / 8),
-                data.len()
-            )));
-        }
 
         let mut wrapkey_spec = NewObjectSpec::default();
         wrapkey_spec.object_type = ObjectType::WrapKey;
