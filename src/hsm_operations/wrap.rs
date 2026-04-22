@@ -24,6 +24,7 @@ use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::command_traits::Command;
 use crate::common::error::MgmError;
 use crate::common::algorithms::MgmAlgorithm;
+use crate::common::validators::aes_share_validator;
 use crate::common::types::{NewObjectSpec, EXIT_LABEL};
 use crate::common::util::{contains_all, get_object_descriptors};
 use crate::hsm_operations::asym::AsymmetricOperations;
@@ -392,38 +393,27 @@ impl WrapOperations {
     }
 
     pub fn get_wrapkey_from_shares(shares:Vec<String>) -> Result<NewObjectSpec, MgmError> {
-
+        let share_len = shares[0].len() as u8;
         let vsss_shares: Vec<Vec<u8>> = shares
             .iter()
             .map(|s| {
-                let parts: Vec<&str> = s.trim().split('-').collect();
-                if parts.len() != 3 {
-                    return Err(MgmError::InvalidInput(format!(
-                        "Invalid share format: expected 3 parts separated by '-', got {}",
-                        parts.len()
-                    )));
+                if aes_share_validator(s, Some(share_len)).is_err() {
+                    return Err(MgmError::InvalidInput("Invalid share format".to_string()))
                 }
-
-                let id: u8 = match parts[1].parse() {
-                    Ok(id) => {
-                        if id < 1 {
-                            return Err(MgmError::InvalidInput(format!("Share id must be >= 1, got {}", id)));
-                        } else {
-                            id
-                        }
-                    },
-                    Err(_) => return Err(MgmError::InvalidInput(format!("Invalid share id '{}'", parts[1]))),
-                };
-
-                let data = hex::decode(parts[2])?;
-                let mut share = Vec::with_capacity(1 + data.len());
-                share.push(id);
-                share.extend_from_slice(&data);
+                let parts: Vec<&str> = s.trim().split('-').collect();
+                let share_id = parts[1].parse::<u8>().unwrap();
+                let share_data = hex::decode(parts[2])?;
+                let mut share = Vec::with_capacity(1 + share_data.len());
+                share.push(share_id);
+                share.extend_from_slice(&share_data);
                 Ok(share)
             })
             .collect::<Result<Vec<_>, MgmError>>()?;
 
         let data = vsss_rs::Gf256::combine_array(&vsss_shares)?;
+        if data.len() < WRAP_SPLIT_PREFIX_LEN {
+            return Err(MgmError::InvalidInput("Reconstructed wrap key share data is too short".to_string()));
+        }
 
         let key_len = data.len() - WRAP_SPLIT_PREFIX_LEN;
 

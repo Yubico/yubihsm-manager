@@ -21,9 +21,9 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectType};
 use crate::common::error::MgmError;
 use crate::hsm_operations::asym::AsymmetricOperations;
 
-static SHARE_RE_256: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-fA-F0-9]{104}$").unwrap());
-static SHARE_RE_192: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-fA-F0-9]{88}$").unwrap());
-static SHARE_RE_128: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-fA-F0-9]{72}$").unwrap());
+static SHARE_RE_256: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[1-9]-[1-9]-[a-fA-F0-9]{104}$").unwrap());
+static SHARE_RE_192: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[1-9]-[1-9]-[a-fA-F0-9]{88}$").unwrap());
+static SHARE_RE_128: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[1-9]-[1-9]-[a-fA-F0-9]{72}$").unwrap());
 
 pub fn object_id_validator(input: &str) -> Result<(), MgmError> {
     let id = if let Some(hex) = input.strip_prefix("0x") {
@@ -245,7 +245,6 @@ fn get_validated_pem_content(input: &str) -> Result<Vec<Pem>, MgmError> {
        },
        Err(_) => Err(MgmError::InvalidInput("File is not a valid PEM".to_string())),
     }
-
 }
 
 #[cfg(test)]
