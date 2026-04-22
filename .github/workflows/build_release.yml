@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Install cargo-about
-        run: cargo install cargo-about
+        run: cargo install cargo-about --version '~0.6'
 
       - name: Generate license bundle
         run: |
@@ -42,11 +42,11 @@ jobs:
             "MIT",
             "BSD-2-Clause",
             "BSD-3-Clause",
-            "GPL-3.0-only",
             "MPL-2.0",
             "ISC",
             "OpenSSL",
             "Unicode-3.0",
+            "Zlib",
           ]
           EOF
 

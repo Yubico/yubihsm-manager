@@ -21,9 +21,9 @@ use yubihsmrs::object::{ObjectAlgorithm, ObjectType};
 use crate::common::error::MgmError;
 use crate::hsm_operations::asym::AsymmetricOperations;
 
-static SHARE_RE_256: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{70}$").unwrap());
-static SHARE_RE_192: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{59}$").unwrap());
-static SHARE_RE_128: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d-\d-[a-zA-Z0-9+/]{48}$").unwrap());
+static SHARE_RE_256: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[1-9]-[1-9]-[a-fA-F0-9]{104}$").unwrap());
+static SHARE_RE_192: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[1-9]-[1-9]-[a-fA-F0-9]{88}$").unwrap());
+static SHARE_RE_128: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[1-9]-[1-9]-[a-fA-F0-9]{72}$").unwrap());
 
 pub fn object_id_validator(input: &str) -> Result<(), MgmError> {
     let id = if let Some(hex) = input.strip_prefix("0x") {
@@ -212,9 +212,9 @@ pub fn pem_sunpkcs11_file_validator(input: &str) -> Result<(), MgmError> {
 
 pub fn aes_share_validator(input: &str, share_length: Option<u8>) -> Result<(), MgmError> {
     let is_valid = match share_length {
-        Some(74) => SHARE_RE_256.is_match(input),
-        Some(63) => SHARE_RE_192.is_match(input),
-        Some(52) => SHARE_RE_128.is_match(input),
+        Some(108) => SHARE_RE_256.is_match(input),  // 4 prefix chars + 104 hex
+        Some(92)  => SHARE_RE_192.is_match(input),  // 4 prefix chars + 88 hex
+        Some(76)  => SHARE_RE_128.is_match(input),  // 4 prefix chars + 72 hex
         None => {
             SHARE_RE_256.is_match(input) ||
             SHARE_RE_192.is_match(input) ||
@@ -225,8 +225,38 @@ pub fn aes_share_validator(input: &str, share_length: Option<u8>) -> Result<(), 
     if is_valid {
         Ok(())
     } else {
-        Err(MgmError::InvalidInput("Share format is invalid".to_string()))
+        Err(MgmError::InvalidInput("Share does not match expected format or length".to_string()))
     }
+}
+
+pub fn aes_shares_validator(shares:&[String]) -> Result<(), MgmError> {
+    if shares.is_empty() {
+        return Err(MgmError::InvalidInput("At least one share is required".to_string()));
+    }
+    aes_share_validator(&shares[0], None)?;
+
+    let share_len = shares[0].trim().len() as u8;
+    let share_threshold = shares[0].as_bytes()[0] - b'0';
+
+    let mut unique_shares = shares.to_vec();
+    unique_shares.sort();
+    unique_shares.dedup();
+
+    if unique_shares.len() < share_threshold as usize {
+        return Err(MgmError::InvalidInput(format!("Number of shares provided ({}) is less than the threshold ({})",
+                                                  unique_shares.len(), share_threshold)));
+    }
+
+    for s in unique_shares {
+        if aes_share_validator(&s, Some(share_len)).is_err() {
+            return Err(MgmError::InvalidInput("One or more shares' format do not match".to_string()));
+        }
+        if s.as_bytes()[0] - b'0' != share_threshold {
+            return Err(MgmError::InvalidInput("Share threshold value does not match across shares".to_string()));
+        }
+    }
+
+    Ok(())
 }
 
 // Helper functions
@@ -245,7 +275,6 @@ fn get_validated_pem_content(input: &str) -> Result<Vec<Pem>, MgmError> {
        },
        Err(_) => Err(MgmError::InvalidInput("File is not a valid PEM".to_string())),
     }
-
 }
 
 #[cfg(test)]
@@ -447,25 +476,25 @@ mod tests {
     // ── aes_share_validator ──
 
     // Helper: build a fake share string of the right format
-    fn make_share(data_len: usize) -> String {
-        // Format: "D-D-<base64chars>" where D are single digits
-        let base64_chars: String = "a".repeat(data_len);
-        format!("2-3-{}", base64_chars)
+    fn make_share(hex_len: usize) -> String {
+        // Format: "D-D-<hex_chars>" where D are single digits
+        let hex_chars: String = "a".repeat(hex_len);
+        format!("2-3-{}", hex_chars)
     }
 
     #[test]
     fn test_share_128_valid() {
-        assert!(aes_share_validator(&make_share(48), Some(52)).is_ok());
+        assert!(aes_share_validator(&make_share(72), Some(76)).is_ok());
     }
 
     #[test]
     fn test_share_192_valid() {
-        assert!(aes_share_validator(&make_share(59), Some(63)).is_ok());
+        assert!(aes_share_validator(&make_share(88), Some(92)).is_ok());
     }
 
     #[test]
     fn test_share_256_valid() {
-        assert!(aes_share_validator(&make_share(70), Some(74)).is_ok());
+        assert!(aes_share_validator(&make_share(104), Some(108)).is_ok());
     }
 
     #[test]
@@ -475,15 +504,54 @@ mod tests {
 
     #[test]
     fn test_share_wrong_length_hint() {
-        // 256-bit share (70 chars) but expecting 128-bit (52)
-        assert!(aes_share_validator(&make_share(70), Some(52)).is_err());
+        // 256-bit share (104 hex chars) but expecting 128-bit (76)
+        assert!(aes_share_validator(&make_share(104), Some(76)).is_err());
     }
 
     #[test]
     fn test_share_none_accepts_any_valid() {
-        assert!(aes_share_validator(&make_share(48), None).is_ok());
-        assert!(aes_share_validator(&make_share(59), None).is_ok());
-        assert!(aes_share_validator(&make_share(70), None).is_ok());
+        assert!(aes_share_validator(&make_share(72), None).is_ok());
+        assert!(aes_share_validator(&make_share(88), None).is_ok());
+        assert!(aes_share_validator(&make_share(104), None).is_ok());
+    }
+
+    #[test]
+    fn test_shares_192_valid() {
+        let shares = vec![
+            format!("3-1-{}", "a".repeat(88)),
+            format!("3-2-{}", "b".repeat(88)),
+            format!("3-3-{}", "c".repeat(88)),
+        ];
+        assert!(aes_shares_validator(&shares).is_ok());
+    }
+
+    #[test]
+    fn test_shares_mismatched_lengths() {
+        let shares = vec![
+            format!("3-1-{}", "a".repeat(88)),
+            format!("3-2-{}", "b".repeat(76)),
+            format!("3-3-{}", "c".repeat(88)),
+        ];
+        assert!(aes_shares_validator(&shares).is_err());
+    }
+
+    #[test]
+    fn test_shares_identical() {
+        let shares = vec![
+            format!("3-1-{}", "a".repeat(88)),
+            format!("3-2-{}", "b".repeat(88)),
+            format!("3-2-{}", "b".repeat(88)),
+        ];
+        assert!(aes_shares_validator(&shares).is_err());
+    }
+
+    #[test]
+    fn test_shares_too_few() {
+        let shares = vec![
+            format!("3-1-{}", "a".repeat(88)),
+            format!("3-2-{}", "b".repeat(88)),
+        ];
+        assert!(aes_shares_validator(&shares).is_err());
     }
 
     // ── path_exists_validator ──

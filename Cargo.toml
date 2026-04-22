@@ -33,7 +33,6 @@ pem = "2.0.1"
 openssl = "0.10.54"
 x509-parser = "0.15.0"
 regex = "1.8.4"
-rusty_secrets = "0.0.2"
 hex = "0.4.3"
 base64 = "0.21.2"
 strum = "0.24"
@@ -45,6 +44,8 @@ console = "0.15.7"
 shellexpand = "3.1.0"
 tabled = "0.12.2"
 crossterm = "0.26.1"
+vsss-rs = { version = "5.3", features = ["std"] }
+rand = "0.8"
 yubihsmrs = { git = "https://github.com/Yubico/yubihsmrs.git", branch = "yubihsm-manager" }
 
 [features]

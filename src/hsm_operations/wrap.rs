@@ -24,6 +24,7 @@ use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::command_traits::Command;
 use crate::common::error::MgmError;
 use crate::common::algorithms::MgmAlgorithm;
+use crate::common::validators::aes_shares_validator;
 use crate::common::types::{NewObjectSpec, EXIT_LABEL};
 use crate::common::util::{contains_all, get_object_descriptors};
 use crate::hsm_operations::asym::AsymmetricOperations;
@@ -374,23 +375,48 @@ impl WrapOperations {
         data.append(&mut ObjectCapability::bytes_from_slice(wrap_key.delegated_capabilities.as_slice()));
         data.extend_from_slice(wrap_key.data[0].as_slice());
 
-        split_key.shares_data = rusty_secrets::generate_shares(threshold, shares, &data)?;
+        let raw_shares = vsss_rs::Gf256::split_array(
+            threshold as usize,
+            shares as usize,
+            &data,
+            rand::rngs::OsRng,
+        )?;
+
+        split_key.shares_data = raw_shares
+            .iter()
+            .map(|share| {
+                format!("{}-{}-{}", threshold, share[0], hex::encode(&share[1..]))
+            })
+            .collect();
 
         Ok(split_key)
     }
 
     pub fn get_wrapkey_from_shares(shares:Vec<String>) -> Result<NewObjectSpec, MgmError> {
-        let data = rusty_secrets::recover_secret(shares)?;
+
+        aes_shares_validator(&shares)?;
+
+        let vsss_shares: Vec<Vec<u8>> = shares
+            .iter()
+            .map(|s| {
+                let parts: Vec<&str> = s.trim().split('-').collect();
+                let Ok(share_id) = parts[1].parse::<u8>() else {
+                    return Err(MgmError::InvalidInput(format!("Unable to parse share ID: {}", s)));
+                };
+                let share_data = hex::decode(parts[2])?;
+                let mut share = Vec::with_capacity(1 + share_data.len());
+                share.push(share_id);
+                share.extend_from_slice(&share_data);
+                Ok(share)
+            })
+            .collect::<Result<Vec<_>, MgmError>>()?;
+
+        let data = vsss_rs::Gf256::combine_array(&vsss_shares)?;
+        if data.len() < WRAP_SPLIT_PREFIX_LEN {
+            return Err(MgmError::InvalidInput("Reconstructed wrap key share data is too short".to_string()));
+        }
 
         let key_len = data.len() - WRAP_SPLIT_PREFIX_LEN;
-
-        if data.len() != WRAP_SPLIT_PREFIX_LEN + (key_len) {
-            return Err(MgmError::Error(format!(
-                "Wrong length for recovered secret: expected {}, found {}",
-                WRAP_SPLIT_PREFIX_LEN + (key_len / 8),
-                data.len()
-            )));
-        }
 
         let mut wrapkey_spec = NewObjectSpec::default();
         wrapkey_spec.object_type = ObjectType::WrapKey;

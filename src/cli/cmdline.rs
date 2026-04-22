@@ -509,9 +509,9 @@ impl YubihsmUi for Cmdline {
             prompt,
             true,
             None,
-            Some("Must be greater than 0 and less than 256"),
+            Some("Must be greater than 0 and less than 10"),
             1,
-            256)?;
+            9)?;
         Ok(n as u8)
     }
 
