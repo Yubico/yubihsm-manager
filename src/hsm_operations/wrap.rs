@@ -24,7 +24,7 @@ use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::command_traits::Command;
 use crate::common::error::MgmError;
 use crate::common::algorithms::MgmAlgorithm;
-use crate::common::validators::aes_share_validator;
+use crate::common::validators::aes_shares_validator;
 use crate::common::types::{NewObjectSpec, EXIT_LABEL};
 use crate::common::util::{contains_all, get_object_descriptors};
 use crate::hsm_operations::asym::AsymmetricOperations;
@@ -393,15 +393,16 @@ impl WrapOperations {
     }
 
     pub fn get_wrapkey_from_shares(shares:Vec<String>) -> Result<NewObjectSpec, MgmError> {
-        let share_len = shares[0].len() as u8;
+
+        aes_shares_validator(&shares)?;
+
         let vsss_shares: Vec<Vec<u8>> = shares
             .iter()
             .map(|s| {
-                if aes_share_validator(s, Some(share_len)).is_err() {
-                    return Err(MgmError::InvalidInput("Invalid share format".to_string()))
-                }
                 let parts: Vec<&str> = s.trim().split('-').collect();
-                let share_id = parts[1].parse::<u8>().unwrap();
+                let Ok(share_id) = parts[1].parse::<u8>() else {
+                    return Err(MgmError::InvalidInput(format!("Unable to parse share ID: {}", s)));
+                };
                 let share_data = hex::decode(parts[2])?;
                 let mut share = Vec::with_capacity(1 + share_data.len());
                 share.push(share_id);
