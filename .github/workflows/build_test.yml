@@ -143,8 +143,8 @@ jobs:
         run: |
           set -x -e
           export LD_LIBRARY_PATH=$GITHUB_WORKSPACE/yubihsm-shell/build/lib
-          ./target/debug/yubihsm-manager -c "$DEFAULT_CONNECTOR_URL" get-device-info
-          ./target/debug/yubihsm-manager -c "$DEFAULT_CONNECTOR_URL" get-device-publickey
+          ./target/debug/yubihsm-manager -C "$DEFAULT_CONNECTOR_URL" get-device-info
+          ./target/debug/yubihsm-manager -C "$DEFAULT_CONNECTOR_URL" get-device-publickey
 
       - name: run device tests
         working-directory: yubihsm-manager
