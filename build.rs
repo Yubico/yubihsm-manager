@@ -37,7 +37,7 @@ fn main() {
             println!("cargo:rustc-link-lib=framework=IOKit");
 
             // Tell the linker where to find the libraries at build time
-            println!("cargo:rerun-if-env-changed=BREW_LIB");
+            // println!("cargo:rerun-if-env-changed=BREW_LIB");
             println!("cargo:rerun-if-env-changed=CURL_LIB_DIR");
             println!("cargo:rerun-if-env-changed=LIBUSB_LIB_DIR");
             if let Ok(curl_lib_dir) = std::env::var("CURL_LIB_DIR") {

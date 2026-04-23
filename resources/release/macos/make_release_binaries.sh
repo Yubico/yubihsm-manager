@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
 # Script to produce a MacOS release binaries
 
-if [ "$#" -ne 4 ]; then
+if [ "$#" -ne 3 ]; then
     echo "This script is a guide to build a .pkg installer. Output installer will be found in the directory this script is running from."
     echo ""
-    echo "      Usage: ./make_release_binaries.sh <amd|arm> <RELEASE_VERSION> <LIBYUBIHSM_TAG> <SOURCE_DIRECTORY>"
+    echo "      Usage: ./make_release_binaries.sh <amd|arm> <LIBYUBIHSM_TAG> <SOURCE_DIRECTORY>"
     echo "";
     exit 0
 fi
 
 ARCH=$1 # amd or arm
-RELEASE_VERSION=$2 # yubihsm-manager release version
-LIBYUBIHSM_TAG=$3 # libyubihsm version tag to build static library from, e.g. 3.0.0
-SOURCE_DIR=$4 #path to yubihsm-manager source code
+LIBYUBIHSM_TAG=$2 # libyubihsm version tag to build static library from, e.g. 3.0.0
+SOURCE_DIR=$3 #path to yubihsm-manager source code
 
 echo "Architecture: $ARCH"
 echo "Release version: $RELEASE_VERSION"
@@ -35,7 +34,6 @@ mkdir -p "$WORKING_DIR"
 
 # Install dependencies
 brew update
-brew install asciidoctor
 brew reinstall openssl@3
 OPENSSL_PREFIX=$(brew --prefix openssl@3)
 
@@ -43,10 +41,6 @@ export PATH=$PATH:~/.cargo/bin
 if [[ ! -x $(command -v rustc) ]]; then
     curl -o rustup.sh https://sh.rustup.rs
     bash ./rustup.sh -y
-fi
-
-if [[ ! -x $(command -v asciidoctor) ]]; then
-    export PATH=$PATH:/opt/brew/opt/bin
 fi
 
 cd "$WORKING_DIR"

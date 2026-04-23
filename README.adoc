@@ -45,7 +45,7 @@ To run automated test that do not require a YubiHSM device to be connected, run:
 $ cargo test
 ```
 
-To run tests that require a YubiHSM device to be connected, and run:
+To run tests that require a YubiHSM device to be connected, run:
 
 ```
 $ cargo test --features device-tests -- --test-threads=1
@@ -67,6 +67,19 @@ $ cargo test --features device-tests -- --test-threads=1 <TEST_NAME>
 
 where TEST_NAME is the path to the test. For example `common::validators` or `hsm_operations::tests::wrap_tests`
 
+
+== Third-Party Licenses
+
+This project depends on a number of third-party libraries, both Rust crates and
+native C libraries. Release builds statically link several native libraries
+including libusb (LGPL-2.1), libcurl (MIT), libyubihsm (Apache-2.0), and
+OpenSSL (Apache-2.0).
+
+A complete listing of all third-party licenses is generated during the release
+build and included in the distribution as `THIRDPARTY.txt`.
+
+NOTE: Because yubihsm-manager is open source, users can rebuild the binary to
+link against a different version of libusb, satisfying LGPL-2.1 requirements.
 
 == License
 

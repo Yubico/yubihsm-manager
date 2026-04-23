@@ -90,6 +90,13 @@ jobs:
           ./target/debug/yubihsm-manager --version
           ./target/debug/yubihsm-manager --help
 
+      - name: Check license compatibility
+        working-directory: yubihsm-manager
+        run: |
+          set -x -e
+          cargo install cargo-deny
+          cargo deny check licenses
+
       - name: Run status tests
         working-directory: yubihsm-manager
         run: |
@@ -204,6 +211,9 @@ jobs:
           
           ./target/debug/yubihsm-manager.exe --version
           ./target/debug/yubihsm-manager.exe --help
+          
+          cargo.exe install cargo-deny
+          cargo.exe deny check licenses
 
       - name: run static tests
         run: |
@@ -256,6 +266,9 @@ jobs:
           export DYLD_LIBRARY_PATH=/usr/local/lib
           ./target/debug/yubihsm-manager --version
           ./target/debug/yubihsm-manager --help
+          
+          cargo install cargo-deny
+          cargo deny check licenses
 
       - name: Run static tests
         working-directory: yubihsm-manager
