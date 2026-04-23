@@ -155,7 +155,7 @@ impl<T: YubihsmUi + Clone> AsymmetricMenu<T> {
             ObjectAlgorithm::Ed25519
         } else {
             self.ui.select_algorithm(
-                &AsymmetricOperations::get_signing_algorithms(authkey, &key), None, Some("Select RSA signing algorithm"))?
+                &AsymmetricOperations::get_signing_algorithms(authkey, &key), None, Some("Select signing algorithm"))?
         };
         let sig = AsymmetricOperations::sign(session, key.object_id(), &sign_algo, &input)?;
         self.ui.display_success_message(format!("Signed data using {} and key 0x{:04x}:\n{}", sign_algo, key.object_id(), hex::encode(&sig)).as_str());

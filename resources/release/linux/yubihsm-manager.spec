@@ -20,5 +20,5 @@ install -m 0755 $BIN_DIR/yubihsm-manager %{buildroot}/usr/bin/yubihsm-manager
 /usr/bin/yubihsm-manager
 
 %changelog
-* Mon Mar 30 2026 Aveen Ismail <aveen.ismail@yubico.com> - 1.0.0-1
-- Release candidate
+* Thu Apr 23 2026 Aveen Ismail <aveen.ismail@yubico.com> - 1.0.0-1
+- Release candidate 2
