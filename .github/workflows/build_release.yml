@@ -44,7 +44,6 @@ jobs:
             "BSD-3-Clause",
             "MPL-2.0",
             "ISC",
-            "OpenSSL",
             "Unicode-3.0",
             "Zlib",
           ]
