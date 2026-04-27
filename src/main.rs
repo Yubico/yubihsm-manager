@@ -93,7 +93,7 @@ fn main() {
             .help("Password to open a session with the device"))
         .arg(Arg::new("connector")
             .long("connector")
-            .short('c')
+            .short('C')
             .help("Connector URL")
             .default_value("http://127.0.0.1:12345")
             .hide_default_value(false))
