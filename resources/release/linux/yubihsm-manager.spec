@@ -21,4 +21,4 @@ install -m 0755 $BIN_DIR/yubihsm-manager %{buildroot}/usr/bin/yubihsm-manager
 
 %changelog
 * Thu Apr 23 2026 Aveen Ismail <aveen.ismail@yubico.com> - 1.0.0-1
-- Release candidate 2
+- Initial release of yubihsm-manager. Interactive CLI with guided menus for YubiHSM 2 management. Supersedes the previous yubihsm-setup tool with a more user-friendly interface and expanded functionality.

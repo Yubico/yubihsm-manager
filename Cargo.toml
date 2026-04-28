@@ -46,7 +46,7 @@ tabled = "0.12.2"
 crossterm = "0.26.1"
 vsss-rs = { version = "5.3", features = ["std"] }
 rand = "0.8"
-yubihsmrs = { git = "https://github.com/Yubico/yubihsmrs.git", branch = "master" }
+yubihsmrs = { git = "https://github.com/Yubico/yubihsmrs.git", tag = "3.0.0" }
 
 [features]
 device-tests = []

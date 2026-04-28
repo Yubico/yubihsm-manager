@@ -1,19 +1,19 @@
 == YubiHSM Manager
 
-Command line tool for YubiHSM 2. This is a work in progress and is currently not supported and not part of the official YubiHSM SDK
+The YubiHSM Manager is an interactive CLI with guided menus for YubiHSM 2 management. It supersedes the previous
+`yubihsm-setup` tool with a more user-friendly interface and expanded functionality. It is also part of the YubiHSM SDK.
 
 YubiHSM Manger is mainly used to manage asymmetric and symmetric keys, authentication keys and wrap keys as well as
-setting up the YubiHSM2 for specific usecases.
+setting up the YubiHSM2 for specific usecases. It also has support for scripting functionality.
 
-Use this tool instead of `yubihsm-setup`. Use Space key to select and deselect options in multi-choice questions. Use ESC
-key to cancel current operation.
+Use this tool instead of `yubihsm-setup`. Use Space key to select and deselect options in multi-choice questions. Use
+ESC key to cancel current operation.
 
 === Build
 
 To build the tool a normal Rust toolchain is required, stable Rust will suffice.
 
-The tools uses the `yubihsmrs` crate as obtained from https://github.com/Yubico/yubihsmrs/tree/yubihsm-manager (note
-the `yubihsm-manager` branch), which in turn requires `libyubihsm` to be available.
+The tool has a dependency on `yubihsmrs` which it automatically pulls from `https://github.com/Yubico/yubihsm-manager.git` at build time.
 
 Set the environment variable `YUBIHSM_LIB_DIR` to point to the directory containing the libyubihsm library then run:
 
@@ -35,23 +35,23 @@ Or
 $ ./target/debug/yubihsm-manager
 ```
 
-Note that on Windows, the libyubihsm.dll need to be in PATH
+Note that on Windows, the libyubihsm.dll need to be in `PATH`
 
 ==== Run tests
 
-To run automated test that do not require a YubiHSM device to be connected, run:
+To run automated test that do not require a YubiHSM 2 device to be connected, run:
 
 ```
 $ cargo test
 ```
 
-To run tests that require a YubiHSM device to be connected, run:
+To run tests that require a YubiHSM 2 device to be connected, run:
 
 ```
 $ cargo test --features device-tests -- --test-threads=1
 ```
 
-Note that the `test-threads` needs to be set to `1` because only one operation can be run in the YubiHSM at a time.
+Note that the `test-threads` needs to be set to `1` because only one operation can be run in the YubiHSM 2 at a time.
 
 To run individual tests, run:
 
@@ -59,7 +59,7 @@ To run individual tests, run:
 $ cargo test <TEST_NAME>
 ```
 
-or for tests that require a YubiHSM device to be connected, run:
+or for tests that require a YubiHSM 2 device to be connected, run:
 
 ```
 $ cargo test --features device-tests -- --test-threads=1 <TEST_NAME>
@@ -76,10 +76,10 @@ including libusb (LGPL-2.1), libcurl (MIT), libyubihsm (Apache-2.0), and
 OpenSSL (Apache-2.0).
 
 A complete listing of all third-party licenses is generated during the release
-build and included in the distribution as `THIRDPARTY.txt`.
+build and is included in the distribution as `THIRDPARTY.txt`.
 
-NOTE: Because yubihsm-manager is open source, users can rebuild the binary to
-link against a different version of libusb, satisfying LGPL-2.1 requirements.
+NOTE: Because `yubihsm-manager` is open source, users can rebuild the binary to
+link against a different version of `libusb`, satisfying LGPL-2.1 requirements.
 
 == License
 
