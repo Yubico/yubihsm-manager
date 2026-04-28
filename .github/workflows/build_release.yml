@@ -73,6 +73,7 @@ jobs:
         run: |
           
           cp THIRDPARTY.txt THIRDPARTY_win.txt
+          cp THIRDPARTY.txt THIRDPARTY_macos.txt
           
           cat >> THIRDPARTY_win.txt << 'NATIVE_LICENSES'
 
@@ -95,7 +96,7 @@ jobs:
 
           NATIVE_LICENSES
           
-          cat >> THIRDPARTY.txt << 'NATIVE_LICENSES'
+          cat >> THIRDPARTY_macos.txt << 'NATIVE_LICENSES'
 
           ================================================================================
           NATIVE C LIBRARIES (statically linked in release builds)
@@ -498,6 +499,7 @@ jobs:
           mkdir -p tp_licenses
           cp THIRDPARTY.txt tp_licenses/
           cp THIRDPARTY_win.txt tp_licenses/
+          cp THIRDPARTY_macos.txt tp_licenses/
 
       - name: Upload license bundle
         uses: actions/upload-artifact@v5
@@ -562,6 +564,7 @@ jobs:
                                   libedit-dev          \
                                   libcurl4-openssl-dev \
                                   liblzma-dev          \
+                                  libssl-dev           \
                                   libseccomp-dev       \
                                   libusb-1.0.0-dev     \
                                   dh-exec              \
@@ -578,18 +581,6 @@ jobs:
           export PATH=$PATH:$HOME/.cargo/bin
           cargo install cargo-deb
 
-      - name: install OpenSSL
-        run: |
-          set -x
-          
-          curl https://github.com/openssl/openssl/releases/download/openssl-3.6.2/openssl-3.6.2.tar.gz
-          curl -o openssl-3.6.2 -L https://github.com/openssl/openssl/releases/download/openssl-3.6.2/openssl-3.6.2.tar.gz
-          tar -xzf openssl-3.6.2
-          cd openssl-3.6.2
-          ./config --prefix=/usr/local/openssl-3.6.2 --openssldir=/usr/local/openssl-3.6.2
-          make -j$(nproc)
-          make install_sw install_ssldirs install_dev
-
       - name: install libyubihsm
         working-directory: yubihsm-manager
         env:
@@ -603,6 +594,9 @@ jobs:
           cd ..
 
           git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
+          
+          ls $GITHUB_WORKSPACE/yubihsm-shell
+          
           #git clone https://github.com/Yubico/yubihsm-shell.git
           cd yubihsm-shell
 
@@ -611,14 +605,8 @@ jobs:
             sed -i 's/add_definitions (-D_FORTIFY_SOURCE=2)/add_definitions (-D_FORTIFY_SOURCE=3)/' cmake/SecurityFlags.cmake
           fi
 
-          export PKG_CONFIG_PATH=/usr/local/openssl-3.6.2/lib/pkgconfig:$PKG_CONFIG_PATH
-
-          mkdir build && cd build
-          cmake -DDISABLE_LTO=1 -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_LIB=ON -DENABLE_STATIC=ON -DENABLE_CERT_COMPRESS=OFF -DWITHOUT_MANPAGES=1 -S ..
-          cmake --build . --target yubihsm_static
-          
-          mkdir static_lib
-          cp lib/libyubihsm.a static_lib/
+          dpkg-buildpackage
+          dpkg -i ../libyubihsm*_amd64.deb
 
       - name: Build release binaries
         working-directory: yubihsm-manager
@@ -627,9 +615,12 @@ jobs:
         run: |
           set -x -e
 
+          #OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
+          #mkdir -p $OUTPUT
+
           export PATH=$PATH:$HOME/.cargo/bin
           
-          YUBIHSM_STATIC=1 YUBIHSM_LIB_DIR=$GITHUB_WORKSPACE/yubihsm-shell/build/static_lib  cargo build --release -vv
+          YUBIHSM_LIB_DIR=/usr/lib/x86_64-linux-gnu  cargo build --release
           strip --strip-all target/release/yubihsm-manager
           ldd target/release/yubihsm-manager
           
@@ -649,12 +640,17 @@ jobs:
           set -x -e         
           OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
           mkdir -p $OUTPUT
-          cp target/debian/yubihsm-manager*.deb $OUTPUT/
+          
+          cp target/debian/*.deb $OUTPUT/
+          cp $GITHUB_WORKSPACE/libyubihsm1_*.deb $OUTPUT/
+          cp $GITHUB_WORKSPACE/libyubihsm-http1_*.deb $OUTPUT/
+          cp $GITHUB_WORKSPACE/libyubihsm-usb1_*.deb $OUTPUT/
 
           LICENSE=$OUTPUT/share/yubihsm-manager/licenses
           mkdir -p $LICENSE
           cp LICENSE $LICENSE/yubihsm-manager.txt
           cp THIRDPARTY.txt $LICENSE/
+          cp $GITHUB_WORKSPACE/yubihsm-shell/LICENSE $LICENSE/yubihsm-shell.txt
 
           cd $OUTPUT/
           rm -f yubihsm-manager-$PLATFORM-amd64.tar.gz
@@ -734,15 +730,25 @@ jobs:
           LIBYUBIHSM_TAG: ${{ matrix.libyubihsm_tag }}
         run: |
           git clone --branch $LIBYUBIHSM_TAG https://github.com/Yubico/yubihsm-shell.git
+          
+          ls $GITHUB_WORKSPACE/yubihsm-shell
+          
+          
+          
           #git clone https://github.com/Yubico/yubihsm-shell.git
+          # Set PCSC flags
+          sed -i 's/#SET(CMAKE_C_FLAGS/SET(CMAKE_C_FLAGS/' yubihsm-shell/ykhsmauth/CMakeLists.txt
 
-          cd yubihsm-shell
-          mkdir build && cd build
-          cmake -DDISABLE_LTO=1 -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_LIB=ON -DENABLE_STATIC=ON -DENABLE_CERT_COMPRESS=OFF -DWITHOUT_MANPAGES=1 -S ..
-          cmake --build . --target yubihsm_static
+          export INPUT=$GITHUB_WORKSPACE/yubihsm-shell
+          export CMAKE="cmake"
 
-          mkdir static_lib
-          cp lib/libyubihsm.a static_lib/
+          RPM_DIR=$GITHUB_WORKSPACE/rpmbuild
+          mkdir -p $RPM_DIR/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+          echo '%_topdir %(echo $HOME)/rpmbuild' > $GITHUB_WORKSPACE/.rpmmacros
+          cp yubihsm-shell/resources/release/linux/yubihsm-shell.spec $RPM_DIR/SPECS/
+          QA_SKIP_BUILD_ROOT=1 QA_RPATHS=$(( 0x0001|0x0010 )) rpmbuild -bb $RPM_DIR/SPECS/yubihsm-shell.spec
+          yum install -y /github/home/rpmbuild/RPMS/x86_64/yubihsm-devel-*.rpm
+
 
       - name: build release binary
         working-directory: yubihsm-manager
@@ -757,13 +763,24 @@ jobs:
             bash ./rustup.sh -y
           fi
 
-          YUBIHSM_STATIC=1 YUBIHSM_LIB_DIR=$GITHUB_WORKSPACE/yubihsm-shell/build/static_lib cargo build --release
-          ldd target/release/yubihsm-manager
+          OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
+          mkdir -p $OUTPUT
+          cp /github/home/rpmbuild/RPMS/x86_64/yubihsm-devel*.rpm $OUTPUT/
 
-          export BIN_DIR=$GITHUB_WORKSPACE/yubihsm-manager/target/release
-          rpmbuild -bb resources/release/linux/yubihsm-manager.spec
+          YUBIHSM_LIB_DIR=/usr/lib64 cargo build --release
 
-          yum install -y /github/home/rpmbuild/RPMS/x86_64/yubihsm-manager-*.rpm
+          if [ $PLATFORM == "fedora43" ]; then
+            export BIN_DIR=$GITHUB_WORKSPACE/yubihsm-manager/target/release
+            rpmbuild -bb resources/release/linux/yubihsm-manager.spec
+            cp /github/home/rpmbuild/RPMS/x86_64/yubihsm-manager-*.rpm $OUTPUT/
+          else
+            cargo install cargo-rpm
+            cargo rpm init
+            YUBIHSM_LIB_DIR=/usr/lib64 cargo rpm build
+            cp target/release/rpmbuild/RPMS/x86_64/*.rpm $OUTPUT/
+          fi
+
+          yum install -y $OUTPUT/yubihsm-manager-*.rpm
           yubihsm-manager --version
           yubihsm-manager --help
 
@@ -772,20 +789,18 @@ jobs:
         env:
           PLATFORM: ${{ env.PLATFORM }}
           VERSION: ${{ matrix.version }}
-        run: |         
-          OUTPUT=$GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
-          mkdir -p $OUTPUT
-          cp /github/home/rpmbuild/RPMS/x86_64/yubihsm-manager-*.rpm $OUTPUT/
+        run: |
           
           LICENSE=$OUTPUT/share/yubihsm-manager/licenses
           mkdir -p $LICENSE
           cp LICENSE $LICENSE/yubihsm-manager.txt
           cp THIRDPARTY.txt $LICENSE/
+          cp $GITHUB_WORKSPACE/yubihsm-shell/LICENSE $LICENSE/yubihsm-shell.txt
 
-          cd $OUTPUT
+          cd $GITHUB_WORKSPACE/$PLATFORM/yubihsm-manager
           rm -f yubihsm-manager-$PLATFORM-amd64.tar.gz
           tar -C .. -zcvf ../yubihsm-manager-$VERSION-$PLATFORM-amd64.tar.gz yubihsm-manager
-          rm -f *.deb
+          rm -f *.rpm
           rm -rf ../yubihsm-manager
 
       - name: upload artifacts
@@ -979,7 +994,7 @@ jobs:
           LICENSE=$GITHUB_WORKSPACE/artifact/usr/local/share/yubihsm-manager/licenses
           mkdir -p $LICENSE
           cp LICENSE $LICENSE/yubihsm-manager.txt
-          cp THIRDPARTY.txt $LICENSE/
+          cp THIRDPARTY_macos.txt $LICENSE/THIRDPARTY.txt
 
       - name: Pack installer scripts
         run: |
