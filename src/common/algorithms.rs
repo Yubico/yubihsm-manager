@@ -89,6 +89,7 @@ impl MgmAlgorithm {
             ObjectAlgorithm::Aes256YubicoOtp => "AES256 Yubico OTP",
             ObjectAlgorithm::AesKwp => "AES KWP",
             ObjectAlgorithm::ANY => "Any Algorithm",
+            ObjectAlgorithm::Unknown => "Unknown Algorithm",
         }
     }
 
@@ -150,6 +151,7 @@ impl MgmAlgorithm {
             ObjectAlgorithm::Aes256YubicoOtp => "yubihsm-shell name: aes256-yubico-otp",
             ObjectAlgorithm::AesKwp => "yubihsm-shell name: aes-kwp",
             ObjectAlgorithm::ANY => "yubihsm-shell name: any",
+            ObjectAlgorithm::Unknown => "",
         }
     }
 
