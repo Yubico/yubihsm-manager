@@ -605,6 +605,13 @@ jobs:
           cmake -DDISABLE_LTO=1 -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_LIB=ON -DENABLE_STATIC=ON -DENABLE_CERT_COMPRESS=OFF -DWITHOUT_MANPAGES=1 -S ..
           cmake --build . --target yubihsm_static
           
+          UNDEF_COUNT=$(nm -u lib/libyubihsm.a | grep -c -i -E "EVP_|SHA256|AES|HMAC|RAND_|EC_|RSA_|CRYPTO_")
+          if [ "$UNDEF_COUNT" -eq 0 ]; then
+            echo "ERROR: libyubihsm.a has no undefined crypto symbols — libcrypto may have been statically linked!"
+            exit 1
+          fi
+          echo "OK: libyubihsm.a has $UNDEF_COUNT undefined crypto symbols (will resolve dynamically via libcrypto.so)"
+          
           mkdir static_lib
           cp lib/libyubihsm.a static_lib/
 
@@ -728,6 +735,13 @@ jobs:
           mkdir build && cd build
           cmake -DDISABLE_LTO=1 -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_LIB=ON -DENABLE_STATIC=ON -DENABLE_CERT_COMPRESS=OFF -DWITHOUT_MANPAGES=1 -S ..
           cmake --build . --target yubihsm_static
+
+          UNDEF_COUNT=$(nm -u lib/libyubihsm.a | grep -c -i -E "EVP_|SHA256|AES|HMAC|RAND_|EC_|RSA_|CRYPTO_")
+          if [ "$UNDEF_COUNT" -eq 0 ]; then
+            echo "ERROR: libyubihsm.a has no undefined crypto symbols — libcrypto may have been statically linked!"
+            exit 1
+          fi
+          echo "OK: libyubihsm.a has $UNDEF_COUNT undefined crypto symbols (will resolve dynamically via libcrypto.so)"
 
           mkdir static_lib
           cp lib/libyubihsm.a static_lib/
@@ -958,6 +972,8 @@ jobs:
           mkdir -p $GITHUB_WORKSPACE/artifact/usr/local/bin
 
           lipo -create -output $GITHUB_WORKSPACE/artifact/usr/local/bin/yubihsm-manager $GITHUB_WORKSPACE/arm/yubihsm-manager $GITHUB_WORKSPACE/amd/yubihsm-manager
+          cp $GITHUB_WORKSPACE/arm/yubihsm-manager $GITHUB_WORKSPACE/artifact/usr/local/bin/yubihsm-manager_arm
+          cp $GITHUB_WORKSPACE/amd/yubihsm-manager $GITHUB_WORKSPACE/artifact/usr/local/bin/yubihsm-manager_amd
 
       - name: Bundle licenses
         run: |
