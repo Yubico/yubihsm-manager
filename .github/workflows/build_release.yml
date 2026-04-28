@@ -562,7 +562,6 @@ jobs:
                                   libedit-dev          \
                                   libcurl4-openssl-dev \
                                   liblzma-dev          \
-                                  libssl-dev           \
                                   libseccomp-dev       \
                                   libusb-1.0.0-dev     \
                                   dh-exec              \
@@ -579,6 +578,17 @@ jobs:
           export PATH=$PATH:$HOME/.cargo/bin
           cargo install cargo-deb
 
+      - name: install OpenSSL
+        run: |
+          set -x
+          
+          curl https://github.com/openssl/openssl/releases/download/openssl-3.6.2/openssl-3.6.2.tar.gz
+          curl -o openssl-3.6.2 -L https://github.com/openssl/openssl/releases/download/openssl-3.6.2/openssl-3.6.2.tar.gz
+          tar -xzf openssl-3.6.2
+          cd openssl-3.6.2
+          ./config --prefix=/usr/local/openssl-3.6.2 --openssldir=/usr/local/openssl-3.6.2
+          make -j$(nproc)
+          make install_sw install_ssldirs install_dev
 
       - name: install libyubihsm
         working-directory: yubihsm-manager
@@ -600,6 +610,8 @@ jobs:
             # ubuntu 24.04 and newer come with _FORTIFY_SOURCE already set
             sed -i 's/add_definitions (-D_FORTIFY_SOURCE=2)/add_definitions (-D_FORTIFY_SOURCE=3)/' cmake/SecurityFlags.cmake
           fi
+
+          export PKG_CONFIG_PATH=/usr/local/openssl-3.6.2/lib/pkgconfig:$PKG_CONFIG_PATH
 
           mkdir build && cd build
           cmake -DDISABLE_LTO=1 -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_LIB=ON -DENABLE_STATIC=ON -DENABLE_CERT_COMPRESS=OFF -DWITHOUT_MANPAGES=1 -S ..
