@@ -605,6 +605,9 @@ jobs:
           cmake -DDISABLE_LTO=1 -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_LIB=ON -DENABLE_STATIC=ON -DENABLE_CERT_COMPRESS=OFF -DWITHOUT_MANPAGES=1 -S ..
           cmake --build . --target yubihsm_static
           
+          nm -u lib/libyubihsm.a | grep -i -E "EVP_|SHA256|AES|HMAC|RAND_|EC_|RSA_|CRYPTO_"
+          
+          
           mkdir static_lib
           cp lib/libyubihsm.a static_lib/
 
@@ -728,6 +731,8 @@ jobs:
           mkdir build && cd build
           cmake -DDISABLE_LTO=1 -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_LIB=ON -DENABLE_STATIC=ON -DENABLE_CERT_COMPRESS=OFF -DWITHOUT_MANPAGES=1 -S ..
           cmake --build . --target yubihsm_static
+
+          nm -u lib/libyubihsm.a | grep -i -E "EVP_|SHA256|AES|HMAC|RAND_|EC_|RSA_|CRYPTO_"
 
           mkdir static_lib
           cp lib/libyubihsm.a static_lib/
