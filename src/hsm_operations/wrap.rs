@@ -18,13 +18,14 @@ use std::fmt;
 use std::fmt::Display;
 use strum_macros::EnumIter;
 use serde::{Deserialize, Serialize};
+use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
+use gf256::shamir::shamir;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::command_traits::Command;
 use crate::common::error::MgmError;
 use crate::common::algorithms::MgmAlgorithm;
-use crate::common::validators::aes_shares_validator;
 use crate::common::types::{NewObjectSpec, EXIT_LABEL};
 use crate::common::util::{contains_all, get_object_descriptors};
 use crate::hsm_operations::asym::AsymmetricOperations;
@@ -392,13 +393,10 @@ impl WrapOperations {
         Ok(split_key)
     }
 
-    pub fn get_wrapkey_from_shares(shares:Vec<String>) -> Result<NewObjectSpec, MgmError> {
+    pub fn get_wrapkey_from_shares(shares: Vec<String>) -> Result<NewObjectSpec, MgmError> {
 
-        aes_shares_validator(&shares)?;
-
-        let vsss_shares: Vec<Vec<u8>> = shares
-            .iter()
-            .map(|s| {
+        let secret = if hex::decode(shares[0].rsplit('-').collect::<Vec<&str>>()[0]).is_ok() { // New style shares with hex-encoded data
+            let vsss_shares: Vec<Vec<u8>> = shares.iter().map(|s| {
                 let parts: Vec<&str> = s.trim().split('-').collect();
                 let Ok(share_id) = parts[1].parse::<u8>() else {
                     return Err(MgmError::InvalidInput(format!("Unable to parse share ID: {}", s)));
@@ -408,25 +406,30 @@ impl WrapOperations {
                 share.push(share_id);
                 share.extend_from_slice(&share_data);
                 Ok(share)
-            })
-            .collect::<Result<Vec<_>, MgmError>>()?;
+            }).collect::<Result<Vec<_>, MgmError>>()?;
 
-        let data = vsss_rs::Gf256::combine_array(&vsss_shares)?;
-        if data.len() < WRAP_SPLIT_PREFIX_LEN {
+            vsss_rs::Gf256::combine_array(&vsss_shares)?
+        } else { // Legacy shares obtained from yubihsm-setup
+            let gf256_shares: Vec<Vec<u8>> = shares.iter().map(|s| Self::rusty_share_to_gf256_share(s)).collect();
+
+            shamir::reconstruct(&gf256_shares)
+        };
+
+        if secret.len() < WRAP_SPLIT_PREFIX_LEN {
             return Err(MgmError::InvalidInput("Reconstructed wrap key share data is too short".to_string()));
         }
 
-        let key_len = data.len() - WRAP_SPLIT_PREFIX_LEN;
+        let key_len = secret.len() - WRAP_SPLIT_PREFIX_LEN;
 
         let mut wrapkey_spec = NewObjectSpec::default();
         wrapkey_spec.object_type = ObjectType::WrapKey;
         wrapkey_spec.algorithm = WrapOperations::get_algorithm_from_keylen(key_len)?;
-        wrapkey_spec.id = ((u16::from(data[0])) << 8) | u16::from(data[1]);
-        wrapkey_spec.domains = ObjectDomain::from_bytes(&data[2..4])?;
-        wrapkey_spec.capabilities = ObjectCapability::from_bytes(&data[4..12])?;
-        wrapkey_spec.delegated_capabilities = ObjectCapability::from_bytes(&data[12..20])?;
+        wrapkey_spec.id = ((u16::from(secret[0])) << 8) | u16::from(secret[1]);
+        wrapkey_spec.domains = ObjectDomain::from_bytes(&secret[2..4])?;
+        wrapkey_spec.capabilities = ObjectCapability::from_bytes(&secret[4..12])?;
+        wrapkey_spec.delegated_capabilities = ObjectCapability::from_bytes(&secret[12..20])?;
 
-        wrapkey_spec.data.push(data[20..].to_vec());
+        wrapkey_spec.data.push(secret[20..].to_vec());
 
         Ok(wrapkey_spec)
     }
@@ -549,6 +552,27 @@ impl WrapOperations {
         };
 
         Ok(handle)
+    }
+
+    /// Parse a yubihsm-setup / rusty_secrets 0.0.2 share string of the form
+    /// "{k}-{share_id}-{base64(raw_shamir_bytes)}" and return a Vec<u8> in the
+    /// format that gf256::shamir::reconstruct expects:
+    ///   [ share_id, y_byte_0, y_byte_1, ... ]
+    fn rusty_share_to_gf256_share(share_str: &str) -> Vec<u8> {
+        let parts: Vec<&str> = share_str.trim().splitn(3, '-').collect();
+        assert_eq!(parts.len(), 3, "Expected format k-id-base64data");
+
+        let share_id: u8 = parts[1].parse().expect("Invalid share id");
+
+        // In rusty_secrets 0.0.2, the third part is simply base64(raw_shamir_bytes).
+        // No protobuf wrapping — that was added in later versions.
+        let shamir_data = STANDARD_NO_PAD.decode(parts[2]).expect("Base64 decode failed");
+
+        // Build the gf256 share: [x_coordinate=share_id, y_bytes...]
+        let mut gf256_share = Vec::with_capacity(1 + shamir_data.len());
+        gf256_share.push(share_id);
+        gf256_share.extend_from_slice(&shamir_data);
+        gf256_share
     }
 
     fn get_oaep_label(algorithm: &ObjectAlgorithm) -> Result<Vec<u8>, MgmError> {

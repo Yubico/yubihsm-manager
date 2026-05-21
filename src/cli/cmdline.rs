@@ -504,7 +504,7 @@ impl YubihsmUi for Cmdline {
 
 
 
-    fn get_split_aes_n_shares(&self, prompt: &str) -> Result<u8, MgmError> {
+    fn get_sss_n_shares(&self, prompt: &str) -> Result<u8, MgmError> {
         let n = self.get_integer_input(
             prompt,
             true,
@@ -515,7 +515,7 @@ impl YubihsmUi for Cmdline {
         Ok(n as u8)
     }
 
-    fn get_split_aes_m_threshold(&self, prompt: &str, n_shares: u8) -> Result<u8, MgmError> {
+    fn get_sss_m_threshold(&self, prompt: &str, n_shares: u8) -> Result<u8, MgmError> {
         let m = self.get_integer_input(
             prompt,
             true,
@@ -526,10 +526,10 @@ impl YubihsmUi for Cmdline {
         Ok(m as u8)
     }
 
-    fn get_split_aes_share(&self, prompt: &str, share_length: Option<u8>) -> Result<String, MgmError> {
+    fn get_sss_share(&self, prompt: &str, existing_shares: Option<Vec<String>>) -> Result<String, MgmError> {
         let mut share = cliclack::input(prompt)
             .required(false)
-            .validate(move |input: &String| validators::aes_share_validator(input.trim(), share_length));
+            .validate(move |input: &String| validators::sss_share_validator(input.trim(), existing_shares.clone()));
         let share = return_or_exit!(share.interact());
         Ok(share)
     }

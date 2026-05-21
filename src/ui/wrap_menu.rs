@@ -151,8 +151,8 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         if key_type == WrapKeyType::Aes {
             self.ui.display_info_message("Split wrap key? Note that the wrap key is already imported into the YubiHSM2. Key split is done outside the device");
             if self.ui.get_confirmation("Split wrap key?")? {
-                n_shares = self.ui.get_split_aes_n_shares("Enter the number of shares to create:")?;
-                n_threshold = self.ui.get_split_aes_m_threshold("Enter the number of shares necessary to re-create the key:", n_shares)?;
+                n_shares = self.ui.get_sss_n_shares("Enter the number of shares to create:")?;
+                n_threshold = self.ui.get_sss_m_threshold("Enter the number of shares necessary to re-create the key:", n_shares)?;
                 let split_key = WrapOperations::split_wrap_key(&new_key, n_threshold, n_shares)?;
                 display_wrapkey_shares(&self.ui, split_key.shares_data)?;
             }
@@ -363,22 +363,29 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
         self.ui.display_warning("Note that the wrap key will be recreated outside the YubiHSM before importing it in its whole into the device");
         self.ui.get_string_input("Press any key to recreate wrap key from shares", false, None, None)?;
 
-        let n_shares = self.ui.get_split_aes_n_shares(
+        let n_shares = self.ui.get_sss_n_shares(
             "Enter the number of shares to re-create the AES wrap key:")?;
         let mut shares_vec = Vec::new();
 
         self.ui.clear_screen();
-        shares_vec.push(self.ui.get_split_aes_share("Enter share number 1:", None)?);
+        shares_vec.push(self.ui.get_sss_share("Enter share number 1:", None)?);
 
         if n_shares > 1 {
             for i in 2..=n_shares {
                 self.ui.clear_screen();
-                shares_vec.push(self.ui.get_split_aes_share(format!("Enter share number {}:", i).as_str(), Some(shares_vec[0].len() as u8))?);
+                shares_vec.push(self.ui.get_sss_share(format!("Enter share number {}:", i).as_str(), Some(shares_vec.clone()))?);
             }
         }
         self.ui.clear_screen();
 
         self.ui.display_info_message(format!("{} shares have been registered", n_shares).as_str());
+
+        let threshold = shares_vec[0].split('-').collect::<Vec<&str>>()[0];
+        let threshold: usize = threshold.parse().map_err(|_| MgmError::InvalidInput("Invalid share format".to_string()))?;
+        if (n_shares as usize) < threshold {
+            self.ui.display_error_message(format!("At least {} shares are required to recover a key using these shares", threshold).as_str());
+            return Err(MgmError::InvalidInput("Not enough shares provided".to_string()));
+        }
 
         Ok(shares_vec)
     }
