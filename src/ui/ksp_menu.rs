@@ -55,8 +55,8 @@ impl<T: YubihsmUi + Clone> Ksp<T> {
         self.ui.display_info_message("Importing KSP wrap key...");
         let id = self.ui.get_new_object_id(0)?;
         let domains = self.ui.select_object_domains(&authkey.domains())?;
-        let shares = self.ui.get_split_aes_n_shares("Enter the number of shares to create:")?;
-        let threshold = self.ui.get_split_aes_m_threshold("Enter the number of shares necessary to re-create the key:", shares)?;
+        let shares = self.ui.get_sss_n_shares("Enter the number of shares to create:")?;
+        let threshold = self.ui.get_sss_m_threshold("Enter the number of shares necessary to re-create the key:", shares)?;
         let (wrapkey_id, wrapkey_shares) = KspOperations::import_ksp_wrapkey(
             session, id, &domains, rsa_decrypt, shares, threshold)?;
         self.ui.display_success_message(format!("Successfully imported wrap key with ID  0x{:04x}", wrapkey_id).as_str());

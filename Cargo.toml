@@ -34,7 +34,7 @@ openssl = "0.10.54"
 x509-parser = "0.15.0"
 regex = "1.8.4"
 hex = "0.4.3"
-base64 = "0.21.2"
+base64 = "0.22.1"
 strum = "0.24"
 strum_macros = "0.24"
 scan_dir = "0.3.3"
@@ -45,6 +45,7 @@ shellexpand = "3.1.0"
 tabled = "0.12.2"
 crossterm = "0.26.1"
 vsss-rs = { version = "5.3", features = ["std"] }
+gf256 = { version = "0.3", features = ["shamir", "thread-rng"] }
 rand = "0.8"
 yubihsmrs = { git = "https://github.com/Yubico/yubihsmrs.git", tag = "3.0.0" }
 

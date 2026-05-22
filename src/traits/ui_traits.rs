@@ -75,9 +75,9 @@ pub trait YubihsmUi {
     fn get_aes_iv_hex(&self, prompt: &str, required: bool, default: Option<&str>) -> Result<Vec<u8>, MgmError>;
     fn get_aes_operation_input_hex(&self, prompt: &str) -> Result<Vec<u8>, MgmError>;
 
-    fn get_split_aes_n_shares(&self, prompt: &str) -> Result<u8, MgmError>;
-    fn get_split_aes_m_threshold(&self, prompt: &str, n_shares: u8) -> Result<u8, MgmError>;
-    fn get_split_aes_share(&self, prompt: &str, share_length: Option<u8>) -> Result<String, MgmError>;
+    fn get_sss_n_shares(&self, prompt: &str) -> Result<u8, MgmError>;
+    fn get_sss_m_threshold(&self, prompt: &str, n_shares: u8) -> Result<u8, MgmError>;
+    fn get_sss_share(&self, prompt: &str, existing_shares: Option<Vec<String>>) -> Result<String, MgmError>;
 
 
     fn display_objects_list(&self, objects: &[ObjectDescriptor]);

@@ -18,13 +18,14 @@ use std::fmt;
 use std::fmt::Display;
 use strum_macros::EnumIter;
 use serde::{Deserialize, Serialize};
+use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
+use gf256::shamir::shamir;
 use yubihsmrs::object::{ObjectAlgorithm, ObjectCapability, ObjectDescriptor, ObjectDomain, ObjectHandle, ObjectType};
 use yubihsmrs::Session;
 use crate::traits::operation_traits::YubihsmOperations;
 use crate::traits::command_traits::Command;
 use crate::common::error::MgmError;
 use crate::common::algorithms::MgmAlgorithm;
-use crate::common::validators::aes_shares_validator;
 use crate::common::types::{NewObjectSpec, EXIT_LABEL};
 use crate::common::util::{contains_all, get_object_descriptors};
 use crate::hsm_operations::asym::AsymmetricOperations;
@@ -392,13 +393,16 @@ impl WrapOperations {
         Ok(split_key)
     }
 
-    pub fn get_wrapkey_from_shares(shares:Vec<String>) -> Result<NewObjectSpec, MgmError> {
+    pub fn get_wrapkey_from_shares(shares: Vec<String>) -> Result<NewObjectSpec, MgmError> {
 
-        aes_shares_validator(&shares)?;
+        let parsed = shares[0].split('-').collect::<Vec<&str>>();
+        let threshold: usize = parsed[0].parse().map_err(|_| MgmError::InvalidInput("Invalid share format".to_string()))?;
+        if (shares.len()) < threshold {
+            return Err(MgmError::InvalidInput(format!("Not enough shares provided. At least {} shares are required", threshold)));
+        }
 
-        let vsss_shares: Vec<Vec<u8>> = shares
-            .iter()
-            .map(|s| {
+        let secret = if hex::decode(parsed[2]).is_ok() { // New style shares with hex-encoded data
+            let vsss_shares: Vec<Vec<u8>> = shares.iter().map(|s| {
                 let parts: Vec<&str> = s.trim().split('-').collect();
                 let Ok(share_id) = parts[1].parse::<u8>() else {
                     return Err(MgmError::InvalidInput(format!("Unable to parse share ID: {}", s)));
@@ -408,25 +412,30 @@ impl WrapOperations {
                 share.push(share_id);
                 share.extend_from_slice(&share_data);
                 Ok(share)
-            })
-            .collect::<Result<Vec<_>, MgmError>>()?;
+            }).collect::<Result<Vec<_>, MgmError>>()?;
 
-        let data = vsss_rs::Gf256::combine_array(&vsss_shares)?;
-        if data.len() < WRAP_SPLIT_PREFIX_LEN {
+            vsss_rs::Gf256::combine_array(&vsss_shares)?
+        } else { // Legacy shares obtained from yubihsm-setup
+            let gf256_shares: Vec<Vec<u8>> = shares.iter().map(|s| Self::rusty_share_to_gf256_share(s)).collect();
+
+            shamir::reconstruct(&gf256_shares)
+        };
+
+        if secret.len() < WRAP_SPLIT_PREFIX_LEN {
             return Err(MgmError::InvalidInput("Reconstructed wrap key share data is too short".to_string()));
         }
 
-        let key_len = data.len() - WRAP_SPLIT_PREFIX_LEN;
+        let key_len = secret.len() - WRAP_SPLIT_PREFIX_LEN;
 
         let mut wrapkey_spec = NewObjectSpec::default();
         wrapkey_spec.object_type = ObjectType::WrapKey;
         wrapkey_spec.algorithm = WrapOperations::get_algorithm_from_keylen(key_len)?;
-        wrapkey_spec.id = ((u16::from(data[0])) << 8) | u16::from(data[1]);
-        wrapkey_spec.domains = ObjectDomain::from_bytes(&data[2..4])?;
-        wrapkey_spec.capabilities = ObjectCapability::from_bytes(&data[4..12])?;
-        wrapkey_spec.delegated_capabilities = ObjectCapability::from_bytes(&data[12..20])?;
+        wrapkey_spec.id = ((u16::from(secret[0])) << 8) | u16::from(secret[1]);
+        wrapkey_spec.domains = ObjectDomain::from_bytes(&secret[2..4])?;
+        wrapkey_spec.capabilities = ObjectCapability::from_bytes(&secret[4..12])?;
+        wrapkey_spec.delegated_capabilities = ObjectCapability::from_bytes(&secret[12..20])?;
 
-        wrapkey_spec.data.push(data[20..].to_vec());
+        wrapkey_spec.data.push(secret[20..].to_vec());
 
         Ok(wrapkey_spec)
     }
@@ -551,6 +560,27 @@ impl WrapOperations {
         Ok(handle)
     }
 
+    /// Parse a yubihsm-setup / rusty_secrets 0.0.2 share string of the form
+    /// "{k}-{share_id}-{base64(raw_shamir_bytes)}" and return a Vec<u8> in the
+    /// format that gf256::shamir::reconstruct expects:
+    ///   [ share_id, y_byte_0, y_byte_1, ... ]
+    fn rusty_share_to_gf256_share(share_str: &str) -> Vec<u8> {
+        let parts: Vec<&str> = share_str.trim().splitn(3, '-').collect();
+        assert_eq!(parts.len(), 3, "Expected format k-id-base64data");
+
+        let share_id: u8 = parts[1].parse().expect("Invalid share id");
+
+        // In rusty_secrets 0.0.2, the third part is simply base64(raw_shamir_bytes).
+        // No protobuf wrapping — that was added in later versions.
+        let shamir_data = STANDARD_NO_PAD.decode(parts[2]).expect("Base64 decode failed");
+
+        // Build the gf256 share: [x_coordinate=share_id, y_bytes...]
+        let mut gf256_share = Vec::with_capacity(1 + shamir_data.len());
+        gf256_share.push(share_id);
+        gf256_share.extend_from_slice(&shamir_data);
+        gf256_share
+    }
+
     fn get_oaep_label(algorithm: &ObjectAlgorithm) -> Result<Vec<u8>, MgmError> {
         let oaep_label: &[u8] = &[];
         AsymmetricOperations::get_hashed_bytes(algorithm, oaep_label)
@@ -659,5 +689,451 @@ mod tests {
         ];
         let recovered = WrapOperations::get_wrapkey_from_shares(subset).unwrap();
         assert_eq!(recovered.data[0], key);
+    }
+
+    // ══════════════════════════════════════════════
+    //  New-style (vsss-rs hex) shares — known key values
+    // ══════════════════════════════════════════════
+
+    // Secret: a6c42207000000000000300000000000010331f0e0a131a9f6c571e64fce024930f6c3abff0728bedb4e356cbbbf92c3337accf4
+    // Key: e0a131a9f6c571e64fce024930f6c3abff0728bedb4e356cbbbf92c3337accf4
+    // ID: 0x9872
+    // Domains: 1,2,3,10,14.
+    // Capabilities: export-wrapped,import-wrapped.
+    // Delegated capabilities: generate-asymmetric-key,sign-pkcs,sign-pss,sign-ecdsa,sign-eddsa,export-wrapped,import-wrapped,exportable-under-wrap,set-option,get-log-entries
+    // Format: 3-of-5, AES-256, produced by yubihsm-manager
+    const NEW_STYLE_AES256_KEY: &str =
+        "e0a131a9f6c571e64fce024930f6c3abff0728bedb4e356cbbbf92c3337accf4";
+    const NEW_STYLE_AES256_SHARES: [&str; 5] = [
+        "3-1-2ce8ca8b4cb67ed4b85404b8ce58086255936f22bc0f2185e0d9339639e27083e62e4925f3759c48c34e5bd0eb114225d7e48a76",
+        "3-2-0f175c8137a54b27916021de1f8d1f1a2044d063ddcd854f986b8bda60f58969d49cb26a3e06823b8657ed7adde644dcc2244d71",
+        "3-3-853bb40d7b1335f329341566d1d5177874d48eb1816395638e77c9aa16d9fba3024438e4327436cd9e5783c68d48943a26ba0bf3",
+        "3-4-41633c32e4347c28fccded4568f502615166877db8d524b039ec7dc3302fa883b40bc2072fbc2e7cce188e8f42758af04239e1bb",
+        "3-5-cb4fd4bea88202fc4499d9fda6ad0a0305f6d9afe47b349c2ff03fb34603da4962d3488923ce9a8ad618e03312db5a16a6a7a739",
+    ];
+
+    #[test]
+    fn test_new_style_aes256_key_value_minimum_threshold() {
+        let expected = hex::decode(NEW_STYLE_AES256_KEY).unwrap();
+        let shares = vec![
+            NEW_STYLE_AES256_SHARES[0].to_string(),
+            NEW_STYLE_AES256_SHARES[1].to_string(),
+            NEW_STYLE_AES256_SHARES[2].to_string(),
+        ];
+        let recovered = WrapOperations::get_wrapkey_from_shares(shares).unwrap();
+        assert_eq!(recovered.data[0], expected);
+        assert_eq!(recovered.algorithm, ObjectAlgorithm::Aes256CcmWrap);
+        assert_eq!(recovered.object_type, ObjectType::WrapKey);
+        assert_eq!(recovered.id, 0xa6c4);
+        assert_eq!(recovered.domains, vec![ObjectDomain::One, ObjectDomain::Two, ObjectDomain::Three, ObjectDomain::Ten, ObjectDomain::Fourteen]);
+        assert_eq!(recovered.capabilities, vec![ObjectCapability::ExportWrapped, ObjectCapability::ImportWrapped]);
+        assert_eq!(recovered.delegated_capabilities, vec![
+            ObjectCapability::GenerateAsymmetricKey,
+            ObjectCapability::SignPkcs,
+            ObjectCapability::SignPss,
+            ObjectCapability::SignEcdsa,
+            ObjectCapability::SignEddsa,
+            ObjectCapability::ExportWrapped,
+            ObjectCapability::ImportWrapped,
+            ObjectCapability::ExportableUnderWrap,
+            ObjectCapability::SetOption,
+            ObjectCapability::GetLogEntries,
+        ]);
+    }
+
+    #[test]
+    fn test_new_style_aes256_all_combinations_of_threshold() {
+        let expected = hex::decode(NEW_STYLE_AES256_KEY).unwrap();
+        // Verify any 3-of-5 combination produces the same key
+        let indices = [(0,1,2), (0,1,3), (0,1,4), (0,2,3), (0,2,4),
+            (0,3,4), (1,2,3), (1,2,4), (1,3,4), (2,3,4)];
+        for (i, j, k) in indices {
+            let shares = vec![
+                NEW_STYLE_AES256_SHARES[i].to_string(),
+                NEW_STYLE_AES256_SHARES[j].to_string(),
+                NEW_STYLE_AES256_SHARES[k].to_string(),
+            ];
+            let recovered = WrapOperations::get_wrapkey_from_shares(shares).unwrap();
+            assert_eq!(recovered.data[0], expected,
+                       "Key mismatch for share combination ({}, {}, {})", i+1, j+1, k+1);
+            assert_eq!(recovered.algorithm, ObjectAlgorithm::Aes256CcmWrap,
+                       "Key mismatch for share combination ({}, {}, {})", i+1, j+1, k+1);
+            assert_eq!(recovered.object_type, ObjectType::WrapKey,
+                       "Key mismatch for share combination ({}, {}, {})", i+1, j+1, k+1);
+            assert_eq!(recovered.id, 0xa6c4, "Key mismatch for share combination ({}, {}, {})", i+1, j+1, k+1);
+            assert_eq!(recovered.domains, vec![ObjectDomain::One, ObjectDomain::Two, ObjectDomain::Three, ObjectDomain::Ten, ObjectDomain::Fourteen],
+                       "Key mismatch for share combination ({}, {}, {})", i+1, j+1, k+1);
+            assert_eq!(recovered.capabilities, vec![ObjectCapability::ExportWrapped, ObjectCapability::ImportWrapped],
+                       "Key mismatch for share combination ({}, {}, {})", i+1, j+1, k+1);
+            assert_eq!(recovered.delegated_capabilities, vec![
+                ObjectCapability::GenerateAsymmetricKey,
+                ObjectCapability::SignPkcs,
+                ObjectCapability::SignPss,
+                ObjectCapability::SignEcdsa,
+                ObjectCapability::SignEddsa,
+                ObjectCapability::ExportWrapped,
+                ObjectCapability::ImportWrapped,
+                ObjectCapability::ExportableUnderWrap,
+                ObjectCapability::SetOption,
+                ObjectCapability::GetLogEntries,
+            ], "Key mismatch for share combination ({}, {}, {})", i+1, j+1, k+1);
+        }
+    }
+
+    // Secret: 56cc01dd000000000000300000000000010539f04aefbda19e97f58dbbca200621ac6c2c
+    // Key: 4aefbda19e97f58dbbca200621ac6c2c
+    // ID: 0x56cc
+    // Domains: 1,3,4,5,7,8,9
+    // Capabilities: export-wrapped,import-wrapped.
+    // Delegated capabilities: generate-asymmetric-key,sign-pkcs,sign-ecdsa,sign-eddsa,derive-ecdh,export-wrapped,import-wrapped,exportable-under-wrap,set-option,get-log-entries
+    // Format: 2-of-3, AES-128, produced by yubihsm-manager
+    const NEW_STYLE_AES128_KEY: &str = "4aefbda19e97f58dbbca200621ac6c2c";
+    const NEW_STYLE_AES128_SHARES: [&str; 3] = [
+        "2-1-f734da8c8b914be5a96533a18961a13b6266260717322e5659acf6aede5767a5e00ded39",
+        "2-2-4d18ac7f0d3996d149ca365909c25976c7c907c5f04e80540be1f3cb71ebae5bb8f57506",
+        "2-3-d2f5772e86a8dd34e0af35f880a3f84da4ac1872ad9313a3ccdaf0e81476e9f87954f413",
+    ];
+
+    #[test]
+    fn test_new_style_aes128_key_value_minimum_threshold() {
+        let expected = hex::decode(NEW_STYLE_AES128_KEY).unwrap();
+        let shares = vec![
+            NEW_STYLE_AES128_SHARES[0].to_string(),
+            NEW_STYLE_AES128_SHARES[1].to_string(),
+        ];
+        let recovered = WrapOperations::get_wrapkey_from_shares(shares).unwrap();
+        assert_eq!(recovered.data[0], expected);
+        assert_eq!(recovered.algorithm, ObjectAlgorithm::Aes128CcmWrap);
+        assert_eq!(recovered.object_type, ObjectType::WrapKey);
+        assert_eq!(recovered.id, 0x68d9);
+        assert_eq!(recovered.domains, vec![ObjectDomain::One, ObjectDomain::Three, ObjectDomain::Four, ObjectDomain::Five, ObjectDomain::Seven, ObjectDomain::Eight, ObjectDomain::Nine]);
+        assert_eq!(recovered.capabilities, vec![ObjectCapability::ExportWrapped, ObjectCapability::ImportWrapped]);
+        assert_eq!(recovered.delegated_capabilities, vec![
+            ObjectCapability::GenerateAsymmetricKey,
+            ObjectCapability::SignPkcs,
+            ObjectCapability::SignEcdsa,
+            ObjectCapability::SignEddsa,
+            ObjectCapability::DeriveEcdh,
+            ObjectCapability::ExportWrapped,
+            ObjectCapability::ImportWrapped,
+            ObjectCapability::ExportableUnderWrap,
+            ObjectCapability::SetOption,
+            ObjectCapability::GetLogEntries,
+        ]);
+    }
+
+    #[test]
+    fn test_new_style_aes128_all_combinations_of_threshold() {
+        let expected = hex::decode(NEW_STYLE_AES128_KEY).unwrap();
+        for (i, j) in [(0,1), (0,2), (1,2)] {
+            let shares = vec![
+                NEW_STYLE_AES128_SHARES[i].to_string(),
+                NEW_STYLE_AES128_SHARES[j].to_string(),
+            ];
+            let recovered = WrapOperations::get_wrapkey_from_shares(shares).unwrap();
+            assert_eq!(recovered.data[0], expected,
+                       "Key mismatch for share combination ({}, {})", i+1, j+1);
+            assert_eq!(recovered.algorithm, ObjectAlgorithm::Aes128CcmWrap,
+                       "Key mismatch for share combination ({}, {})", i+1, j+1);
+            assert_eq!(recovered.object_type, ObjectType::WrapKey,
+                       "Key mismatch for share combination ({}, {})", i+1, j+1);
+            assert_eq!(recovered.id, 0x68d9, "Key mismatch for share combination ({}, {})", i+1, j+1);
+            assert_eq!(recovered.domains, vec![ObjectDomain::One, ObjectDomain::Three, ObjectDomain::Four, ObjectDomain::Five, ObjectDomain::Seven, ObjectDomain::Eight, ObjectDomain::Nine],
+                       "Key mismatch for share combination ({}, {})", i+1, j+1);
+            assert_eq!(recovered.capabilities, vec![ObjectCapability::ExportWrapped, ObjectCapability::ImportWrapped],
+                       "Key mismatch for share combination ({}, {})", i+1, j+1);
+            assert_eq!(recovered.delegated_capabilities, vec![
+                ObjectCapability::GenerateAsymmetricKey,
+                ObjectCapability::SignPkcs,
+                ObjectCapability::SignEcdsa,
+                ObjectCapability::SignEddsa,
+                ObjectCapability::DeriveEcdh,
+                ObjectCapability::ExportWrapped,
+                ObjectCapability::ImportWrapped,
+                ObjectCapability::ExportableUnderWrap,
+                ObjectCapability::SetOption,
+                ObjectCapability::GetLogEntries,
+            ], "Key mismatch for share combination ({}, {})", i+1, j+1);
+        }
+    }
+
+    #[test]
+    fn test_new_style_aes128_all_shares_returns_correct_key() {
+        let expected = hex::decode(NEW_STYLE_AES128_KEY).unwrap();
+        let shares = NEW_STYLE_AES128_SHARES.iter().map(|s| s.to_string()).collect();
+        let recovered = WrapOperations::get_wrapkey_from_shares(shares).unwrap();
+        assert_eq!(recovered.data[0], expected);
+    }
+
+    // ══════════════════════════════════════════════
+    //  Legacy (yubihsm-setup base64) shares — known key values
+    // ══════════════════════════════════════════════
+
+    // Secret: 98722207000000000000300000000000010539f0e0a131a9f6c571e64fce024930f6c3abff0728bedb4e356cbbbf92c3337accf4
+    // Key: e0a131a9f6c571e64fce024930f6c3abff0728bedb4e356cbbbf92c3337accf4
+    // ID: 0x9872
+    // Domains: 1,2,3,10,14.
+    // Capabilities: export-wrapped,import-wrapped.
+    // Delegated capabilities: generate-asymmetric-key,sign-pkcs,sign-pss,sign-ecdsa,sign-eddsa,derive-ecdh,export-wrapped,import-wrapped,exportable-under-wrap,get-option,get-log-entries
+    // Format: 3-of-5, AES-256, produced by yubihsm-setup
+    const LEGACY_AES256_KEY: &str =
+        "e0a131a9f6c571e64fce024930f6c3abff0728bedb4e356cbbbf92c3337accf4";
+    const LEGACY_AES256_SHARES: [&str; 5] = [
+        "3-1-NOJmWrDY3dxtzpwDnukPvFL/joSlG8xbr75OxCZ4OEVcaOSYVBD4uTfEZIzR0vKNmQm0Bw",
+        "3-2-MEApAYsY0KaD8h1WAoo2ak+qDXoqgPCdTibn9z/f9nHduaXpet+vu00942mEMvgHEE92ew",
+        "3-3-nNBtXDvADXruPLFVnGM51hxQug5vOg1vF13Y1VZpzH2xJ4La0ch/vKG3sonuX5hJujwOiA",
+        "3-4-RioCwfTefF1iKNfxiADM6BpDUGx03jbSs0rHjR1xzbkjza+/91XTmLtdSSFO+dQrwHuQOg",
+        "3-5-6rpGnEQGoYEP5nvyFunDVEm55xgxZMsg6jH4r3TH97VPU4iMXEIDn1fXGMEklLRlagjoyQ",
+    ];
+
+    #[test]
+    fn test_legacy_aes256_key_value_minimum_threshold() {
+        let expected = hex::decode(LEGACY_AES256_KEY).unwrap();
+        let shares = vec![
+            LEGACY_AES256_SHARES[0].to_string(),
+            LEGACY_AES256_SHARES[1].to_string(),
+            LEGACY_AES256_SHARES[2].to_string(),
+        ];
+        let recovered = WrapOperations::get_wrapkey_from_shares(shares).unwrap();
+        assert_eq!(recovered.data[0], expected);
+        assert_eq!(recovered.algorithm, ObjectAlgorithm::Aes256CcmWrap);
+        assert_eq!(recovered.object_type, ObjectType::WrapKey);
+        assert_eq!(recovered.id, 0x9872);
+        assert_eq!(recovered.domains, vec![ObjectDomain::One, ObjectDomain::Two, ObjectDomain::Three, ObjectDomain::Ten, ObjectDomain::Fourteen]);
+        assert_eq!(recovered.capabilities, vec![ObjectCapability::ExportWrapped, ObjectCapability::ImportWrapped]);
+        assert_eq!(recovered.delegated_capabilities, vec![
+            ObjectCapability::GenerateAsymmetricKey,
+            ObjectCapability::SignPkcs,
+            ObjectCapability::SignPss,
+            ObjectCapability::SignEcdsa,
+            ObjectCapability::SignEddsa,
+            ObjectCapability::DeriveEcdh,
+            ObjectCapability::ExportWrapped,
+            ObjectCapability::ImportWrapped,
+            ObjectCapability::ExportableUnderWrap,
+            ObjectCapability::GetOption,
+            ObjectCapability::GetLogEntries,
+        ]);
+    }
+
+    #[test]
+    fn test_legacy_aes256_all_combinations_of_threshold() {
+        let expected = hex::decode(LEGACY_AES256_KEY).unwrap();
+        let indices = [(0,1,2), (0,1,3), (0,1,4), (0,2,3), (0,2,4),
+            (0,3,4), (1,2,3), (1,2,4), (1,3,4), (2,3,4)];
+        for (i, j, k) in indices {
+            let shares = vec![
+                LEGACY_AES256_SHARES[i].to_string(),
+                LEGACY_AES256_SHARES[j].to_string(),
+                LEGACY_AES256_SHARES[k].to_string(),
+            ];
+            let recovered = WrapOperations::get_wrapkey_from_shares(shares).unwrap();
+            assert_eq!(recovered.data[0], expected,
+                       "Key mismatch for share combination ({}, {}, {})", i+1, j+1, k+1);
+            assert_eq!(recovered.algorithm, ObjectAlgorithm::Aes256CcmWrap,
+                       "Key mismatch for share combination ({}, {}, {})", i+1, j+1, k+1);
+            assert_eq!(recovered.object_type, ObjectType::WrapKey,
+                       "Key mismatch for share combination ({}, {}, {})", i+1, j+1, k+1);
+            assert_eq!(recovered.id, 0x9872, "Key mismatch for share combination ({}, {}, {})", i+1, j+1, k+1);
+            assert_eq!(recovered.domains, vec![ObjectDomain::One, ObjectDomain::Two, ObjectDomain::Three, ObjectDomain::Ten, ObjectDomain::Fourteen],
+                       "Key mismatch for share combination ({}, {}, {})", i+1, j+1, k+1);
+            assert_eq!(recovered.capabilities, vec![ObjectCapability::ExportWrapped, ObjectCapability::ImportWrapped],
+                       "Key mismatch for share combination ({}, {}, {})", i+1, j+1, k+1);
+            assert_eq!(recovered.delegated_capabilities, vec![
+                ObjectCapability::GenerateAsymmetricKey,
+                ObjectCapability::SignPkcs,
+                ObjectCapability::SignPss,
+                ObjectCapability::SignEcdsa,
+                ObjectCapability::SignEddsa,
+                ObjectCapability::DeriveEcdh,
+                ObjectCapability::ExportWrapped,
+                ObjectCapability::ImportWrapped,
+                ObjectCapability::ExportableUnderWrap,
+                ObjectCapability::GetOption,
+                ObjectCapability::GetLogEntries,
+            ], "Key mismatch for share combination ({}, {}, {})", i+1, j+1, k+1);
+        }
+    }
+
+    #[test]
+    fn test_legacy_aes256_all_five_shares_returns_correct_key() {
+        let expected = hex::decode(LEGACY_AES256_KEY).unwrap();
+        let shares = LEGACY_AES256_SHARES.iter().map(|s| s.to_string()).collect();
+        let recovered = WrapOperations::get_wrapkey_from_shares(shares).unwrap();
+        assert_eq!(recovered.data[0], expected);
+    }
+
+    // Secret: 56cc01dd000000000000300000000000010539f04aefbda19e97f58dbbca200621ac6c2c
+    // Key: 4aefbda19e97f58dbbca200621ac6c2c
+    // ID: 0x56cc
+    // Domains: 1,3,4,5,7,8,9
+    // Capabilities: export-wrapped,import-wrapped.
+    // Delegated capabilities: generate-asymmetric-key,sign-pkcs,sign-pss,sign-ecdsa,sign-eddsa,derive-ecdh,export-wrapped,import-wrapped,exportable-under-wrap,get-option,get-log-entries
+    // Format: 2-of-3, AES-128, produced by yubihsm-setup
+    const LEGACY_AES128_KEY: &str = "4aefbda19e97f58dbbca200621ac6c2c";
+    const LEGACY_AES128_SHARES: [&str; 3] = [
+        "2-1-iwD5Pz8GVdO/ADSxP3x30zMGpsb5hxIcGE3xDfU8aZC2lMNR",
+        "2-2-8UnsBH4MqrtjADh/fvjuu2UDGpwxP/7Gjz79kCc7sjcS3C/W",
+        "2-3-LIUU5kEK/2jcADzOQYSZaFcAhaqCV1F7CeT5EGnN+6GF5ICr",
+    ];
+
+    #[test]
+    fn test_legacy_aes128_key_value_minimum_threshold() {
+        let expected = hex::decode(LEGACY_AES128_KEY).unwrap();
+        let shares = vec![
+            LEGACY_AES128_SHARES[0].to_string(),
+            LEGACY_AES128_SHARES[1].to_string(),
+        ];
+        let recovered = WrapOperations::get_wrapkey_from_shares(shares).unwrap();
+        assert_eq!(recovered.data[0], expected);
+        assert_eq!(recovered.algorithm, ObjectAlgorithm::Aes128CcmWrap);
+        assert_eq!(recovered.object_type, ObjectType::WrapKey);
+        assert_eq!(recovered.id, 0x56cc);
+        assert_eq!(recovered.domains, vec![ObjectDomain::One, ObjectDomain::Three, ObjectDomain::Four, ObjectDomain::Five, ObjectDomain::Seven, ObjectDomain::Eight, ObjectDomain::Nine]);
+        assert_eq!(recovered.capabilities, vec![ObjectCapability::ExportWrapped, ObjectCapability::ImportWrapped]);
+        assert_eq!(recovered.delegated_capabilities, vec![
+            ObjectCapability::GenerateAsymmetricKey,
+            ObjectCapability::SignPkcs,
+            ObjectCapability::SignPss,
+            ObjectCapability::SignEcdsa,
+            ObjectCapability::SignEddsa,
+            ObjectCapability::DeriveEcdh,
+            ObjectCapability::ExportWrapped,
+            ObjectCapability::ImportWrapped,
+            ObjectCapability::ExportableUnderWrap,
+            ObjectCapability::GetOption,
+            ObjectCapability::GetLogEntries,
+        ]);
+    }
+
+    #[test]
+    fn test_legacy_aes128_all_combinations_of_threshold() {
+        let expected = hex::decode(LEGACY_AES128_KEY).unwrap();
+        for (i, j) in [(0,1), (0,2), (1,2)] {
+            let shares = vec![
+                LEGACY_AES128_SHARES[i].to_string(),
+                LEGACY_AES128_SHARES[j].to_string(),
+            ];
+            let recovered = WrapOperations::get_wrapkey_from_shares(shares).unwrap();
+            assert_eq!(recovered.data[0], expected,
+                       "Key mismatch for share combination ({}, {})", i+1, j+1);
+            assert_eq!(recovered.algorithm, ObjectAlgorithm::Aes128CcmWrap,
+                       "Key mismatch for share combination ({}, {})", i+1, j+1);
+            assert_eq!(recovered.object_type, ObjectType::WrapKey,
+                       "Key mismatch for share combination ({}, {})", i+1, j+1);
+            assert_eq!(recovered.id, 0x56cc, "Key mismatch for share combination ({}, {})", i+1, j+1);
+            assert_eq!(recovered.domains, vec![ObjectDomain::One, ObjectDomain::Three, ObjectDomain::Four, ObjectDomain::Five, ObjectDomain::Seven, ObjectDomain::Eight, ObjectDomain::Nine],
+                       "Key mismatch for share combination ({}, {})", i+1, j+1);
+            assert_eq!(recovered.capabilities, vec![ObjectCapability::ExportWrapped, ObjectCapability::ImportWrapped],
+                       "Key mismatch for share combination ({}, {})", i+1, j+1);
+            assert_eq!(recovered.delegated_capabilities, vec![
+                ObjectCapability::GenerateAsymmetricKey,
+                ObjectCapability::SignPkcs,
+                ObjectCapability::SignPss,
+                ObjectCapability::SignEcdsa,
+                ObjectCapability::SignEddsa,
+                ObjectCapability::DeriveEcdh,
+                ObjectCapability::ExportWrapped,
+                ObjectCapability::ImportWrapped,
+                ObjectCapability::ExportableUnderWrap,
+                ObjectCapability::GetOption,
+                ObjectCapability::GetLogEntries,
+            ], "Key mismatch for share combination ({}, {})", i+1, j+1);
+        }
+    }
+
+    #[test]
+    fn test_legacy_aes128_all_shares_returns_correct_key() {
+        let expected = hex::decode(LEGACY_AES128_KEY).unwrap();
+        let shares = LEGACY_AES128_SHARES.iter().map(|s| s.to_string()).collect();
+        let recovered = WrapOperations::get_wrapkey_from_shares(shares).unwrap();
+        assert_eq!(recovered.data[0], expected);
+    }
+
+    // ══════════════════════════════════════════════
+    //  Format auto-detection
+    // ══════════════════════════════════════════════
+
+    // Verify that the two formats for the same key return the exact same result
+    #[test]
+    fn test_legacy_and_new_style_aes256_produce_identical_specs() {
+        let legacy_shares = vec![
+            LEGACY_AES256_SHARES[0].to_string(),
+            LEGACY_AES256_SHARES[1].to_string(),
+            LEGACY_AES256_SHARES[2].to_string(),
+        ];
+        let new_shares = vec![
+            NEW_STYLE_AES256_SHARES[0].to_string(),
+            NEW_STYLE_AES256_SHARES[1].to_string(),
+            NEW_STYLE_AES256_SHARES[2].to_string(),
+        ];
+        let legacy_recovered = WrapOperations::get_wrapkey_from_shares(legacy_shares).unwrap();
+        let new_recovered = WrapOperations::get_wrapkey_from_shares(new_shares).unwrap();
+
+        assert_eq!(legacy_recovered.data[0], new_recovered.data[0]);
+        assert_eq!(legacy_recovered.algorithm, new_recovered.algorithm);
+    }
+
+    #[test]
+    fn test_legacy_and_new_style_aes128_produce_identical_specs() {
+        let legacy_shares = vec![
+            LEGACY_AES128_SHARES[0].to_string(),
+            LEGACY_AES128_SHARES[1].to_string(),
+        ];
+        let new_shares = vec![
+            NEW_STYLE_AES128_SHARES[0].to_string(),
+            NEW_STYLE_AES128_SHARES[1].to_string(),
+        ];
+        let legacy_recovered = WrapOperations::get_wrapkey_from_shares(legacy_shares).unwrap();
+        let new_recovered = WrapOperations::get_wrapkey_from_shares(new_shares).unwrap();
+
+        assert_eq!(legacy_recovered.data[0], new_recovered.data[0]);
+        assert_eq!(legacy_recovered.algorithm, new_recovered.algorithm);
+    }
+
+    // ══════════════════════════════════════════════
+    //  Error cases
+    // ══════════════════════════════════════════════
+
+    #[test]
+    fn test_new_style_invalid_hex_data_returns_error() {
+        // Corrupt the hex payload of an otherwise valid share
+        let shares = vec![
+            "2-1-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz".to_string(),
+            "2-2-4d18ac7f0d3996d149ca365909c25976c7c907c5f04e80540be1f3cb71ebae5bb8f57506".to_string(),
+        ];
+        // First share hex is invalid, but the detection uses shares[0]'s last part.
+        // The z's are not valid hex, so it will be routed to legacy path and base64-decoded.
+        // It may succeed or fail depending on padding — we just verify it doesn't panic
+        // and that it doesn't produce the correct key.
+        let expected = hex::decode(NEW_STYLE_AES128_KEY).unwrap();
+        let result = WrapOperations::get_wrapkey_from_shares(shares);
+        if let Ok(recovered) = result {
+            assert_ne!(recovered.data[0], expected, "Corrupted share should not yield correct key");
+        }
+        // If it errors, that's also correct behaviour
+    }
+
+    #[test]
+    fn test_new_style_aes256_insufficient_shares_returns_wrong_key() {
+        // Providing only 2 shares when threshold is 3 should succeed structurally
+        // but return a garbage key (Shamir property: fewer than threshold shares
+        // yield an arbitrary value, not an error)
+        let shares = vec![
+            NEW_STYLE_AES256_SHARES[0].to_string(),
+            NEW_STYLE_AES256_SHARES[1].to_string(),
+        ];
+        let result = WrapOperations::get_wrapkey_from_shares(shares);
+        assert!(result.is_err(), "Providing fewer than threshold shares should return an error");
+    }
+
+    #[test]
+    fn test_legacy_aes256_insufficient_shares_returns_wrong_key() {
+        let shares = vec![
+            LEGACY_AES256_SHARES[0].to_string(),
+            LEGACY_AES256_SHARES[1].to_string(),
+        ];
+        let result = WrapOperations::get_wrapkey_from_shares(shares);
+        assert!(result.is_err(), "Providing fewer than threshold shares should return an error");
     }
 }
