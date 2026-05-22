@@ -380,13 +380,6 @@ impl<T: YubihsmUi + Clone> WrapMenu<T> {
 
         self.ui.display_info_message(format!("{} shares have been registered", n_shares).as_str());
 
-        let threshold = shares_vec[0].split('-').collect::<Vec<&str>>()[0];
-        let threshold: usize = threshold.parse().map_err(|_| MgmError::InvalidInput("Invalid share format".to_string()))?;
-        if (n_shares as usize) < threshold {
-            self.ui.display_error_message(format!("At least {} shares are required to recover a key using these shares", threshold).as_str());
-            return Err(MgmError::InvalidInput("Not enough shares provided".to_string()));
-        }
-
         Ok(shares_vec)
     }
 
